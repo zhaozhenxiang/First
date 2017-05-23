@@ -61,3 +61,8 @@ $route::get('/get/di', 'BB@request');
 $route::get('/a/a/{no}', function($a){
     return $a;
 })->with('[0-9]+');
+
+
+$route::get('/', function(){
+    return 'hello';
+});

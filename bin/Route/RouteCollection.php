@@ -68,6 +68,11 @@ class RouteCollection /*implements \Iterator*/
                 return $value;
             }
 
+            //特殊处理'/'路由
+            if (NULL == $path && '/' == $value->getPath()){
+                return $value;
+            }
+
 //            var_dump($value, $value->getPreg());
             //判断是否存在preg
             if (FALSE == is_null($value->getPreg())) {

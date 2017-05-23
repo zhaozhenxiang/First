@@ -23,6 +23,9 @@ class Request implements \ArrayAccess, \Iterator
             $this->$key = $item;
         }
 
+        foreach ($_FILES as $key => $item) {
+            $this->files[$key] = $item;
+        }
 
     }
 
