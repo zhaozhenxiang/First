@@ -23,6 +23,7 @@ class RouteAction
             }
             //查看是否存在
             $class = (new \App\Middleware\Middle())->getClass(array_keys($param['middle'])[0]);
+
             if (FALSE == $class) {
                 throw new \Exception('middleware miss');
             }
@@ -34,24 +35,35 @@ class RouteAction
             }
         }
 
+        $reponse = NULL;
         //处理闭包
         if (is_callable($actionAy->getAction())) {
-            return self::doCallBack($actionAy->getAction());
+            $reponse = self::doCallBack($actionAy->getAction());
         }
+
         //处理常规
         if (is_string($actionAy->getAction())) {
             list($class, $method) = explode('@', $actionAy->getAction());
-            return self::doClassMethod($class, $method);
+            $reponse = self::doClassMethod($class, $method);
         }
 
+        if (is_null($reponse)) {
+            throw new \Exception("404", 1);
+        }
 
-        throw new Exception("404", 1);
+        echo (string)$reponse;
+        app('Bin\Log\Log')->done();
     }
 
+    /**\
+     * @power 执行callback
+     * @param callable $action
+     * @return Response
+     */
     private static function doCallBack(callable $action)
     {
 
-        return call_user_func_array($action, app(\Bin\Reflection\Reflection::class)->getCallBackParam($action));
+        return new Response(call_user_func_array($action, app(\Bin\Reflection\Reflection::class)->getCallBackParam($action)));
         return $action(app('Request')->getUrlParam()[0]);
 //        return $action();
     }
@@ -70,6 +82,6 @@ class RouteAction
     private static function doClassMethod($class, $method)
     {
         $class = '\App\Controllers\\' . $class;
-        echo new Response(call_user_func_array(array(new $class, $method), app(Reflection::class)->getClassMethodParamInject($class, $method)));
+        return new Response(call_user_func_array(array(new $class, $method), app(Reflection::class)->getClassMethodParamInject($class, $method)));
     }
 }

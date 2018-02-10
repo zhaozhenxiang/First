@@ -14,12 +14,18 @@ class App
         'Request' => \Bin\Request\Request::class,
         'Response' => \Bin\Response\Response::class,
         'Route' => \Bin\Route\RouteCollection::class,
+        'Log' => \Bin\Log\Log::class,
     ];
 
+    //facade的mapping
     private static $facadeMap = [
         'Request' => \Bin\Facade\Request::class,
+        'Log' => \Bin\Log\Log::class,
     ];
 
+    /**
+     * @power 单例
+     */
     public function __construct()
     {
         if (self::$instance instanceof $this) {
@@ -27,6 +33,7 @@ class App
         }
     }
 
+    //获取静态变量
     public function getInstance()
     {
         if (self::$instance instanceof $this) {

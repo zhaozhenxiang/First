@@ -15,6 +15,7 @@ $route::get('/rel', 'AA@rel');
 $route::post('/post/1', 'AA@postA');
 
 //处理middle相关的代码
+//此处'a'对应的是\App\Middleware\A
 $route::middle(['a' => [1, 2]], function() use ($route){
     $route::get('/middle/1', 'AA@middle');
 });
@@ -41,7 +42,6 @@ $route::get('/get/request', function(){
     var_dump($a->getRequestType());
     var_dump($a->getData());
     var_dump($a->getField('a'));
-    spl_autoload_register();
     var_dump(spl_autoload_functions());
     var_dump(app('Request'));
     app('Request')->getPath();
@@ -66,3 +66,11 @@ $route::get('/a/a/{no}', function($a){
 $route::get('/', function(){
     return 'hello';
 });
+
+//写入日志
+//使用with时必须加入\w
+$route::get('/log/{str}', function($str){
+    app('Bin\Log\Log')->info($str);
+    app('Log')->info($str);
+})->with('\w+');
+

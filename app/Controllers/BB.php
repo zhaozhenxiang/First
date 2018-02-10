@@ -1,6 +1,6 @@
 <?php
 /************************************************************
- * Copyright (C), 2015-2016, Everyoo Tech. Co., Ltd.
+ * Copyright (C), 2015-2016,
  * @FileName: BB.php
  * @Author: zzx       Version :   V.1.0.0       Date: 2016/2/29
  * @Description:     // 模块描述

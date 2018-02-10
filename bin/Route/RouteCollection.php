@@ -58,6 +58,13 @@ class RouteCollection /*implements \Iterator*/
         return self::match($method, $path);
     }
 
+    /**
+     * @power 根据当前的请求参数（url、method）来查找全部的route collection找到匹配的路由
+     * @param $method
+     * @param $path
+     * @return mixed
+     * @throws \Exception
+     */
     private static function match($method, $path)
     {
 
@@ -94,7 +101,13 @@ class RouteCollection /*implements \Iterator*/
             return new static;
         }*/
 
-
+    /**
+     * @power 写入路由。目前按照在先匹配先响应的原则
+     * @param $method
+     * @param $path
+     * @param $action
+     * @return Route
+     */
     private static function action($method, $path, $action)
     {
 //        $action = new Route(['method' => $method, 'path' => $path, 'action' => $action]);
@@ -112,10 +125,12 @@ class RouteCollection /*implements \Iterator*/
     {
         //先获取当前的路由个数，在获取之后的路由个数，然后给最后获取的路由处理一下
         $currentRouteCount = count(self::$route);
-        //先获取本次的结果
+        //先获取本次的结果，将当前的$callback中的路由加入到self::$route中去
         $callback();
+        //全部的个数
         $nowRouteCount = count(self::$route);
 
+        //对于新添加的路由添加middleware
         for ($i = $currentRouteCount; $i < $nowRouteCount; $i++) {
             self::$route[$i]->middle(['middle' => $param]);
         }

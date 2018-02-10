@@ -14,7 +14,7 @@ class Connection
 
     public function connection()
     {
-        if (self::$connection instanceof PDO) {
+        if (self::$connection instanceof \PDO) {
             return self::$connection;
         }
 
