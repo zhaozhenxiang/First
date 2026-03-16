@@ -1,2 +1,32 @@
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test files
 test.php
+*.test.php
+
+# Vendor
+/vendor/
+
+# Storage
+/storage/logs/*
+!/storage/logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Composer
+composer.lock
+
+# Cache
+*.cache

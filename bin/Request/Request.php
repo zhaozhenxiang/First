@@ -5,100 +5,151 @@ declare(strict_types=1);
 namespace Bin\Request;
 
 /**
- *  显示请求头的封装
- * Class Request
- * @package Bin\Request
+ * HTTP 请求封装
  */
 class Request implements \ArrayAccess, \Iterator
 {
-    //数据存放属性
+    /** @var array<string, mixed> 请求数据 */
     protected array $data = [];
-    //头信息存放属性
+    /** @var array<string, string> 头信息 */
     protected array $header = [];
-    //路径信息存放属性
-    protected string $path = '';
-
-    //初始化信息
+    /** @var array<string, string> URL 匹配参数 */
     private array $urlMatch = [];
 
     public function __construct()
     {
-        foreach ($_REQUEST as $key => $item) {
-            $this->$key = $item;
+        $this->initializeData();
+    }
+
+    /**
+     * 初始化请求数据
+     */
+    private function initializeData(): void
+    {
+        foreach ($_REQUEST as $key => $value) {
+            $this->data[$key] = $value;
         }
     }
 
     /**
-     * 获取头信息
-     * @return array
+     * 获取单个输入值
      */
-    public function getHeader(): array
+    public function input(string $key, mixed $default = null): mixed
     {
-        return $_SERVER;
+        return $this->data[$key] ?? $default;
     }
 
-    /*
+    /**
+     * 获取多个输入值
+     */
+    public function only(array $keys): array
+    {
+        return array_intersect_key($this->data, array_flip($keys));
+    }
+
+    /**
+     * 获取除指定键外的所有输入
+     */
+    public function except(array $keys): array
+    {
+        return array_diff_key($this->data, array_flip($keys));
+    }
+
+    /**
+     * 检查输入是否存在
+     */
+    public function has(string $key): bool
+    {
+        return isset($this->data[$key]);
+    }
+
+    /**
+     * 获取请求头信息
+     */
+    public function header(string $key = null): array|string|null
+    {
+        if ($key === null) {
+            return $_SERVER;
+        }
+
+        $headerKey = 'HTTP_' . strtoupper(str_replace('-', '_', $key));
+        return $_SERVER[$headerKey] ?? $_SERVER[strtoupper($key)] ?? null;
+    }
+
+    /**
      * 获取请求路径
-     * @return string
      */
     public function getPath(): string
     {
-        return trim($_SERVER['PATH_INFO'], '/');
+        return trim($_SERVER['PATH_INFO'] ?? '/', '/');
     }
 
     /**
-     * 请求开始时间
-     * @param  string  $format
-     * @return string
+     * 获取请求方法
+     */
+    public function getMethod(): string
+    {
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+        // 支持 _method 覆盖
+        if ($method === 'POST' && isset($_POST['_method'])) {
+            $method = strtoupper($_POST['_method']);
+        }
+
+        return $method;
+    }
+
+    /**
+     * 检查是否为 AJAX 请求
+     */
+    public function isAjax(): bool
+    {
+        return isset($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+               strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+
+    /**
+     * 检查是否为 JSON 请求
+     */
+    public function isJson(): bool
+    {
+        return str_contains($this->header('Content-Type') ?? '', 'application/json');
+    }
+
+    /**
+     * 获取请求的 Content-Type
+     */
+    public function getContentType(): string
+    {
+        return $_SERVER['CONTENT_TYPE'] ?? '';
+    }
+
+    /**
+     * 获取客户端 IP
+     */
+    public function ip(): string
+    {
+        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    }
+
+    /**
+     * 获取 User-Agent
+     */
+    public function userAgent(): string
+    {
+        return $_SERVER['HTTP_USER_AGENT'] ?? '';
+    }
+
+    /**
+     * 获取请求开始时间
      */
     public function getStartTime(string $format = 'Y-m-d H:i:s'): string
     {
-        return date($format, START_TIME);
+        return date($format, START_TIME ?? time());
     }
 
     /**
-     * 获取请求类型
-     * @return string
-     */
-    public function getRequestType(): string
-    {
-        return trim($_SERVER['REQUEST_METHOD'], '/');
-    }
-
-    /**
-     * 获取请求全部信息
-     * @return array
-     */
-    public function getData(): array
-    {
-        return $this->data;
-    }
-
-    /**
-     * 获取指定字段数据
-     * @param $field
-     * @return mixed
-     */
-    public function getField($field): mixed
-    {
-        return $this->data[$field];
-    }
-
-
-    /**
-     *
-     * @param  array  $v
-     * @return $this
-     */
-    public function setUrlParam(array $v): self
-    {
-        $this->urlMatch = $v;
-        return $this;
-    }
-
-    /**
-     * 请求参数
-     * @return array
+     * 获取所有请求数据
      */
     public function all(): array
     {
@@ -106,62 +157,69 @@ class Request implements \ArrayAccess, \Iterator
     }
 
     /**
-     * 获取url
-     * @return array
+     * 获取 URL 参数
      */
     public function getUrlParam(): array
     {
         return $this->urlMatch;
     }
 
-    public function &__get($key)
+    /**
+     * 设置 URL 参数
+     */
+    public function setUrlParam(array $params): self
+    {
+        $this->urlMatch = $params;
+        return $this;
+    }
+
+    // Magic methods
+    public function &__get(string $key): mixed
     {
         return $this->data[$key];
     }
 
-    public function __set($key, $value)
+    public function __set(string $key, mixed $value): void
     {
         $this->data[$key] = $value;
     }
 
-    public function __isset($key)
+    public function __isset(string $key): bool
     {
         return isset($this->data[$key]);
     }
 
-    public function __unset($key)
+    public function __unset(string $key): void
     {
         unset($this->data[$key]);
     }
 
-    public function offsetSet($offset, $value): void
+    // ArrayAccess
+    public function offsetSet(mixed $offset, mixed $value): void
     {
-        if (null === $offset) {
+        if ($offset === null) {
             $this->data[] = $value;
         } else {
             $this->data[$offset] = $value;
         }
     }
 
-    public function offsetExists($offset): bool
+    public function offsetExists(mixed $offset): bool
     {
         return isset($this->data[$offset]);
     }
 
-
-    public function offsetUnset($offset): void
+    public function offsetUnset(mixed $offset): void
     {
-        if ($this->offsetExists($offset)) {
-            unset($this->data[$offset]);
-        }
+        unset($this->data[$offset]);
     }
 
-    public function offsetGet($offset): mixed
+    public function offsetGet(mixed $offset): mixed
     {
-        return $this->offsetExists($offset) ? $this->data[$offset] : null;
+        return $this->data[$offset] ?? null;
     }
 
-
+    // Iterator
     public function rewind(): void
     {
         reset($this->data);
@@ -184,6 +242,6 @@ class Request implements \ArrayAccess, \Iterator
 
     public function valid(): bool
     {
-        return null !== key($this->data);
+        return key($this->data) !== null;
     }
 }

@@ -6,93 +6,89 @@ namespace Bin\Route;
 
 use App\Middleware\Middle;
 use Bin\Response\Response;
-use \Bin\Reflection\Reflection;
+use Bin\Reflection\Reflection;
 use Exception;
 
 class RouteAction
 {
-    public function __construct()
+    private function __construct()
     {
-
     }
 
     /**
-     * 执行
-     * @return \Bin\Response\Response|mixed|void
+     * 执行路由
      * @throws \Exception
-     * @static
      */
-    public static function action()
+    public static function action(): mixed
     {
         $route = RouteCollection::getRoute();
 
-        if (null === $route) {
-            abort(404);
+        // 处理中间件
+        $result = self::handleMiddleware($route);
+        if ($result !== true) {
+            return $result;
         }
 
-        //先处理middle
-        if (null !== $route->getMiddle()) {
-            $param = $route->getMiddle();
+        // 分发到 action
+        $action = $route->getAction();
 
-            if (1 !== count($param)) {
-                throw new \Exception('middle param count must one');
-            }
-            //查看是否存在
-            $class = (new Middle())->getClass(array_keys($param['middle'])[0]);
-            if (false == $class) {
-                throw new \Exception('middleware miss');
-            }
-            //key为middleware名字，value为middleware参数
-            $handleResult = (new $class)->run(array_shift($param));
-
-            if (true !== $handleResult) {
-                return new Response($handleResult);
-            }
-        }
-
-        if (is_callable($route->getAction())) {
-            return self::doCallBack($route->getAction());
-        }
-
-        if (is_string($route->getAction())) {
-            [$class, $method] = explode('@', $route->getAction());
-            return self::doClassMethod($class, $method);
-        }
-
-        abort(404);
+        return match (true) {
+            is_callable($action) => self::doCallback($action),
+            is_string($action) => self::doClassMethod($action),
+            default => abort(404)
+        };
     }
 
-    private static function doCallBack(callable $action)
+    /**
+     * 处理中间件
+     */
+    private static function handleMiddleware(Route $route): mixed
     {
+        $middle = $route->getMiddle();
 
-        return call_user_func_array($action, app(Reflection::class)->getCallBackParam($action));
-        return $action(app('Request')->getUrlParam()[0]);
-//        return $action();
+        if ($middle === null) {
+            return true;
+        }
+
+        if (count($middle) !== 1) {
+            throw new Exception('middle param count must one');
+        }
+
+        $key = array_keys($middle['middle'])[0];
+        $params = array_values($middle['middle'])[0];
+
+        $className = (new Middle())->getClass($key);
+        if ($className === false) {
+            throw new Exception("middleware '{$key}' not found");
+        }
+
+        $instance = new $className();
+        $result = $instance->run($params);
+
+        return $result === true ? true : new Response($result);
     }
 
-    //@todo 这里应该使用反射
-//    private static function doClassMethod($class, $method)
-//    {
-//        $class = '\App\Controllers\\' . $class;
-//        //todo 反射class的构造函数的参数
-//        $instance = new $class;
-//        //todo 反射method函数的参数
-//        $response = $instance->$method();
-//        echo new Response($response);
-//    }
-//
+    /**
+     * 执行闭包回调
+     */
+    private static function doCallback(callable $action): mixed
+    {
+        $params = app(Reflection::class)->getCallBackParam($action);
+        return call_user_func_array($action, $params);
+    }
+
     /**
      * 执行控制器方法
-     * @param  string  $class
-     * @param  string  $method
-     * @return \Bin\Response\Response
      * @throws \Exception
-     * @static
      */
-    private static function doClassMethod(string $class, string $method): Response
+    private static function doClassMethod(string $action): Response
     {
-        $class = '\App\Controllers\\' . $class;
+        [$class, $method] = explode('@', $action);
+        $fullClass = '\App\Controllers\\' . $class;
 
-        return new Response(call_user_func_array([new $class, $method], app(Reflection::class)->getClassMethodParamInject($class, $method)));
+        $params = app(Reflection::class)->getClassMethodParamInject($fullClass, $method);
+        $instance = new $fullClass();
+
+        return new Response(call_user_func_array([$instance, $method], $params));
     }
 }
