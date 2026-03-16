@@ -22,17 +22,18 @@ abstract class Middleware
     abstract protected function handle(array $param);
 
     /**
-     *  调用入口
+     * 调用入口
      * @return mixed
      */
-    public function run(array $param)
+    public function run(array $param): mixed
     {
+        $result = $this->handle($param);
 
-        return $assert = $this->handle($param);
-
-        //todo 处理handle的返回值
-        if (true ===  $assert) {
-
+        // 返回 true 表示继续执行，其他值作为响应返回
+        if ($result === true) {
+            return true;
         }
+
+        return $result;
     }
 }

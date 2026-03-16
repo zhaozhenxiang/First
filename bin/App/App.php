@@ -4,19 +4,16 @@ declare(strict_types=1);
 
 namespace Bin\App;
 
-//好像没有什么作用
 use Bin\Facade\Request;
 use Bin\Response\Response;
 use Bin\Route\RouteCollection;
 
 class App
 {
-    //使用单例模式
-    private static self $instance;
-    //container
-    private static $container = [];
+    private static ?self $instance = null;
+    private static array $container = [];
 
-    //自定义ioc的key
+    // 自定义 ioc 的 key
     private static array $classMap = [
         'Request'  => \Bin\Request\Request::class,
         'Response' => Response::class,
@@ -31,21 +28,22 @@ class App
      * 获取自身
      * @return self
      */
-    public function getInstance(): self
+    public static function getInstance(): self
     {
-        if (self::$instance instanceof $this) {
-            return self::$instance;
+        if (self::$instance === null) {
+            self::$instance = new self();
         }
 
-        return self::$instance = new self;
+        return self::$instance;
     }
 
-    //facade
-    public static function facade($class)
+    /**
+     * Facade 加载
+     */
+    public static function facade(string $class): ?object
     {
-        //先判断是否已经加载了
         if (!isset(self::$facadeMap[$class])) {
-            return;
+            return null;
         }
 
         if (is_file(BASE_PATH . DIRECTORY_SEPARATOR . self::$classMap[$class] . '.php')) {
@@ -57,27 +55,24 @@ class App
     }
 
     /**
-     * 将给定的class加载到static中
-     * @param  string  $class
-     * @return mixed
+     * 将给定的 class 加载到 container 中
      * @throws \Exception
      */
-    public static function make(string $class): mixed
+    public static function make(string $class): object
     {
-        //先判断是否已经加载了
         if (isset(self::$container[$class])) {
             return self::$container[$class];
         }
 
         $instance = self::loadClass($class);
 
-        if (null !== $instance) {
-            //查找是否有mapping
+        if ($instance !== null) {
+            // 查找是否有 mapping
             $mapping = array_filter(self::$classMap, function ($v) use ($class) {
                 return $class === $v;
             });
 
-            //设置别名
+            // 设置别名
             foreach ($mapping as $key => $val) {
                 self::$container[$key] = $instance;
             }
@@ -88,26 +83,10 @@ class App
         throw new \Exception('make none');
     }
 
-    /*    PRIVATE static function findClass($class)
-        {
-            //使用map
-            //todo 这种信息是否应该放在composer中
-            if (isset(self::$classMap[$class])) {
-    //            require_once BASE_PATH . DIRECTORY_SEPARATOR . self::$classMap[$class] . '.php';
-                return class_alias(self::$classMap[$class], $class, true, true);
-            }
-
-            is_file(BASE_PATH . DIRECTORY_SEPARATOR . $class) && require_once BASE_PATH . DIRECTORY_SEPARATOR . $class . '.php';
-
-        }*/
-
     /**
-     *  加载一个类
-     * todo 以后用到反射
-     * @param $class
-     * @return mixed
+     * 加载一个类
      */
-    private static function loadClass($class): mixed
+    private static function loadClass(string $class): ?object
     {
         $classPath = str_replace('\\', DIRECTORY_SEPARATOR, $class);
         $classPath = lcfirst($classPath);

@@ -8,123 +8,91 @@ use Bin\App\App;
 use Bin\Request\Request;
 use Exception;
 
-class RouteCollection /*implements \Iterator*/
+class RouteCollection
 {
-    //使用单例模式
-    private static $instance;
+    private static ?self $instance = null;
+    /** @var Route[] */
     private static array $route = [];
+    /** @var array<string, Route> 静态路由索引 'METHOD:/path' => Route */
+    private static array $staticRoutes = [];
+    /** @var Route[] 动态路由（带参数） */
+    private static array $dynamicRoutes = [];
     private static array $method = [
         'get',
         'post',
     ];
 
-    private static $routeIndex = null;
-
-    public function __construct()
+    private function __construct()
     {
-        // if (self::$instance instanceof $this) {
-        // return self::$instance;
-        // }
-
     }
 
-    //    public function current()
-    //    {
-    //
-    //    }
-    //
-    //    public function next()
-    //    {
-    //
-    //    }
-    //
-    //    public function key()
-    //    {
-    //
-    //    }
-    //
-    //    public function valid()
-    //    {
-    //
-    //    }
-    //
-    //    public function rewind()
-    //    {
-    //
-    //    }
-
     /**
-     *  获取匹配到的路由
-     * @return \Bin\Route\Route|null
+     * 获取匹配到的路由
      * @throws \Exception
      */
-    public static function getRoute(): ?Route
+    public static function getRoute(): Route
     {
         $path = getUrl();
-        $method = getMethod();
+        $method = strtoupper(getMethod());
 
         return self::match($method, $path);
     }
 
     /**
-     * 匹配路由
-     * @param  string  $method
-     * @param  string  $path
-     * @return \Bin\Route\Route|null
+     * 匹配路由（优化版：静态路由 O(1)，动态路由遍历）
      * @throws \Exception
-     * @static
      */
-    private static function match(string $method, string $path): ?Route
+    private static function match(string $method, string $path): Route
     {
-        foreach (self::$route as $route) {
-            //if (false === self::$route instanceof self) {
-            //    continue;
-            //}
+        // 静态路由直接索引查找 O(1)
+        $key = $method . ':' . $path;
+        if (isset(self::$staticRoutes[$key])) {
+            return self::$staticRoutes[$key];
+        }
 
-            if ($route->getMethod() == $method && $route->getPath() === $path) {
+        // 动态路由遍历匹配
+        foreach (self::$dynamicRoutes as $route) {
+            if ($route->getMethod() === $method && $route->withSuccess($path)) {
                 return $route;
-            }
-
-            //判断是否存在preg
-            if (null !== $route->getPreg()) {
-                if ($route->withSuccess((App::make(Request::class)->getPath()))) {
-                    return $route;
-                }
             }
         }
 
-        throw new \Exception('ROUTE NO MATCH', 1);
-    }
-
-    /*    public function getInstance()
-        {
-            if (self::$instance instanceof $this) {
-                return self::$instance;
-            }
-
-            return new static;
-        }*/
-
-
-    private static function action($method, $path, $action)
-    {
-        //        $action = new Route(['method' => $method, 'path' => $path, 'action' => $action]);
-        $action = new Route($method, $path, $action);
-        array_push(self::$route, $action);
-
-        return $action;
+        throw new \Exception('ROUTE NO MATCH', 404);
     }
 
     /**
-     *  处理middle
-     * @param  array     $param
-     * @param  \Closure  $callback
+     * 判断路由是否为动态路由（包含参数占位符）
      */
-    public static function middle(array $param, \Closure $callback)
+    private static function isDynamicRoute(string $path): bool
     {
-        //先获取当前的路由个数，在获取之后的路由个数，然后给最后获取的路由处理一下
+        return str_contains($path, '{');
+    }
+
+    private static function action(string $method, string $path, mixed $action): Route
+    {
+        $method = strtoupper($method);
+        $route = new Route($method, $path, $action);
+
+        // 根据路由类型分类存储
+        if (self::isDynamicRoute($path)) {
+            self::$dynamicRoutes[] = $route;
+        } else {
+            self::$staticRoutes[$method . ':' . $path] = $route;
+        }
+
+        // 保持兼容性，仍然添加到主数组
+        self::$route[] = $route;
+
+        return $route;
+    }
+
+    /**
+     * 处理 middle
+     */
+    public static function middle(array $param, \Closure $callback): void
+    {
+        // 先获取当前的路由个数，在获取之后的路由个数，然后给最后获取的路由处理一下
         $currentRouteCount = count(self::$route);
-        //先获取本次的结果
         $callback();
         $nowRouteCount = count(self::$route);
 
@@ -134,33 +102,31 @@ class RouteCollection /*implements \Iterator*/
     }
 
     /**
-     *  处理多个get的router
+     * 处理多个 get 的路由
      * @param  array  $param
      */
-    public static function getArray(array $param)
+    public static function getArray(array $param): void
     {
         foreach ($param as $key => $item) {
             self::action('GET', $key, $item);
         }
     }
 
-    public static function __callStatic($method, $param)
+    public static function __callStatic(string $method, array $param): void
     {
-        if (!in_array(strtolower($method), self::$method)) {
+        if (!in_array(strtolower($method), self::$method, true)) {
             throw new Exception('REQUEST METHOD NOT MATCH', 1);
         }
 
-        //@todo 解析$param 。 这的param应该是array
-        //@todo 大概是可以这么解析吧
         self::action($method, $param[0], $param[1]);
     }
 
-    public static function get($path, $param)
+    public static function get(string $path, mixed $param): Route
     {
         return self::action('GET', $path, $param);
     }
 
-    public static function post($path, $param)
+    public static function post(string $path, mixed $param): Route
     {
         return self::action('POST', $path, $param);
     }

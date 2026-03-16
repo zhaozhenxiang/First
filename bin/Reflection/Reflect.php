@@ -6,49 +6,26 @@ namespace Bin\Reflection;
 
 trait Reflect
 {
-    //全部被反射的类的key value
-    private static $classInstance = [];
-    //全部被反射的类的key value
-    private static $classReflection = [];
-    //全部被反射的类的key value
-    private static $classMethod = [];
-    public function getDoc($class, $method)
-    {
-
-    }
-
-    public function getMethodParam($class, $method)
-    {
-
-    }
-
-    public function call($class, $method)
-    {
-
-    }
+    /** @var array<string, object> 全部被反射的类的实例 */
+    private static array $classInstance = [];
+    /** @var array<string, \ReflectionClass> 全部被反射的类的反射对象 */
+    private static array $classReflection = [];
+    /** @var array<string, array> 全部被反射的类的方法参数 */
+    private static array $classMethod = [];
 
     /**
-     *  根据class得到反射类
-     * @param $class
-     * @return null|\ReflectionClass
+     * 根据 class 得到反射类（带缓存）
      */
-    public function getAbstractReflectionClass($class)
+    public function getAbstractReflectionClass(string $class): ?\ReflectionClass
     {
-        //@todo 先在self::$class里面查找
-        $keys = array_keys(self::$classReflection);
-        $search = array_search($class, $keys, true);
-
-        if (false !== $search) {
-            return self::$class[$keys[$search]];
-        } else {
-            unset($keys);
-            unset($search);
+        // 先在缓存中查找
+        if (isset(self::$classReflection[$class])) {
+            return self::$classReflection[$class];
         }
 
-        //使用try
         try {
             $reflection = new \ReflectionClass($class);
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
             return null;
         }
 
@@ -57,42 +34,46 @@ trait Reflect
         return $reflection;
     }
 
-    /*
-     *  设置class的反射类
-     * @return void
+    /**
+     * 设置 class 的反射类
      */
-    private function setClassReflection($class, \ReflectionClass $classInstance = null)
+    private function setClassReflection(string $class, \ReflectionClass $reflection): void
     {
-        //如果之前有值会被更新
-        self::$classReflection[$class] = $classInstance;
-    }
-    /*
-     *  设置class的实例
-     * @return void
-     */
-    private function setClassInstance($class, $classInstance = null)
-    {
-        //如果之前有值会被更新
-        self::$classInstance[$class] = $classInstance;
+        self::$classReflection[$class] = $reflection;
     }
 
-    /*
-     *  设置class的实例
-     * @return void
+    /**
+     * 设置 class 的实例
      */
-    private function setClassMethod($class, $method = null, array $param = null)
+    private function setClassInstance(string $class, object $instance): void
     {
-        //如果之前有值会被更新
-        self::$classMethod[$class . $method] = (array)$param;
+        self::$classInstance[$class] = $instance;
     }
 
-    private function getMethodParamType(\ReflectionFunctionAbstract $abstract, $method)
+    /**
+     * 设置 class 的方法参数
+     */
+    private function setClassMethod(string $class, string $method, array $param): void
     {
-        //获取被反射函数的数据类型
+        self::$classMethod[$class . $method] = $param;
     }
 
-    private function getMethodParamMatch(array $paramType)
+    /**
+     * 获取缓存的方法参数
+     */
+    protected function getCachedMethodParam(string $class, string $method): ?array
     {
-        //根据函数参数来尽量配置参数
+        $key = $class . $method;
+        return self::$classMethod[$key] ?? null;
+    }
+
+    /**
+     * 清除反射缓存
+     */
+    public static function clearReflectionCache(): void
+    {
+        self::$classReflection = [];
+        self::$classMethod = [];
+        self::$classInstance = [];
     }
 }

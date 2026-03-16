@@ -12,72 +12,80 @@ class Reflection
     use Reflect;
 
     /**
-     *  得到class的method的param的参数的获取
-     * @param $class
-     * @param $method
-     * @return array
+     * 获取类方法的参数注入
      * @throws \Exception
      */
-    public function getClassMethodParamInject($class, $method)
+    public function getClassMethodParamInject(string $class, string $method): array
     {
-        //反射的类,查看该文件是否存在
+        // 检查缓存
+        $cached = $this->getCachedMethodParam($class, $method);
+        if ($cached !== null) {
+            return $cached;
+        }
+
         $reClass = $this->getAbstractReflectionClass($class);
+        if ($reClass === null) {
+            throw new \Exception("Class {$class} not found");
+        }
 
-        return $this->getParameter($reClass->getMethod($method)->getParameters());
-    }
+        $params = $this->getParameter($reClass->getMethod($method)->getParameters());
 
-    public function getCallBackParam(\Closure $f)
-    {
-        $ReflectionParameter = (new \ReflectionFunction($f))->getParameters();
-        return $this->getParameter($ReflectionParameter);
+        // 缓存结果
+        $this->setClassMethod($class, $method, $params);
+
+        return $params;
     }
 
     /**
-     *  处理反射的参数,每一个元素都是ReflectionParameter
-     * @param  array  $param
-     * @return array
+     * 获取闭包的参数
+     */
+    public function getCallBackParam(\Closure $closure): array
+    {
+        $parameters = (new \ReflectionFunction($closure))->getParameters();
+        return $this->getParameter($parameters);
+    }
+
+    /**
+     * 处理反射的参数
+     * @param  \ReflectionParameter[]  $parameters
      * @throws \Exception
      */
-    private function getParameter(array $param)
+    private function getParameter(array $parameters): array
     {
-        //todo 没有处理class的构造函数的参数
         $order = [];
         $nullCount = 0;
 
-        foreach ($param as $item) {
-            //没有找到该参数的类型=>null，表示该函数的参数类型是php内置类型
-            $tmp = $item->getClass();
+        foreach ($parameters as $parameter) {
+            $type = $parameter->getType();
 
-            if (null === $tmp) {
-                $nullCount ++;
+            if ($type === null || !$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                $nullCount++;
                 $order[] = null;
-                $tmp[] = null;
                 continue;
             }
 
-            $order[] = $tmp->getName();
+            $order[] = $type->getName();
         }
 
-        //拿到url中的数据
+        // 获取 URL 中的参数
         $urlParam = App::make(Request::class)->getUrlParam();
 
         if ($nullCount > count($urlParam)) {
             throw new \Exception('param is not enough');
         }
 
-        $param = [];
+        $params = [];
         $meetCount = 0;
 
-        foreach ($order as $iValue) {
-
-            if (null === $iValue) {
-                $param[] = $urlParam[$meetCount];
-                $meetCount ++;
+        foreach ($order as $className) {
+            if ($className === null) {
+                $params[] = $urlParam[$meetCount];
+                $meetCount++;
             } else {
-                $param[] = app($iValue);
+                $params[] = app($className);
             }
         }
 
-        return $param;
+        return $params;
     }
 }

@@ -11,11 +11,11 @@ class Route
 {
     private array $param = [];
 
-    public function __construct($method, $path, $action)
-    {
-        // if (self::$instance instanceof $this) {
-        // return self::$instance;
-        // }
+    public function __construct(
+        private string $method,
+        private string $path,
+        private mixed $action
+    ) {
         $this->param = [
             'method' => $method,
             'path' => $path,
@@ -24,19 +24,19 @@ class Route
     }
 
     /**
-     *  合并数据
+     * 合并数据
      * @param array $param
      */
-    private function mergeParam(array $param)
+    private function mergeParam(array $param): void
     {
         $this->param = array_merge($this->param, $param);
     }
 
     /**
-     *  为其中一项数据添加数据
+     * 为其中一项数据添加数据
      * @param array $param
      */
-    private function addParam($key, $param)
+    private function addParam(string $key, mixed $param): void
     {
         if (!isset($this->param[$key])) {
             $this->param[$key] = [];
@@ -46,125 +46,89 @@ class Route
     }
 
     /**
-     *  获取当前的url
-     * @return mixed
-     * @throws \Exception
+     * 获取当前的 url
      */
-    public function getPath()
+    public function getPath(): string
     {
         return $this->param['path'];
     }
 
     /**
-     *  获取当前的METHOD
-     * @return mixed
-     * @throws \Exception
+     * 获取当前的 METHOD
      */
-    public function getMethod()
+    public function getMethod(): string
     {
         return $this->param['method'];
     }
 
 
     /**
-     *  获取当前的action
-     * @return mixed
-     * @throws \Exception
+     * 获取当前的 action
      */
-    public function getAction()
+    public function getAction(): mixed
     {
         return $this->param['action'];
     }
 
 
     /**
-     *  获取当前的middle
-     * @return mixed
-     * @throws \Exception
+     * 获取当前的 middle
      */
-    public function getMiddle()
+    public function getMiddle(): ?array
     {
         return $this->param['middle'] ?? null;
     }
 
     /**
-     *  判断url是否满足正则
-     * @param $preg
-     * @return \Bin\Route\Route
+     * 判断 url 是否满足正则
+     * @param string $preg
+     * @return $this
      */
-    public function with($preg)
+    public function with(string $preg): self
     {
         $this->addParam('preg', $preg);
         return $this;
     }
 
     /**
-     *  设置middle
+     * 设置 middle
      * @param array $middle
      */
-    public function middle(array $middle)
+    public function middle(array $middle): void
     {
         $this->mergeParam(['middle' => $middle]);
     }
 
     /**
-     *  获取正则表达式
-     * @return null|string
+     * 获取正则表达式
      */
-    public function getPreg()
+    public function getPreg(): ?array
     {
         return $this->param['preg'] ?? null;
     }
     /**
-     *  判断url是否满足正则
-     *  $url string
-     * @param $url
-     * @return boolean
-     * @throws \Exception
+     * 判断 url 是否满足正则
+     * @param string $url
+     * @return bool
      */
-//    public function withSuccess($url)
-//    {
-//        //匹配url
-//        $prefixString = preg_replace('/\{.+\}/', '', $this->getPath());
-////        $prefixStringAy = explode('/', $prefixString);
-////        $prefixString = join('\/', $prefixStringAy);
-//        $string = preg_replace($prefixString, '', $url);
-//
-//        var_dump($this->getPath(), $prefixString, $url, $string, 125);
-//        if (1 > strlen($string)) {
-//            return false;
-//        }
-//        if ('/' == $string[0]) {
-//            $string = substr($string, 1, strlen($string) - 1);
-//        }
-//
-//        //todo url 模式匹配
-//        if (true == (preg_match('/^' . join('\/', $this->getPreg()) . '$/', $string, $out) > 0)) {
-//            \Bin\App\App::make(\Bin\Request\Request::class)->setUrlParam(explode('/', $out[0]));
-//            return true;
-//        }
-//
-//        return false;
-//    }
-
-    public function withSuccess($url)
+    public function withSuccess(string $url): bool
     {
-        //匹配url
+        // 匹配 url
         $prefixString = preg_replace('/\{.+\}/', '', $this->getPath());
         $prefixStringAy = explode('/', $prefixString);
-        //去掉掉一个空白元素
-        '' == $prefixStringAy[0] && array_shift($prefixStringAy);
+        // 去掉一个空白元素
+        '' === $prefixStringAy[0] && array_shift($prefixStringAy);
         $string = preg_replace('/' . join('\/', $prefixStringAy) . '[\/]?/', '', $url);
 
-        if (1 > strlen($string)) {
+        if (strlen($string) < 1) {
             return false;
         }
-        if ('/' == $string[0]) {
-            $string = substr($string, 1, strlen($string) - 1);
+        if ($string[0] === '/') {
+            $string = substr($string, 1);
         }
 
-        //todo url 模式匹配
-        if (true == (preg_match('/^' . join('\/', $this->getPreg()) . '$/', $string, $out) > 0)) {
+        // url 模式匹配
+        if (preg_match('/^' . join('\/', $this->getPreg()) . '$/', $string, $out) > 0) {
             App::make(Request::class)->setUrlParam(explode('/', $out[0]));
             return true;
         }
