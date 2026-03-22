@@ -1,0 +1,17 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * 快捷迁移命令脚本
+ *
+ * 用法:
+ * php migrate migrate              # 运行所有待执行的迁移
+ * php migrate rollback             # 回滚最后一次迁移
+ * php migrate reset                # 回滚所有迁移
+ * php migrate refresh              # 回滚并重新运行所有迁移
+ * php migrate fresh                # 删除所有表并重新运行迁移
+ * php migrate status               # 查看迁移状态
+ * php migrate make:xxxxx           # 创建迁移文件
+ */
+
+require_once __DIR__ . '/bin/Database/Migrations/MigrateCommand.php';

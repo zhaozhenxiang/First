@@ -156,7 +156,7 @@ class Logger
     /**
      * 写入日志
      */
-    private function write(string $record): void
+    protected function write(string $record): void
     {
         $logPath = BASE_PATH . '/storage/logs';
 

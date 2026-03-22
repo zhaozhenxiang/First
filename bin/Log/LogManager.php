@@ -76,4 +76,12 @@ class LogManager
     {
         self::$channels = [];
     }
+
+    /**
+     * 注册自定义 Logger 实例
+     */
+    public static function registerChannel(string $name, Logger $logger): void
+    {
+        self::$channels[$name] = $logger;
+    }
 }

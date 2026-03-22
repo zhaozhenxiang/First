@@ -560,7 +560,7 @@ class ClassLoader
      */
     private static function initializeIncludeClosure()
     {
-        if (null !== self::$includeFile) {
+        if (self::$includeFile !== null) {
             return;
         }
 

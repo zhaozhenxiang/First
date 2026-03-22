@@ -11,7 +11,7 @@ abstract class Model
 {
     private static $connection;
 
-    protected $table;
+    protected string $table;
     protected static $resultType;
 
     public function __construct()
@@ -60,7 +60,10 @@ abstract class Model
         return self::action($sql, $data);
     }
 
-    final public static function delete(string $sql, array $data): array
+    /**
+     * 执行删除 SQL（原始 SQL 方式）
+     */
+    final public static function deleteSql(string $sql, array $data): array
     {
         return self::action($sql, $data);
     }

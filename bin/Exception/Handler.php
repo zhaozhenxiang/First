@@ -286,7 +286,7 @@ class Handler
     /**
      * 注册自定义异常处理器
      */
-    public static function handle(string $exceptionClass, callable $handler): void
+    public static function extend(string $exceptionClass, callable $handler): void
     {
         self::$handlers[$exceptionClass] = $handler;
     }

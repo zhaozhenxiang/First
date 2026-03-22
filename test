@@ -1,0 +1,13 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * 快捷测试脚本
+ *
+ * 用法:
+ * php test                    # 运行所有测试
+ * php test --verbose          # 详细输出
+ * php test --stop-on-failure  # 失败时停止
+ */
+
+require_once __DIR__ . '/bin/Testing/TestCommand.php';
