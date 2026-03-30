@@ -101,6 +101,11 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     protected array $changes = [];
 
     /**
+     * 追加到数组/JSON 的计算属性
+     */
+    protected array $appends = [];
+
+    /**
      * 是否存在
      */
     public bool $exists = false;
@@ -124,6 +129,11 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      * 是否已引导（每个模型类独立）
      */
     protected static array $bootedModels = [];
+
+    /**
+     * 多态映射
+     */
+    protected static array $morphMap = [];
 
     /**
      * 引导模型
@@ -289,19 +299,41 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     }
 
     /**
-     * 静态调用转发到查询构建器
+     * 静态调用转发到查询构建器（优先检测本地作用域）
      */
     public static function __callStatic(string $method, array $parameters): mixed
     {
+        // 检查本地作用域：scope{Method}
+        $scopeMethod = 'scope' . ucfirst($method);
+        if (method_exists(static::class, $scopeMethod)) {
+            $query = static::query();
+            return static::newStatic()->$scopeMethod($query, ...$parameters);
+        }
+
         return static::query()->$method(...$parameters);
     }
 
     /**
-     * 动态调用转发到查询构建器
+     * 动态调用转发到查询构建器（优先检测本地作用域）
      */
     public function __call(string $method, array $parameters): mixed
     {
+        // 检查本地作用域：scope{Method}
+        $scopeMethod = 'scope' . ucfirst($method);
+        if (method_exists($this, $scopeMethod)) {
+            $query = static::query();
+            return $this->$scopeMethod($query, ...$parameters);
+        }
+
         return static::query()->$method(...$parameters);
+    }
+
+    /**
+     * 创建新的静态实例
+     */
+    protected static function newStatic(): static
+    {
+        return new static();
     }
 
     /**
@@ -315,7 +347,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     /**
      * 根据 ID 数组查找
      */
-    public static function findMany(array $ids): array
+    public static function findMany(array $ids): Collection
     {
         return static::query()->findMany($ids);
     }
@@ -343,9 +375,84 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     }
 
     /**
+     * 查找第一条匹配记录，不存在则创建
+     */
+    public static function firstOrCreate(array $attributes, array $values = []): self
+    {
+        $instance = static::where($attributes)->first();
+
+        if ($instance !== null) {
+            return $instance;
+        }
+
+        return static::create(array_merge($attributes, $values));
+    }
+
+    /**
+     * 查找第一条匹配记录，不存在则返回新实例（不保存）
+     */
+    public static function firstOrNew(array $attributes, array $values = []): self
+    {
+        $instance = static::where($attributes)->first();
+
+        if ($instance !== null) {
+            return $instance;
+        }
+
+        return new static(array_merge($attributes, $values));
+    }
+
+    /**
+     * 查找并更新，不存在则创建
+     */
+    public static function updateOrCreate(array $attributes, array $values = []): self
+    {
+        $instance = static::where($attributes)->first();
+
+        if ($instance !== null) {
+            $instance->fill($values)->save();
+            return $instance;
+        }
+
+        return static::create(array_merge($attributes, $values));
+    }
+
+    /**
+     * 通过单个列值查找第一条记录
+     */
+    public static function firstWhere(string $column, mixed $operator = null, mixed $value = null): mixed
+    {
+        return static::where($column, $operator, $value)->first();
+    }
+
+    /**
+     * 查找唯一匹配记录（0 或 >1 条时抛出异常）
+     */
+    public static function sole(array|string $columns = ['*']): self
+    {
+        $query = is_array($columns) ? static::query() : static::where($columns);
+
+        if (is_string($columns)) {
+            $query = static::query();
+        }
+
+        $results = $query->limit(2)->get();
+
+        if ($results->count() === 0) {
+            throw new InvalidArgumentException('No query results for model [' . static::class . ']');
+        }
+
+        if ($results->count() > 1) {
+            throw new InvalidArgumentException('Multiple query results for model [' . static::class . ']');
+        }
+
+        return $results->first();
+    }
+
+    /**
      * 获取所有记录
      */
-    public static function all(): array
+    public static function all(): Collection
     {
         return static::query()->get();
     }
@@ -483,6 +590,20 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public function getAttribute(string $key): mixed
     {
+        // 1. 检查 Attribute 类风格的访问器（如 name() 方法返回 Attribute）
+        $attribute = $this->getAttributeClassAccessor($key);
+        if ($attribute !== null && $attribute->get !== null) {
+            $value = $this->attributes[$key] ?? null;
+            return ($attribute->get)($value, $this->attributes);
+        }
+
+        // 2. 检查命名约定风格的访问器（如 getNameAttribute, getAvatarUrlAttribute）
+        $studlyKey = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $key)));
+        $accessor = 'get' . $studlyKey . 'Attribute';
+        if (method_exists($this, $accessor)) {
+            return $this->$accessor($this->attributes[$key] ?? null);
+        }
+
         if (!$this->hasAttribute($key)) {
             return null;
         }
@@ -498,10 +619,59 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     }
 
     /**
+     * 获取 Attribute 类风格的访问器
+     */
+    protected function getAttributeClassAccessor(string $key): ?Attribute
+    {
+        // snake_case 转为 camelCase：full_name → fullName
+        $method = lcfirst(str_replace('_', '', ucwords($key, '_')));
+
+        if (!method_exists($this, $method)) {
+            return null;
+        }
+
+        try {
+            // 使用反射检查返回类型
+            $reflection = new \ReflectionMethod($this, $method);
+
+            $returnType = $reflection->getReturnType();
+            if ($returnType === null || $returnType->getName() !== Attribute::class) {
+                return null;
+            }
+
+            return $this->$method();
+        } catch (\ReflectionException) {
+            return null;
+        }
+    }
+
+    /**
      * 设置属性
      */
     public function setAttribute(string $key, mixed $value): self
     {
+        // 1. 检查 Attribute 类风格的修改器
+        $attribute = $this->getAttributeClassAccessor($key);
+        if ($attribute !== null && $attribute->set !== null) {
+            $result = ($attribute->set)($value, $this->attributes);
+            // 修改器可以返回数组 [key => value] 来设置属性
+            if (is_array($result)) {
+                foreach ($result as $k => $v) {
+                    $this->attributes[$k] = $v;
+                }
+            } else {
+                $this->attributes[$key] = $result;
+            }
+            return $this;
+        }
+
+        // 2. 检查命名约定风格的修改器（如 setNameAttribute）
+        $mutator = 'set' . str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $key))) . 'Attribute';
+        if (method_exists($this, $mutator)) {
+            $this->$mutator($value);
+            return $this;
+        }
+
         // 检查是否可赋值
         if ($this->isGuarded($key)) {
             throw new InvalidArgumentException("Property [{$key}] is guarded");
@@ -884,7 +1054,37 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
             $array = array_intersect_key($array, array_flip($this->visible));
         }
 
+        // 追加计算属性
+        foreach ($this->appends as $key) {
+            $array[$key] = $this->getAttribute($key);
+        }
+
         return $array;
+    }
+
+    /**
+     * 追加计算属性到数组输出
+     */
+    public function append(string|array $attributes): self
+    {
+        $attributes = is_array($attributes) ? $attributes : func_get_args();
+
+        foreach ($attributes as $attribute) {
+            if (!in_array($attribute, $this->appends, true)) {
+                $this->appends[] = $attribute;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * 设置 appends 属性
+     */
+    public function setAppends(array $appends): self
+    {
+        $this->appends = $appends;
+        return $this;
     }
 
     /**
@@ -1230,6 +1430,161 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     }
 
     /**
+     * 定义 Has One Through 远层一对一关系
+     */
+    protected function hasOneThrough(
+        string $related,
+        string $through,
+        string $firstKey = null,
+        string $secondKey = null,
+        string $localKey = null,
+        string $secondLocalKey = null
+    ): \Bin\Database\Relations\HasOneThrough {
+        $relatedInstance = new $related();
+        $throughInstance = new $through();
+
+        $firstKey = $firstKey ?? $this->getForeignKey();
+        $secondKey = $secondKey ?? $throughInstance->getForeignKey();
+        $localKey = $localKey ?? $this->getKeyName();
+        $secondLocalKey = $secondLocalKey ?? $throughInstance->getKeyName();
+
+        $query = $relatedInstance->newQuery();
+
+        return new \Bin\Database\Relations\HasOneThrough(
+            $query, $this, $through, $firstKey, $secondKey, $localKey, $secondLocalKey
+        );
+    }
+
+    /**
+     * 定义 Has Many Through 远层一对多关系
+     */
+    protected function hasManyThrough(
+        string $related,
+        string $through,
+        string $firstKey = null,
+        string $secondKey = null,
+        string $localKey = null,
+        string $secondLocalKey = null
+    ): \Bin\Database\Relations\HasManyThrough {
+        $relatedInstance = new $related();
+        $throughInstance = new $through();
+
+        $firstKey = $firstKey ?? $this->getForeignKey();
+        $secondKey = $secondKey ?? $throughInstance->getForeignKey();
+        $localKey = $localKey ?? $this->getKeyName();
+        $secondLocalKey = $secondLocalKey ?? $throughInstance->getKeyName();
+
+        $query = $relatedInstance->newQuery();
+
+        return new \Bin\Database\Relations\HasManyThrough(
+            $query, $this, $through, $firstKey, $secondKey, $localKey, $secondLocalKey
+        );
+    }
+
+    /**
+     * 定义多态一对一关系
+     */
+    protected function morphOne(string $related, string $name, string $type = null, string $id = null, string $localKey = null): Relations\MorphOne
+    {
+        $instance = new $related();
+        $type = $type ?? $name . '_type';
+        $id = $id ?? $name . '_id';
+        $localKey = $localKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphOne(
+            $query, $this, $type, $id, $localKey
+        );
+    }
+
+    /**
+     * 定义多态一对多关系
+     */
+    protected function morphMany(string $related, string $name, string $type = null, string $id = null, string $localKey = null): Relations\MorphMany
+    {
+        $instance = new $related();
+        $type = $type ?? $name . '_type';
+        $id = $id ?? $name . '_id';
+        $localKey = $localKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphMany(
+            $query, $this, $type, $id, $localKey
+        );
+    }
+
+    /**
+     * 定义多态多对多关系
+     */
+    protected function morphToMany(
+        string $related,
+        string $name,
+        string $table = null,
+        string $foreignPivotKey = null,
+        string $relatedPivotKey = null,
+        string $parentKey = null,
+        string $relatedKey = null
+    ): Relations\MorphToMany {
+        $instance = new $related();
+        $table = $table ?? $name . 's';
+        $foreignPivotKey = $foreignPivotKey ?? $name . '_id';
+        $relatedPivotKey = $relatedPivotKey ?? $instance->getForeignKey();
+        $parentKey = $parentKey ?? $this->getKeyName();
+        $relatedKey = $relatedKey ?? $instance->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphToMany(
+            $query, $this, $name, $table, $foreignPivotKey, $relatedPivotKey, $parentKey, $relatedKey
+        );
+    }
+
+    /**
+     * 定义多态逆向关系（MorphTo）
+     */
+    protected function morphTo(?string $name = null, ?string $type = null, ?string $id = null): Relations\MorphTo
+    {
+        if ($name === null) {
+            $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2)[1];
+            $name = $caller['function'];
+        }
+
+        $type = $type ?? $name . '_type';
+        $id = $id ?? $name . '_id';
+
+        return new Relations\MorphTo(static::query(), $this, $type, $id, 'id', $name);
+    }
+
+    /**
+     * 定义多态多对多反向关系
+     */
+    protected function morphedByMany(
+        string $related,
+        string $name,
+        string $table = null,
+        string $foreignPivotKey = null,
+        string $relatedPivotKey = null,
+        string $parentKey = null,
+        string $relatedKey = null
+    ): Relations\MorphToMany {
+        $instance = new $related();
+        $table = $table ?? $name . 's';
+        $foreignPivotKey = $foreignPivotKey ?? $instance->getForeignKey();
+        $relatedPivotKey = $relatedPivotKey ?? $name . '_id';
+        $parentKey = $parentKey ?? $instance->getKeyName();
+        $relatedKey = $relatedKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphToMany(
+            $query, $this, $name, $table, $foreignPivotKey, $relatedPivotKey, $parentKey, $relatedKey,
+            true
+        );
+    }
+
+    /**
      * 获取外键名
      */
     protected function getForeignKey(): string
@@ -1268,6 +1623,102 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     protected function newQuery(): QueryBuilder
     {
         return static::query();
+    }
+
+    /**
+     * 根据 ID 删除模型
+     */
+    public static function destroy(Collection|array|int|string $ids): int
+    {
+        $ids = $ids instanceof Collection ? $ids->toArray() : (is_array($ids) ? $ids : func_get_args());
+
+        $count = 0;
+
+        foreach ($ids as $id) {
+            $model = static::find((int) $id);
+
+            if ($model !== null && $model->delete()) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * 注册模型观察者
+     */
+    public static function observe(object|string $class): void
+    {
+        $instance = is_object($class) ? $class : new $class();
+
+        foreach (Observer::EVENTS as $event) {
+            if (method_exists($instance, $event)) {
+                ModelEventDispatcher::listen(static::class . '@' . $event, fn(Model $model) => $instance->$event($model));
+            }
+        }
+    }
+
+    /**
+     * 在不触发事件的情况下执行回调
+     */
+    public static function withoutEvents(callable $callback): mixed
+    {
+        $listeners = ModelEventDispatcher::getListeners();
+
+        try {
+            ModelEventDispatcher::forgetAll();
+
+            return $callback();
+        } finally {
+            $ref = new \ReflectionProperty(ModelEventDispatcher::class, 'listeners');
+            $ref->setAccessible(true);
+            $ref->setValue(null, $listeners);
+        }
+    }
+
+    /**
+     * 延迟加载关系计数
+     */
+    public function loadCount(string|array $relations): self
+    {
+        $relations = is_array($relations) ? $relations : func_get_args();
+
+        foreach ($relations as $relation) {
+            $relationObj = $this->{$relation}();
+            $count = $relationObj->getQuery()->count();
+            $this->setAttribute("{$relation}_count", $count);
+        }
+
+        return $this;
+    }
+
+    /**
+     * 延迟加载关系聚合
+     */
+    public function loadSum(string $relation, string $column): self
+    {
+        $relationObj = $this->{$relation}();
+        $sum = $relationObj->getQuery()->sum($column);
+        $this->setAttribute("{$relation}_{$column}_sum", $sum);
+
+        return $this;
+    }
+
+    /**
+     * 获取多态映射
+     */
+    public static function getMorphMap(): array
+    {
+        return static::$morphMap;
+    }
+
+    /**
+     * 设置多态映射
+     */
+    public static function enforceMorphMap(array $map): void
+    {
+        static::$morphMap = $map;
     }
 
     /**

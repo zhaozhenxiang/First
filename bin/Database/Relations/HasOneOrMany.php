@@ -46,7 +46,7 @@ abstract class HasOneOrMany extends Relation
     /**
      * 添加渴望加载约束
      */
-    protected function addEagerConstraints(array $models): void
+    public function addEagerConstraints(array $models): void
     {
         $keys = $this->getKeys($models, $this->localKey);
 
@@ -103,5 +103,18 @@ abstract class HasOneOrMany extends Relation
     public function getForeignKeyName(): string
     {
         return $this->foreignKey;
+    }
+
+    /**
+     * 保存多个模型到关系
+     */
+    public function saveMany(array $models): array
+    {
+        foreach ($models as $model) {
+            $model->setAttribute($this->foreignKey, $this->parent->getKey());
+            $model->save();
+        }
+
+        return $models;
     }
 }

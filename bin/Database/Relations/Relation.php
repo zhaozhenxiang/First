@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bin\Database\Relations;
 
+use Bin\Database\Collection;
 use Bin\Database\Model;
 use Bin\Database\QueryBuilder;
 
@@ -44,7 +45,10 @@ abstract class Relation
     {
         $this->query = $query;
         $this->parent = $parent;
-        $this->addConstraints();
+
+        if (static::$constraintsEnabled) {
+            $this->addConstraints();
+        }
     }
 
     /**
@@ -55,7 +59,7 @@ abstract class Relation
     /**
      * 添加渴望加载约束
      */
-    abstract protected function addEagerConstraints(array $models): void;
+    abstract public function addEagerConstraints(array $models): void;
 
     /**
      * 获取关系结果
@@ -115,18 +119,31 @@ abstract class Relation
     }
 
     /**
-     * 创建约束
+     * 无约束创建关系对象（静态调用）
      */
-    protected static function noConstraints(callable $callback): mixed
+    public static function noConstraints(callable $callback): mixed
     {
-        $relation = $callback();
+        // 临时设置静态标志
+        static::$constraintsEnabled = false;
 
-        if ($relation instanceof self) {
-            $relation->query = clone $relation->query;
-            $relation->constraints = false;
+        try {
+            return $callback();
+        } finally {
+            static::$constraintsEnabled = true;
         }
+    }
 
-        return $relation;
+    /**
+     * @var bool 是否启用约束（默认 true）
+     */
+    protected static bool $constraintsEnabled = true;
+
+    /**
+     * 检查约束是否启用
+     */
+    public static function isConstraintsEnabled(): bool
+    {
+        return static::$constraintsEnabled;
     }
 
     /**
@@ -134,7 +151,13 @@ abstract class Relation
      */
     public function getEager(): mixed
     {
-        return $this->get();
+        $result = $this->get();
+
+        if ($result instanceof Collection) {
+            return $result->toArray();
+        }
+
+        return $result;
     }
 
     /**

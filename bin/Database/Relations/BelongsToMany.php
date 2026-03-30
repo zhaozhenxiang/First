@@ -64,9 +64,20 @@ class BelongsToMany extends Relation
         $this->relatedKey = $relatedKey;
         $this->foreignPivotKey = $foreignPivotKey;
         $this->relatedPivotKey = $relatedPivotKey;
+        $this->related = $query->getModelClass();
 
         parent::__construct($query, $parent);
     }
+
+    /**
+     * 是否使用时间戳
+     */
+    protected bool $withTimestamps = false;
+
+    /**
+     * 自定义 Pivot 模型类
+     */
+    protected ?string $pivotClass = null;
 
     /**
      * 添加约束
@@ -85,7 +96,8 @@ class BelongsToMany extends Relation
      */
     protected function performJoin(): void
     {
-        $relatedTable = $this->related::getTable();
+        $relatedInstance = new $this->related();
+        $relatedTable = $relatedInstance->getTable();
 
         $this->query->join(
             $this->table,
@@ -98,7 +110,7 @@ class BelongsToMany extends Relation
     /**
      * 添加渴望加载约束
      */
-    protected function addEagerConstraints(array $models): void
+    public function addEagerConstraints(array $models): void
     {
         $keys = $this->getKeys($models, $this->parentKey);
 
@@ -124,9 +136,69 @@ class BelongsToMany extends Relation
     /**
      * 获取结果
      */
-    public function getResults(): array
+    public function getResults(): mixed
     {
-        return $this->query->get();
+        $this->selectPivotColumns();
+
+        $results = $this->query->get();
+
+        return $this->hydratePivot($results);
+    }
+
+    /**
+     * 执行查询（覆盖基类以支持 pivot 列选择和水合）
+     */
+    public function get(): mixed
+    {
+        return $this->getResults();
+    }
+
+    /**
+     * 选择 pivot 列
+     */
+    protected function selectPivotColumns(): void
+    {
+        $columns = array_merge(
+            [$this->foreignPivotKey, $this->relatedPivotKey],
+            $this->pivotColumns
+        );
+
+        foreach ($columns as $column) {
+            $this->query->selectRaw("{$this->table}.{$column} as pivot_{$column}");
+        }
+    }
+
+    /**
+     * 水合 pivot 属性到模型
+     */
+    protected function hydratePivot($results): mixed
+    {
+        foreach ($results as $result) {
+            $pivotAttributes = [];
+
+            foreach ($result->getAttributes() as $key => $value) {
+                if (str_starts_with($key, 'pivot_')) {
+                    $pivotAttributes[substr($key, 6)] = $value;
+                }
+            }
+
+            // 移除 pivot_ 前缀属性
+            $cleanAttributes = array_filter(
+                $result->getAttributes(),
+                fn($key) => !str_starts_with($key, 'pivot_'),
+                ARRAY_FILTER_USE_KEY
+            );
+            $result->setRawAttributes($cleanAttributes);
+
+            // 设置 pivot 对象
+            $pivot = new \stdClass();
+            foreach ($pivotAttributes as $key => $value) {
+                $pivot->$key = $value;
+            }
+            $result->setRelation('pivot', $pivot);
+        }
+
+        return $results;
     }
 
     /**
@@ -192,6 +264,26 @@ class BelongsToMany extends Relation
     }
 
     /**
+     * 使用时间戳
+     */
+    public function withTimestamps(): self
+    {
+        $this->withTimestamps = true;
+
+        return $this->withPivot(['created_at', 'updated_at']);
+    }
+
+    /**
+     * 指定自定义 Pivot 模型类
+     */
+    public function using(string $class): self
+    {
+        $this->pivotClass = $class;
+
+        return $this;
+    }
+
+    /**
      * 附加模型到关系
      */
     public function attach(int $id, array $pivotData = []): bool
@@ -237,9 +329,7 @@ class BelongsToMany extends Relation
     public function sync(array $ids): array
     {
         $current = $this->newPivotQuery()
-            ->whereIn($this->relatedPivotKey, $ids)
-            ->pluck($this->relatedPivotKey)
-            ->toArray();
+            ->pluck($this->relatedPivotKey);
 
         $detach = array_diff($current, $ids);
         $attach = array_diff($ids, $current);

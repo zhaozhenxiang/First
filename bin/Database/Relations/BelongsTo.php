@@ -51,7 +51,7 @@ class BelongsTo extends Relation
     /**
      * 添加渴望加载约束
      */
-    protected function addEagerConstraints(array $models): void
+    public function addEagerConstraints(array $models): void
     {
         $keys = $this->getKeys($models, $this->foreignKey);
 

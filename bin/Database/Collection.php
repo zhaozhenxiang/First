@@ -129,6 +129,14 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     }
 
     /**
+     * 弹出最后一个元素
+     */
+    public function pop(): mixed
+    {
+        return array_pop($this->items);
+    }
+
+    /**
      * Map 遍历
      */
     public function map(callable $callback): array

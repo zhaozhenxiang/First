@@ -318,7 +318,7 @@ abstract class TestCase
     /**
      * 断言 - 数组长度
      */
-    protected function assertCount(int $expectedCount, array|Countable $array, string $message = ''): void
+    protected function assertCount(int $expectedCount, array|\Countable $array, string $message = ''): void
     {
         $actualCount = count($array);
 
@@ -394,6 +394,18 @@ abstract class TestCase
         if (!str_contains($haystack, $needle)) {
             $this->fail(
                 $message ?: "Failed asserting that string contains " . $this->formatValue($needle)
+            );
+        }
+    }
+
+    /**
+     * 断言 - 字符串不包含
+     */
+    protected function assertStringNotContainsString(string $needle, string $haystack, string $message = ''): void
+    {
+        if (str_contains($haystack, $needle)) {
+            $this->fail(
+                $message ?: "Failed asserting that string does not contain " . $this->formatValue($needle)
             );
         }
     }
