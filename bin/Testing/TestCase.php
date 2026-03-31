@@ -22,6 +22,11 @@ abstract class TestCase
     protected array $afterEachCallbacks = [];
 
     /**
+     * @var Mock[] 已创建的 Mock 对象，测试结束后自动 verify
+     */
+    protected array $createdMocks = [];
+
+    /**
      * 测试开始前执行
      */
     protected function setUp(): void
@@ -105,6 +110,11 @@ abstract class TestCase
             // 执行 afterEach 回调
             foreach ($this->afterEachCallbacks as $callback) {
                 $callback($this);
+            }
+
+            // 自动验证所有 Mock
+            foreach ($this->createdMocks as $mock) {
+                $mock->verify();
             }
         }
 
@@ -575,7 +585,9 @@ abstract class TestCase
      */
     protected function mock(string $class): Mock
     {
-        return new Mock($class);
+        $mock = new Mock($class);
+        $this->createdMocks[] = $mock;
+        return $mock;
     }
 
     /**
@@ -583,7 +595,9 @@ abstract class TestCase
      */
     protected function partialMock(string $class, array $methods = []): Mock
     {
-        return new Mock($class, $methods);
+        $mock = new Mock($class, $methods, true);
+        $this->createdMocks[] = $mock;
+        return $mock;
     }
 
     /**
@@ -593,6 +607,7 @@ abstract class TestCase
     {
         $mock = new Mock($class);
         $mock->shouldIgnoreMissing();
+        $this->createdMocks[] = $mock;
         return $mock;
     }
 }

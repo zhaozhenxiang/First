@@ -170,4 +170,12 @@ class MethodExpectation
     {
         return $this->method;
     }
+
+    /**
+     * 获取 with() 期望参数
+     */
+    public function getWithArgs(): array
+    {
+        return $this->withArgs;
+    }
 }

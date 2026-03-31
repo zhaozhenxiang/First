@@ -192,6 +192,10 @@ class TestCommand
 
         $runner->setPattern($this->pattern);
 
+        if ($this->filter !== null) {
+            $runner->setFilter($this->filter);
+        }
+
         $summary = $runner->run();
 
         $summary->output();

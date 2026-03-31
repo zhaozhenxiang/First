@@ -29,6 +29,8 @@ class TestRunner
 
     protected int $incomplete = 0;
 
+    protected ?string $filter = null;
+
     protected float $startTime;
 
     protected float $duration = 0;
@@ -163,8 +165,17 @@ class TestRunner
 
         $methods = $suite->getTestMethods();
 
+        // 应用 filter 过滤
+        if ($this->filter !== null) {
+            $methods = array_filter($methods, fn(string $m) => str_contains($m, $this->filter));
+        }
+
         if ($this->verbose) {
             echo "\n{$className}\n";
+        }
+
+        if (empty($methods)) {
+            return;
         }
 
         foreach ($methods as $method) {
@@ -190,8 +201,7 @@ class TestRunner
     {
         $instance = clone $suite;
 
-        $result = $instance->runTest($method);
-        $result->start();
+        $startTime = microtime(true);
 
         try {
             $result = $instance->runTest($method);
@@ -211,6 +221,10 @@ class TestRunner
             return;
         }
 
+        // 注入计时信息到 TestResult
+        $ref = new \ReflectionProperty($result, 'startTime');
+        $ref->setAccessible(true);
+        $ref->setValue($result, $startTime);
         $result->stop();
 
         $this->results[] = $result;
@@ -287,6 +301,15 @@ class TestRunner
     public function setPattern(string $pattern): self
     {
         $this->pattern = $pattern;
+        return $this;
+    }
+
+    /**
+     * 设置过滤
+     */
+    public function setFilter(string $filter): self
+    {
+        $this->filter = $filter;
         return $this;
     }
 

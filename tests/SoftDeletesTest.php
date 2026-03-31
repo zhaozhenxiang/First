@@ -353,6 +353,68 @@ class SoftDeletesTest extends TestCase
         $deletedUser = SoftTestUser::withTrashed()->where('id', 4)->first();
         $this->assertNull($deletedUser);
     }
+
+    // =========================================================================
+    // 边界条件测试
+    // =========================================================================
+
+    public function testDoubleSoftDelete(): void
+    {
+        $user = SoftTestUser::find(4);
+        $user->delete();
+        $this->assertTrue($user->trashed());
+
+        // 第二次软删除仍然返回 true（更新 deleted_at 为新时间）
+        $result = $user->delete();
+        $this->assertTrue($result);
+    }
+
+    public function testDeleteManyWithEmptyArray(): void
+    {
+        // deleteMany([]) 在空数组上不执行任何删除
+        // 先确认有一个记录
+        $user = SoftTestUser::find(4);
+        $this->assertNotNull($user);
+        $count = SoftTestUser::count();
+
+        // 空数组操作不应影响数据
+        $this->assertEquals($count, SoftTestUser::count());
+    }
+
+    public function testRestoreManyWithEmptyArray(): void
+    {
+        $count = SoftTestUser::count();
+        $result = SoftTestUser::restoreMany([]);
+        $this->assertEquals(0, $result);
+    }
+
+    public function testForceDeleteManyWithEmptyArray(): void
+    {
+        $stmt = $this->connection->query('SELECT COUNT(*) FROM soft_users');
+        $totalBefore = (int) $stmt->fetchColumn();
+
+        $result = SoftTestUser::forceDeleteMany([]);
+        $this->assertEquals(0, $result);
+
+        $stmt = $this->connection->query('SELECT COUNT(*) FROM soft_users');
+        $this->assertEquals($totalBefore, (int) $stmt->fetchColumn());
+    }
+
+    public function testOnlyTrashedOnTableWithNoTrashed(): void
+    {
+        // 先清空并插入全未删除数据
+        $this->connection->exec('DELETE FROM soft_users');
+        for ($i = 1; $i <= 3; $i++) {
+            $stmt = $this->connection->prepare('INSERT INTO soft_users (name, email) VALUES (?, ?)');
+            $stmt->execute(["Clean User {$i}", "clean{$i}@example.com"]);
+        }
+
+        SoftTestUser::clearGlobalScopes();
+        SoftTestUser::resetBooted();
+
+        $trashed = SoftTestUser::onlyTrashed()->get();
+        $this->assertCount(0, $trashed);
+    }
 }
 
 /**

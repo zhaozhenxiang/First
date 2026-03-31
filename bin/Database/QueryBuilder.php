@@ -6,6 +6,7 @@ namespace Bin\Database;
 
 use Bin\Database\Model;
 use Bin\Database\Relations\Relation;
+use InvalidArgumentException;
 use PDO;
 use PDOStatement;
 

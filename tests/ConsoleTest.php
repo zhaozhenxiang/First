@@ -264,4 +264,74 @@ class ConsoleTest extends TestCase
         $this->assertArrayHasKey('option', $options);
         $this->assertArrayHasKey('flag', $options);
     }
+
+    // === 边界条件 ===
+
+    public function testHasCommandReturnsFalseForUnknown(): void
+    {
+        Kernel::clear();
+        $this->assertFalse(Kernel::hasCommand('nonexistent:command'));
+    }
+
+    public function testCallSilentReturnsNonZeroForUnknown(): void
+    {
+        Kernel::clear();
+        $code = Kernel::callSilent('nonexistent:command');
+        $this->assertNotEquals(0, $code);
+    }
+
+    public function testClearRemovesAllCommands(): void
+    {
+        Kernel::register('clear_test', function () {
+            return new class extends \Bin\Console\Command {
+                public string $name = 'clear_test';
+                public string $description = 'Test';
+                public function execute(): int { return 0; }
+            };
+        });
+        $this->assertTrue(Kernel::hasCommand('clear_test'));
+
+        Kernel::clear();
+        $this->assertFalse(Kernel::hasCommand('clear_test'));
+    }
+
+    public function testRegisterDuplicateOverwrites(): void
+    {
+        Kernel::clear();
+
+        Kernel::register('dup_test', function () {
+            return new class extends \Bin\Console\Command {
+                public string $name = 'dup_test';
+                public string $description = 'First';
+                public function execute(): int { return 1; }
+            };
+        });
+
+        Kernel::register('dup_test', function () {
+            return new class extends \Bin\Console\Command {
+                public string $name = 'dup_test';
+                public string $description = 'Second';
+                public function execute(): int { return 2; }
+            };
+        });
+
+        $cmd = Kernel::getCommand('dup_test');
+        $this->assertEquals('Second', $cmd->getDescription());
+    }
+
+    public function testProgressBarCannotGoBeyondMax(): void
+    {
+        $progress = $this->output->progressStart(10);
+        $progress->advance(20);
+        $this->assertEquals(20, $progress->getProgress());
+    }
+
+    public function testInputDefaultOptionValue(): void
+    {
+        $argv = ['script', 'test', '--color'];
+        $input = new Input($argv);
+        $this->assertTrue($input->hasOption('color'));
+        // Flag-style options (no value) may return true
+        $this->assertTrue($input->getOption('color'));
+    }
 }

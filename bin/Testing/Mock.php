@@ -22,12 +22,15 @@ class Mock
 
     protected bool $ignoreMissing = false;
 
+    protected bool $isPartial = false;
+
     protected mixed $mockObject = null;
 
-    public function __construct(string $class, array $methods = [])
+    public function __construct(string $class, array $methods = [], bool $isPartial = false)
     {
         $this->class = $class;
         $this->mockedMethods = $methods;
+        $this->isPartial = $isPartial;
     }
 
     /**
@@ -117,19 +120,31 @@ class Mock
     protected function createMockInstance(): object
     {
         $mock = $this;
-
         $className = $this->class;
+        $isPartial = $this->isPartial;
 
-        // 使用匿名类创建模拟对象
-        $this->mockObject = new class($mock, $className) {
+        // partialMock: 创建真实实例用于代理调用
+        $realInstance = null;
+        if ($isPartial) {
+            try {
+                $realInstance = new $className();
+            } catch (\Throwable $e) {
+                $realInstance = null;
+            }
+        }
+
+        $this->mockObject = new class($mock, $className, $isPartial, $realInstance) {
             protected Mock $mockBuilder;
-
             protected string $originalClass;
+            protected bool $isPartial;
+            protected ?object $realInstance;
 
-            public function __construct(Mock $mockBuilder, string $originalClass)
+            public function __construct(Mock $mockBuilder, string $originalClass, bool $isPartial, ?object $realInstance)
             {
                 $this->mockBuilder = $mockBuilder;
                 $this->originalClass = $originalClass;
+                $this->isPartial = $isPartial;
+                $this->realInstance = $realInstance;
             }
 
             public function __call(string $method, array $args)
@@ -137,10 +152,20 @@ class Mock
                 $this->mockBuilder->recordCall($method, $args);
 
                 // 检查是否有期望
-                $expectations = $this->mockBuilder->expectations[$method] ?? [];
+                $expectations = $this->mockBuilder->getExpectations($method);
 
                 if (!empty($expectations)) {
                     $expectation = $expectations[0];
+
+                    // 验证 with() 参数
+                    $expectedArgs = $expectation->getWithArgs();
+                    if (!empty($expectedArgs) && $expectedArgs !== $args) {
+                        throw new Exception(
+                            "Method {$method} called with unexpected arguments.\n" .
+                            "Expected: " . json_encode($expectedArgs) . "\n" .
+                            "Actual: " . json_encode($args)
+                        );
+                    }
 
                     if ($expectation->getReturnCallback() !== null) {
                         return call_user_func_array($expectation->getReturnCallback(), $args);
@@ -149,8 +174,13 @@ class Mock
                     return $expectation->getReturnValue();
                 }
 
+                // partialMock: 代理到真实实例
+                if ($this->isPartial && $this->realInstance !== null && method_exists($this->realInstance, $method)) {
+                    return call_user_func_array([$this->realInstance, $method], $args);
+                }
+
                 // 如果忽略缺失方法，返回 null
-                if ($this->mockBuilder->ignoreMissing) {
+                if ($this->mockBuilder->shouldIgnoreMissing()) {
                     return null;
                 }
 
@@ -159,6 +189,22 @@ class Mock
         };
 
         return $this->mockObject;
+    }
+
+    /**
+     * 获取指定方法的期望列表
+     */
+    public function getExpectations(string $method): array
+    {
+        return $this->expectations[$method] ?? [];
+    }
+
+    /**
+     * 是否忽略缺失方法
+     */
+    public function shouldIgnoreMissing(): bool
+    {
+        return $this->ignoreMissing;
     }
 
     /**
