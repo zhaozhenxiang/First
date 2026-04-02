@@ -4,8 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a custom PHP web framework inspired by Laravel, built with PHP 8.3+. The framework implements core MVC patterns with IoC/DI containers, routing, middleware, and database abstraction.
-
+This is a custom PHP8.5 web framework inspired by Laravel, built with PHP 8.3+. The framework implements core MVC patterns with IoC/DI containers, routing, middleware, and database abstraction. 
 ## Architecture
 
 ### Entry Point

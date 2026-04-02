@@ -6,6 +6,83 @@ use Bin\App\App;
 use Bin\Log\LogManager;
 use Bin\Validation\Validator;
 
+if (!function_exists('data_get')) {
+    /**
+     * 使用点号语法从嵌套数组中获取值
+     *
+     * @param array $data 数据数组
+     * @param string|null $key 点号分隔的键名（如 'user.name'），null 返回整个数组
+     * @param mixed $default 默认值
+     */
+    function data_get(array $data, ?string $key, mixed $default = null): mixed
+    {
+        if ($key === null || $key === '') {
+            return $data;
+        }
+
+        $segments = explode('.', $key);
+        $value = $data;
+
+        foreach ($segments as $segment) {
+            if (!is_array($value) || !array_key_exists($segment, $value)) {
+                return $default;
+            }
+            $value = $value[$segment];
+        }
+
+        return $value;
+    }
+}
+
+if (!function_exists('data_set')) {
+    /**
+     * 使用点号语法设置嵌套数组的值
+     *
+     * @param array $data 数据数组（引用传递）
+     * @param string $key 点号分隔的键名
+     * @param mixed $value 要设置的值
+     */
+    function data_set(array &$data, string $key, mixed $value): void
+    {
+        $segments = explode('.', $key);
+        $current = &$data;
+
+        foreach ($segments as $i => $segment) {
+            if ($i === count($segments) - 1) {
+                $current[$segment] = $value;
+            } else {
+                if (!isset($current[$segment]) || !is_array($current[$segment])) {
+                    $current[$segment] = [];
+                }
+                $current = &$current[$segment];
+            }
+        }
+    }
+}
+
+if (!function_exists('data_has')) {
+    /**
+     * 使用点号语法检查嵌套数组中键是否存在（区分"不存在"和"值为 null"）
+     *
+     * @param array $data 数据数组
+     * @param string $key 点号分隔的键名
+     */
+    function data_has(array $data, string $key): bool
+    {
+        $segments = explode('.', $key);
+        $current = $data;
+
+        foreach ($segments as $segment) {
+            if (!is_array($current) || !array_key_exists($segment, $current)) {
+                return false;
+            }
+            $current = $current[$segment];
+        }
+
+        return true;
+    }
+}
+
 if (!function_exists('getUrl')) {
     /**
      * 获取请求 URI
