@@ -36,6 +36,7 @@ class App implements ContainerInterface
         'route'    => RouteCollection::class,
         'app'      => self::class,
         'container' => Container::class,
+        'events'   => \Bin\Events\EventDispatcher::class,
     ];
 
     /**
@@ -43,6 +44,7 @@ class App implements ContainerInterface
      */
     private static array $facades = [
         'Request' => \Bin\Facade\Request::class,
+        'Event' => \Bin\Facade\Event::class,
     ];
 
     /**
@@ -52,6 +54,7 @@ class App implements ContainerInterface
         \Bin\Providers\RequestServiceProvider::class,
         \Bin\Providers\ResponseServiceProvider::class,
         \Bin\Providers\RoutingServiceProvider::class,
+        \Bin\Providers\EventServiceProvider::class,
         \Bin\Providers\DatabaseServiceProvider::class,
         \Bin\Providers\ViewServiceProvider::class,
     ];
@@ -122,7 +125,11 @@ class App implements ContainerInterface
 
         // 注册 Facade
         foreach (self::$facades as $alias => $facade) {
-            $this->container->alias($class = self::$coreAliases[strtolower($alias)], $alias);
+            // 尝试从 coreAliases 获取对应的服务类名
+            $serviceName = self::$coreAliases[strtolower($alias)] ?? null;
+            if ($serviceName !== null) {
+                $this->container->alias($serviceName, $alias);
+            }
             Facade::setFacadeContainer($alias, $this->container);
         }
 

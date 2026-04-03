@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Database;
 
 use Bin\Model\Model as BaseModel;
+use Bin\Events\EventDispatcher;
 use PDO;
 use JsonSerializable;
 use ArrayAccess;
@@ -1665,17 +1666,33 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function withoutEvents(callable $callback): mixed
     {
-        $listeners = ModelEventDispatcher::getListeners();
+        $dispatcher = self::getEventDispatcher();
+
+        $listeners = $dispatcher->getListeners();
+        $wildcards = $dispatcher->getWildcardListeners();
 
         try {
-            ModelEventDispatcher::forgetAll();
+            $dispatcher->forgetAll();
 
             return $callback();
         } finally {
-            $ref = new \ReflectionProperty(ModelEventDispatcher::class, 'listeners');
-            $ref->setAccessible(true);
-            $ref->setValue(null, $listeners);
+            $dispatcher->setListeners($listeners);
+            $dispatcher->setWildcardListeners($wildcards);
         }
+    }
+
+    /**
+     * 获取 EventDispatcher 实例
+     */
+    protected static function getEventDispatcher(): EventDispatcher
+    {
+        $app = \Bin\App\App::getInstance();
+
+        try {
+            return $app->make('events');
+        } catch (\Throwable) {
+                return new EventDispatcher();
+            }
     }
 
     /**

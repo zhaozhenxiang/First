@@ -4,39 +4,45 @@ declare(strict_types=1);
 
 namespace Bin\Database;
 
+use Bin\Events\EventDispatcher;
+
 /**
  * 模型事件调度器
  *
- * 支持的事件:
- * - retrieved: 从数据库获取模型后
- * - creating: 创建模型前
- * - created: 创建模型后
- * - updating: 更新模型前
- * - updated: 更新模型后
- * - saving: 保存模型前（创建或更新）
- * - saved: 保存模型后（创建或更新）
- * - deleting: 删除模型前
- * - deleted: 删除模型后
- * - restoring: 恢复模型前
- * - restored: 恢复模型后
+ * 委托给通用 EventDispatcher，保持向后兼容。
+ * 模型事件键格式：`ClassName@event`
  */
 class ModelEventDispatcher
 {
     /**
-     * 注册的事件监听器
+     * 获取 EventDispatcher 单例（延迟初始化）
      */
-    protected static array $listeners = [];
+    protected static function getDispatcher(): EventDispatcher
+    {
+        static $dispatcher = null;
+
+        if ($dispatcher === null) {
+            // 尝试从容器解析
+            try {
+                $app = \Bin\App\App::getInstance();
+                $dispatcher = $app->make('events');
+            } catch (\Throwable) {
+                // 容器不可用时创建独立实例
+                $dispatcher = new EventDispatcher();
+            }
+        }
+
+        return $dispatcher;
+    }
 
     /**
      * 注册事件监听器
      */
     public static function listen(string $event, callable $callback): void
     {
-        if (!isset(self::$listeners[$event])) {
-            self::$listeners[$event] = [];
-        }
-
-        self::$listeners[$event][] = $callback;
+        static::getDispatcher()->listen($event, function (Model $model) use ($callback) {
+            return $callback($model);
+        });
     }
 
     /**
@@ -44,55 +50,36 @@ class ModelEventDispatcher
      */
     public static function dispatch(string $event, Model $model): mixed
     {
-        $result = true;
-
-        if (!isset(self::$listeners[$event])) {
-            return $result;
-        }
-
-        foreach (self::$listeners[$event] as $callback) {
-            $callbackResult = $callback($model);
-
-            // 如果回调返回 false，则停止事件传播
-            if ($callbackResult === false) {
-                $result = false;
-                break;
-            }
-        }
-
-        return $result;
+        return static::getDispatcher()->dispatch($event, [$model]);
     }
 
     /**
      * 触发模型类的事件
+     *
+     * 先触发 model-specific 监听器（ClassName@event），
+     * 再触发全局事件监听器（event）。
+     * 任一监听器返回 false 时停止传播。
      */
     public static function dispatchForModel(string $modelClass, string $event, Model $model): mixed
     {
-        $result = true;
+        $dispatcher = static::getDispatcher();
 
-        // 触发特定模型类的监听器
+        // 1. 触发 model-specific 监听器
         $key = $modelClass . '@' . $event;
-        if (isset(self::$listeners[$key])) {
-            foreach (self::$listeners[$key] as $callback) {
-                $callbackResult = $callback($model);
-                if ($callbackResult === false) {
-                    $result = false;
-                }
-            }
+        $result = $dispatcher->dispatch($key, [$model]);
+
+        if ($result === null) {
+            return false;
         }
 
-        // 触发全局事件监听器
-        if ($result !== false && isset(self::$listeners[$event])) {
-            foreach (self::$listeners[$event] as $callback) {
-                $callbackResult = $callback($model);
-                if ($callbackResult === false) {
-                    $result = false;
-                    break;
-                }
-            }
+        // 2. 触发全局事件监听器
+        $result = $dispatcher->dispatch($event, [$model]);
+
+        if ($result === null) {
+            return false;
         }
 
-        return $result;
+        return true;
     }
 
     /**
@@ -100,7 +87,7 @@ class ModelEventDispatcher
      */
     public static function forget(string $event): void
     {
-        unset(self::$listeners[$event]);
+        static::getDispatcher()->forget($event);
     }
 
     /**
@@ -108,7 +95,7 @@ class ModelEventDispatcher
      */
     public static function forgetAll(): void
     {
-        self::$listeners = [];
+        static::getDispatcher()->forgetAll();
     }
 
     /**
@@ -116,7 +103,7 @@ class ModelEventDispatcher
      */
     public static function hasListeners(string $event): bool
     {
-        return isset(self::$listeners[$event]) && !empty(self::$listeners[$event]);
+        return static::getDispatcher()->hasListeners($event);
     }
 
     /**
@@ -124,10 +111,6 @@ class ModelEventDispatcher
      */
     public static function getListeners(?string $event = null): array
     {
-        if ($event !== null) {
-            return self::$listeners[$event] ?? [];
-        }
-
-        return self::$listeners;
+        return static::getDispatcher()->getListeners($event);
     }
 }
