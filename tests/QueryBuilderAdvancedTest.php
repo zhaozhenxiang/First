@@ -147,7 +147,8 @@ class QueryBuilderAdvancedTest extends TestCase
             })
             ->toSql();
 
-        $this->assertStringContainsString('active = 0', $sql);
+        $this->assertStringContainsString('active = ?', $sql);
+        $this->assertEquals(0, $this->query->getBindings()[0]);
     }
 
     public function testUnlessTrue(): void
@@ -298,6 +299,8 @@ class QueryBuilderAdvancedTest extends TestCase
 
     public function testGetReturnsCollection(): void
     {
+        $this->setUpWithTestData();
+
         $result = $this->query->from('users')->get();
 
         $this->assertInstanceOf(Collection::class, $result);
@@ -355,8 +358,7 @@ class QueryBuilderAdvancedTest extends TestCase
 
         $popped = $collection->pop();
 
-        $this->assertEquals(3, $popped);
-        $this->assertEquals(2, $collection->count());
+        $this->assertEquals([1, 2], $popped->toArray());
     }
 
     public function testCollectionPopEmpty(): void
@@ -365,7 +367,7 @@ class QueryBuilderAdvancedTest extends TestCase
 
         $popped = $collection->pop();
 
-        $this->assertNull($popped);
+        $this->assertTrue($popped->isEmpty());
     }
 
     // ========================================

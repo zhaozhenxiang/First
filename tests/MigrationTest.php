@@ -71,7 +71,7 @@ class MigrationTest extends TestCase
 
         $this->assertFileExists($path);
         $content = file_get_contents($path);
-        $this->assertStringContainsString('namespace', $content);
+        $this->assertStringContainsString('extends Migration', $content);
         $this->assertStringContainsString('up', $content);
         $this->assertStringContainsString('down', $content);
     }
@@ -111,10 +111,10 @@ class MigrationTest extends TestCase
     {
         $creator = new MigrationCreator($this->tmpDir);
         $creator->setNamespace('App\\Migrations');
-        $path = $creator->create('test migration');
 
-        $content = file_get_contents($path);
-        $this->assertStringContainsString('App\\Migrations', $content);
+        // 匿名类迁移不再包含 namespace 声明，验证 setter 不报错即可
+        $path = $creator->create('test migration');
+        $this->assertFileExists($path);
     }
 
     public function testCreatorSetPath(): void

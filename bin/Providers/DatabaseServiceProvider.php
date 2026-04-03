@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Bin\Providers;
 
-use Bin\Database\Connection;
 use Bin\Database\QueryBuilder;
+use Bin\Model\Model;
 
 /**
  * 数据库服务提供者
@@ -19,12 +19,12 @@ class DatabaseServiceProvider extends ServiceProvider
     {
         // 注册数据库连接单例
         $this->singleton('db.connection', function () {
-            return Connection::getInstance();
+            return Model::getConnection();
         });
 
         // 注册查询构建器工厂
         $this->bind('db.query', function () {
-            return new QueryBuilder(Connection::getInstance()->getPdo());
+            return new QueryBuilder(Model::getConnection());
         });
 
         // 设置别名

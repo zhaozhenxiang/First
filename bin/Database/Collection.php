@@ -131,33 +131,33 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * 弹出最后一个元素
      */
-    public function pop(): mixed
+    public function pop(): self
     {
-        return array_pop($this->items);
+        return new static(array_values(array_slice($this->items, 0, -1)));
     }
 
     /**
      * Map 遍历
      */
-    public function map(callable $callback): array
+    public function map(callable $callback): self
     {
-        return array_map($callback, $this->items);
+        return new static(array_map($callback, $this->items));
     }
 
     /**
      * Filter 过滤
      */
-    public function filter(callable $callback): array
+    public function filter(callable $callback): self
     {
-        return array_values(array_filter($this->items, $callback));
+        return new static(array_values(array_filter($this->items, $callback)));
     }
 
     /**
      * Reject 拒绝
      */
-    public function reject(callable $callback): array
+    public function reject(callable $callback): self
     {
-        return array_values(array_filter($this->items, fn($item) => !$callback($item)));
+        return new static(array_values(array_filter($this->items, fn($item) => !$callback($item))));
     }
 
     /**
@@ -185,39 +185,39 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * Slice 切片
      */
-    public function slice(int $offset, ?int $length = null): array
+    public function slice(int $offset, ?int $length = null): self
     {
-        return array_slice($this->items, $offset, $length);
+        return new static(array_slice($this->items, $offset, $length));
     }
 
     /**
      * Take 取前 N 个
      */
-    public function take(int $limit): array
+    public function take(int $limit): self
     {
-        return array_slice($this->items, 0, $limit);
+        return new static(array_slice($this->items, 0, $limit));
     }
 
     /**
      * Skip 跳过 N 个
      */
-    public function skip(int $offset): array
+    public function skip(int $offset): self
     {
-        return array_slice($this->items, $offset);
+        return new static(array_slice($this->items, $offset));
     }
 
     /**
      * Chunk 分块
      */
-    public function chunk(int $size): array
+    public function chunk(int $size): self
     {
-        return array_chunk($this->items, $size);
+        return new static(array_map(fn($chunk) => new static($chunk), array_chunk($this->items, $size)));
     }
 
     /**
      * Sort 排序
      */
-    public function sort(callable $callback = null): array
+    public function sort(callable $callback = null): self
     {
         $items = $this->items;
 
@@ -227,13 +227,13 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             usort($items, $callback);
         }
 
-        return $items;
+        return new static($items);
     }
 
     /**
      * SortBy 按 key 排序
      */
-    public function sortBy(string|callable $key, bool $descending = false): array
+    public function sortBy(string|callable $key, bool $descending = false): self
     {
         $results = $this->items;
 
@@ -244,25 +244,25 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             return $aValue <=> $bValue;
         });
 
-        return $descending ? array_reverse($results) : $results;
+        return new static($descending ? array_reverse($results) : $results);
     }
 
     /**
      * Reverse 反转
      */
-    public function reverse(): array
+    public function reverse(): self
     {
-        return array_reverse($this->items);
+        return new static(array_reverse($this->items));
     }
 
     /**
      * Shuffle 随机打乱
      */
-    public function shuffle(): array
+    public function shuffle(): self
     {
         $items = $this->items;
         shuffle($items);
-        return $items;
+        return new static($items);
     }
 
     /**
@@ -351,10 +351,10 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * Where 筛选
      */
-    public function where(string|callable $key, mixed $operator = null, mixed $value = null): array
+    public function where(string|callable $key, mixed $operator = null, mixed $value = null): self
     {
         if (is_callable($key)) {
-            return array_filter($this->items, $key);
+            return new static(array_filter($this->items, $key));
         }
 
         if ($value === null) {
@@ -362,7 +362,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             $operator = '=';
         }
 
-        return array_filter($this->items, function ($item) use ($key, $operator, $value) {
+        return new static(array_filter($this->items, function ($item) use ($key, $operator, $value) {
             $itemValue = is_array($item) ? ($item[$key] ?? null) : ($item->{$key} ?? null);
 
             return match ($operator) {
@@ -378,40 +378,40 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
                 '!==' => $itemValue !== $value,
                 default => false,
             };
-        });
+        }));
     }
 
     /**
      * WhereIn 筛选
      */
-    public function whereIn(string $key, array $values): array
+    public function whereIn(string $key, array $values): self
     {
-        return array_filter($this->items, function ($item) use ($key, $values) {
+        return new static(array_filter($this->items, function ($item) use ($key, $values) {
             $itemValue = is_array($item) ? ($item[$key] ?? null) : ($item->{$key} ?? null);
             return in_array($itemValue, $values, true);
-        });
+        }));
     }
 
     /**
      * WhereNull 筛选空值
      */
-    public function whereNull(string $key): array
+    public function whereNull(string $key): self
     {
-        return array_filter($this->items, function ($item) use ($key) {
+        return new static(array_filter($this->items, function ($item) use ($key) {
             $itemValue = is_array($item) ? ($item[$key] ?? null) : ($item->{$key} ?? null);
             return $itemValue === null;
-        });
+        }));
     }
 
     /**
      * WhereNotNull 筛选非空值
      */
-    public function whereNotNull(string $key): array
+    public function whereNotNull(string $key): self
     {
-        return array_filter($this->items, function ($item) use ($key) {
+        return new static(array_filter($this->items, function ($item) use ($key) {
             $itemValue = is_array($item) ? ($item[$key] ?? null) : ($item->{$key} ?? null);
             return $itemValue !== null;
-        });
+        }));
     }
 
     /**
@@ -420,7 +420,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     public function firstWhere(string $key, mixed $operator, mixed $value = null): mixed
     {
         $items = $this->where($key, $operator, $value);
-        return empty($items) ? null : reset($items);
+        return $items->isEmpty() ? null : reset($items->all());
     }
 
     /**
@@ -442,10 +442,10 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * Unique 去重
      */
-    public function unique(string|callable|null $key = null): array
+    public function unique(string|callable|null $key = null): self
     {
         if ($key === null) {
-            return array_values(array_unique($this->items, SORT_REGULAR));
+            return new static(array_values(array_unique($this->items, SORT_REGULAR)));
         }
 
         $unique = [];
@@ -460,13 +460,13 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             }
         }
 
-        return $unique;
+        return new static($unique);
     }
 
     /**
      * Collapse 折叠多维数组
      */
-    public function collapse(): array
+    public function collapse(): self
     {
         $results = [];
 
@@ -478,13 +478,13 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             $results = array_merge($results, $values);
         }
 
-        return $results;
+        return new static($results);
     }
 
     /**
      * Flatten 扁平化
      */
-    public function flatten(int $depth = PHP_INT_MAX): array
+    public function flatten(int $depth = PHP_INT_MAX): self
     {
         $result = [];
 
@@ -494,35 +494,35 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             } elseif ($depth === 1) {
                 $result = array_merge($result, $item);
             } else {
-                $result = array_merge($result, (new self($item))->flatten($depth - 1));
+                $result = array_merge($result, (new static($item))->flatten($depth - 1)->all());
             }
         }
 
-        return $result;
+        return new static($result);
     }
 
     /**
      * Flip 交换键值
      */
-    public function flip(): array
+    public function flip(): self
     {
-        return array_flip($this->items);
+        return new static(array_flip($this->items));
     }
 
     /**
      * Keys 获取所有键
      */
-    public function keys(): array
+    public function keys(): self
     {
-        return array_keys($this->items);
+        return new static(array_keys($this->items));
     }
 
     /**
      * Values 获取所有值
      */
-    public function values(): array
+    public function values(): self
     {
-        return array_values($this->items);
+        return new static(array_values($this->items));
     }
 
     /**
@@ -536,39 +536,39 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * Merge 合并
      */
-    public function merge(array $items): array
+    public function merge(array $items): self
     {
-        return array_merge($this->items, $items);
+        return new static(array_merge($this->items, $items));
     }
 
     /**
      * Union 联合
      */
-    public function union(array $items): array
+    public function union(array $items): self
     {
-        return $this->items + $items;
+        return new static($this->items + $items);
     }
 
     /**
      * Diff 差集
      */
-    public function diff(array $items): array
+    public function diff(array $items): self
     {
-        return array_diff($this->items, $items);
+        return new static(array_values(array_diff($this->items, $items)));
     }
 
     /**
      * Intersect 交集
      */
-    public function intersect(array $items): array
+    public function intersect(array $items): self
     {
-        return array_intersect($this->items, $items);
+        return new static(array_values(array_intersect($this->items, $items)));
     }
 
     /**
      * Nth 取第 n 个元素
      */
-    public function nth(int $step, int $offset = 0): array
+    public function nth(int $step, int $offset = 0): self
     {
         $new = [];
 
@@ -578,7 +578,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
             }
         }
 
-        return $new;
+        return new static($new);
     }
 
     /**

@@ -23,7 +23,7 @@ class CollectionTest extends TestCase
 
         $filtered = $collection->filter(fn($item) => $item > 2);
 
-        $this->assertEquals([3, 4, 5], array_values($filtered));
+        $this->assertEquals([3, 4, 5], $filtered->values()->toArray());
     }
 
     public function testMap(): void
@@ -32,7 +32,7 @@ class CollectionTest extends TestCase
 
         $mapped = $collection->map(fn($item) => $item * 2);
 
-        $this->assertEquals([2, 4, 6], $mapped);
+        $this->assertEquals([2, 4, 6], $mapped->toArray());
     }
 
     public function testPluck(): void
@@ -79,7 +79,7 @@ class CollectionTest extends TestCase
 
         $taken = $collection->take(3);
 
-        $this->assertEquals([1, 2, 3], $taken);
+        $this->assertEquals([1, 2, 3], $taken->toArray());
     }
 
     public function testSkip(): void
@@ -88,7 +88,7 @@ class CollectionTest extends TestCase
 
         $skipped = $collection->skip(2);
 
-        $this->assertEquals([3, 4, 5], $skipped);
+        $this->assertEquals([3, 4, 5], $skipped->toArray());
     }
 
     public function testSum(): void
@@ -133,7 +133,7 @@ class CollectionTest extends TestCase
 
         $reversed = $collection->reverse();
 
-        $this->assertEquals([3, 2, 1], $reversed);
+        $this->assertEquals([3, 2, 1], $reversed->toArray());
     }
 
     public function testUnique(): void
@@ -142,7 +142,7 @@ class CollectionTest extends TestCase
 
         $unique = $collection->unique();
 
-        $this->assertEquals([1, 2, 3], array_values($unique));
+        $this->assertEquals([1, 2, 3], $unique->values()->toArray());
     }
 
     // === 新增测试 ===
@@ -158,7 +158,7 @@ class CollectionTest extends TestCase
     {
         $collection = Collection::make([1, 2, 3, 4, 5]);
         $rejected = $collection->reject(fn($item) => $item > 3);
-        $this->assertEquals([1, 2, 3], array_values($rejected));
+        $this->assertEquals([1, 2, 3], $rejected->values()->toArray());
     }
 
     public function testEach(): void
@@ -182,7 +182,7 @@ class CollectionTest extends TestCase
     {
         $collection = Collection::make([1, 2, 3, 4, 5]);
         $sliced = $collection->slice(1, 3);
-        $this->assertEquals([2, 3, 4], array_values($sliced));
+        $this->assertEquals([2, 3, 4], $sliced->values()->toArray());
     }
 
     public function testChunk(): void
@@ -190,16 +190,16 @@ class CollectionTest extends TestCase
         $collection = Collection::make([1, 2, 3, 4, 5, 6, 7]);
         $chunks = $collection->chunk(3);
         $this->assertCount(3, $chunks);
-        $this->assertEquals([1, 2, 3], $chunks[0]);
-        $this->assertEquals([4, 5, 6], $chunks[1]);
-        $this->assertEquals([7], $chunks[2]);
+        $this->assertEquals([1, 2, 3], $chunks[0]->toArray());
+        $this->assertEquals([4, 5, 6], $chunks[1]->toArray());
+        $this->assertEquals([7], $chunks[2]->toArray());
     }
 
     public function testSort(): void
     {
         $collection = Collection::make([3, 1, 2]);
         $sorted = $collection->sort(fn($a, $b) => $a <=> $b);
-        $this->assertEquals([1, 2, 3], array_values($sorted));
+        $this->assertEquals([1, 2, 3], $sorted->values()->toArray());
     }
 
     public function testSortBy(): void
@@ -248,8 +248,7 @@ class CollectionTest extends TestCase
         $collection = Collection::make($users);
         $result = $collection->whereNull('email');
         $this->assertCount(1, $result);
-        $resultValues = array_values($result);
-        $this->assertEquals('Bob', $resultValues[0]['name']);
+        $this->assertEquals('Bob', $result->first()['name']);
     }
 
     public function testWhereNotNull(): void
@@ -261,8 +260,7 @@ class CollectionTest extends TestCase
         $collection = Collection::make($users);
         $result = $collection->whereNotNull('email');
         $this->assertCount(1, $result);
-        $resultValues = array_values($result);
-        $this->assertEquals('Alice', $resultValues[0]['name']);
+        $this->assertEquals('Alice', $result->first()['name']);
     }
 
     public function testKeyBy(): void
@@ -281,54 +279,54 @@ class CollectionTest extends TestCase
     {
         $collection = Collection::make([[1, 2], [3, 4], [5]]);
         $result = $collection->collapse();
-        $this->assertEquals([1, 2, 3, 4, 5], $result);
+        $this->assertEquals([1, 2, 3, 4, 5], $result->toArray());
     }
 
     public function testFlatten(): void
     {
         $collection = Collection::make([1, [2, [3, 4]], 5]);
         $result = $collection->flatten();
-        $this->assertEquals([1, 2, 3, 4, 5], $result);
+        $this->assertEquals([1, 2, 3, 4, 5], $result->toArray());
     }
 
     public function testFlip(): void
     {
         $collection = Collection::make(['a' => 1, 'b' => 2]);
         $result = $collection->flip();
-        $this->assertEquals([1 => 'a', 2 => 'b'], $result);
+        $this->assertEquals([1 => 'a', 2 => 'b'], $result->toArray());
     }
 
     public function testKeys(): void
     {
         $collection = Collection::make(['name' => 'Alice', 'age' => 25]);
-        $this->assertEquals(['name', 'age'], $collection->keys());
+        $this->assertEquals(['name', 'age'], $collection->keys()->toArray());
     }
 
     public function testValues(): void
     {
         $collection = Collection::make(['a' => 1, 'b' => 2, 'c' => 3]);
-        $this->assertEquals([1, 2, 3], $collection->values());
+        $this->assertEquals([1, 2, 3], $collection->values()->toArray());
     }
 
     public function testMerge(): void
     {
         $collection = Collection::make([1, 2]);
         $result = $collection->merge([3, 4]);
-        $this->assertEquals([1, 2, 3, 4], $result);
+        $this->assertEquals([1, 2, 3, 4], $result->toArray());
     }
 
     public function testDiff(): void
     {
         $collection = Collection::make([1, 2, 3, 4]);
         $result = $collection->diff([2, 4]);
-        $this->assertEquals([1, 3], array_values($result));
+        $this->assertEquals([1, 3], $result->values()->toArray());
     }
 
     public function testIntersect(): void
     {
         $collection = Collection::make([1, 2, 3, 4]);
         $result = $collection->intersect([2, 3, 5]);
-        $this->assertEquals([2, 3], array_values($result));
+        $this->assertEquals([2, 3], $result->values()->toArray());
     }
 
     public function testCombine(): void
@@ -342,7 +340,7 @@ class CollectionTest extends TestCase
     {
         $collection = Collection::make([0, 1, 2, 3, 4, 5]);
         $result = $collection->nth(2);
-        $this->assertEquals([0, 2, 4], array_values($result));
+        $this->assertEquals([0, 2, 4], $result->values()->toArray());
     }
 
     public function testIsEmpty(): void
@@ -398,7 +396,7 @@ class CollectionTest extends TestCase
     {
         $collection = Collection::make([1, 2, 3]);
         $popped = $collection->pop();
-        $this->assertEquals(3, $popped);
+        $this->assertEquals([1, 2], $popped->toArray());
     }
 
     public function testShuffle(): void
@@ -406,8 +404,9 @@ class CollectionTest extends TestCase
         $collection = Collection::make([1, 2, 3, 4, 5]);
         $shuffled = $collection->shuffle();
         // 只验证元素相同（顺序可能不同）
-        sort($shuffled);
-        $this->assertEquals([1, 2, 3, 4, 5], $shuffled);
+        $arr = $shuffled->toArray();
+        sort($arr);
+        $this->assertEquals([1, 2, 3, 4, 5], $arr);
     }
 
     public function testUnion(): void

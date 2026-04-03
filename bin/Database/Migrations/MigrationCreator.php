@@ -72,8 +72,6 @@ class MigrationCreator
 
 declare(strict_types=1);
 
-namespace {{namespace}};
-
 use Bin\Database\Schema\Schema;
 use Bin\Database\Migrations\Migration;
 
@@ -108,8 +106,6 @@ PHP;
 
 declare(strict_types=1);
 
-namespace {{namespace}};
-
 use Bin\Database\Schema\Schema;
 use Bin\Database\Migrations\Migration;
 
@@ -142,8 +138,6 @@ PHP;
      */
     protected function populateStub(string $name, string $stub, ?string $table): string
     {
-        $stub = str_replace('{{namespace}}', $this->namespace, $stub);
-
         if ($table !== null) {
             $stub = str_replace('{{table}}', $table, $stub);
         }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Bin\Database;
 
+use Bin\Database\Debug\DatabaseDebugger;
+use Bin\Database\Debug\QueryLog;
 use Bin\Database\Model;
 use Bin\Database\Relations\Relation;
 use InvalidArgumentException;
@@ -67,6 +69,26 @@ class QueryBuilder
     {
         $this->connection = $connection;
         $this->modelClass = $modelClass;
+    }
+
+    /**
+     * 记录查询日志到 DatabaseDebugger
+     */
+    protected function logQuery(string $sql, array $bindings, float $timeMs, int $rowCount = 0, bool $success = true, ?string $error = null): void
+    {
+        if (!DatabaseDebugger::isEnabled()) {
+            return;
+        }
+
+        DatabaseDebugger::log(new QueryLog(
+            $sql,
+            $bindings,
+            $timeMs,
+            $this->from ?: 'default',
+            $rowCount,
+            $success,
+            $error
+        ));
     }
 
     /**
@@ -592,6 +614,15 @@ class QueryBuilder
     }
 
     /**
+     * GROUP BY 原始 SQL
+     */
+    public function groupByRaw(string $sql): self
+    {
+        $this->groups[] = $sql;
+        return $this;
+    }
+
+    /**
      * HAVING
      */
     public function having(string $column, string $operator, mixed $value, string $boolean = 'and'): self
@@ -721,7 +752,7 @@ class QueryBuilder
         $hasMore = $results->count() > $perPage;
 
         if ($hasMore) {
-            $results->pop();
+            $results = $results->pop();
         }
 
         return new Paginator(
@@ -766,7 +797,7 @@ class QueryBuilder
         $hasMore = $results->count() > $perPage;
 
         if ($hasMore) {
-            $results->pop();
+            $results = $results->pop();
         }
 
         // 生成下一个游标
@@ -931,29 +962,38 @@ class QueryBuilder
         $sql = $this->toSql();
         $bindings = $this->getBindings();
 
-        $stmt = $this->connection->prepare($sql);
-        $stmt->execute($bindings);
-        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);            // 如果有模型类，则转换为模型实例
+            if ($this->modelClass && class_exists($this->modelClass)) {
+                $models = array_map(fn($item) => $this->hydrateModel($item), $results);
 
-        // 如果有模型类，则转换为模型实例
-        if ($this->modelClass && class_exists($this->modelClass)) {
-            $models = array_map(fn($item) => $this->hydrateModel($item), $results);
+                // 处理 withAggregate 结果
+                if (!empty($withAggregates)) {
+                    $models = $this->hydrateWithAggregates($models, $results, $withAggregates);
+                }
 
-            // 处理 withAggregate 结果
-            if (!empty($withAggregates)) {
-                $models = $this->hydrateWithAggregates($models, $results, $withAggregates);
+                // 渴望加载关系
+                if (!empty($this->eagerLoads)) {
+                    $models = $this->eagerLoadRelations($models);
+                }
+
+                return new Collection($models);
             }
-
-            // 渴望加载关系
-            if (!empty($this->eagerLoads)) {
-                $models = $this->eagerLoadRelations($models);
-            }
-
-            return new Collection($models);
+        } catch (\Throwable $e) {
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, $bindings, $timeMs, 0, false, $e->getMessage());
+            throw $e;
         }
 
         return new Collection($results);
     }
+
+    /**
+     * 应用 withAggregate 子查询到 SELECT 列
+     */
 
     /**
      * 应用 withAggregate 子查询到 SELECT 列
@@ -1458,13 +1498,23 @@ class QueryBuilder
 
         $sql = "INSERT INTO {$this->from} ({$columns}) VALUES ({$parameters})";
 
-        $stmt = $this->connection->prepare($sql);
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
 
-        foreach ($values as $record) {
-            $stmt->execute($record);
+            foreach ($values as $record) {
+                $stmt->execute($record);
+            }
+
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, $values, $timeMs, count($values));
+
+            return true;
+        } catch (\Throwable $e) {
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, [], $timeMs, 0, false, $e->getMessage());
+            throw $e;
         }
-
-        return true;
     }
 
     /**
@@ -1487,11 +1537,21 @@ class QueryBuilder
         $bindings = array_values($values);
         $bindings = array_merge($bindings, $this->getBindings());
 
-        $stmt = $this->connection->prepare($sql);
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $rowCount = $stmt->rowCount();
 
-        $stmt->execute($bindings);
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, $bindings, $timeMs, $rowCount);
 
-        return $stmt->rowCount();
+            return $rowCount;
+        } catch (\Throwable $e) {
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, $bindings, $timeMs, 0, false, $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
@@ -1503,11 +1563,21 @@ class QueryBuilder
 
         $bindings = $this->getBindings();
 
-        $stmt = $this->connection->prepare($sql);
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $rowCount = $stmt->rowCount();
 
-        $stmt->execute($bindings);
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, $bindings, $timeMs, $rowCount);
 
-        return $stmt->rowCount();
+            return $rowCount;
+        } catch (\Throwable $e) {
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->logQuery($sql, $bindings, $timeMs, 0, false, $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
@@ -1602,6 +1672,30 @@ class QueryBuilder
         }
 
         return $this->grammarSelect();
+    }
+
+    /**
+     * 调试输出 SQL 和绑定参数（不终止程序）
+     */
+    public function dump(): self
+    {
+        $sql = $this->toSql();
+        $bindings = $this->getBindings();
+
+        dump(['sql' => $sql, 'bindings' => $bindings]);
+
+        return $this;
+    }
+
+    /**
+     * 调试输出 SQL 和绑定参数并终止程序
+     */
+    public function dd(): never
+    {
+        $sql = $this->toSql();
+        $bindings = $this->getBindings();
+
+        dd(['sql' => $sql, 'bindings' => $bindings]);
     }
 
     /**
@@ -1919,7 +2013,7 @@ class QueryBuilder
         do {
             $results = $this->forPage($page, $count)->get();
 
-            if (empty($results)) {
+            if ($results->isEmpty()) {
                 break;
             }
 
@@ -1947,7 +2041,7 @@ class QueryBuilder
                 ->limit($count)
                 ->get();
 
-            if (empty($results)) {
+            if ($results->isEmpty()) {
                 break;
             }
 
@@ -1955,7 +2049,7 @@ class QueryBuilder
                 return false;
             }
 
-            $lastItem = end($results);
+            $lastItem = $results->last();
 
             if ($lastItem instanceof Model) {
                 $lastId = $lastItem->getKey();
@@ -1974,7 +2068,7 @@ class QueryBuilder
      */
     public function each(callable $callback, int $count = 1000): bool
     {
-        return $this->chunk($count, function (array $results) use ($callback) {
+        return $this->chunk($count, function (Collection $results) use ($callback) {
             foreach ($results as $key => $item) {
                 if ($callback($item, $key) === false) {
                     return false;
@@ -1988,7 +2082,7 @@ class QueryBuilder
      */
     public function eachById(callable $callback, int $count = 1000, string $column = 'id'): bool
     {
-        return $this->chunkById($count, function (array $results) use ($callback) {
+        return $this->chunkById($count, function (Collection $results) use ($callback) {
             foreach ($results as $key => $item) {
                 if ($callback($item, $key) === false) {
                     return false;

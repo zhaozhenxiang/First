@@ -191,10 +191,18 @@ class Migrator
     }
 
     /**
-     * 解析迁移文件
+     * 解析迁移文件（支持匿名类和命名类）
      */
     protected function resolve(string $file): Migration
     {
+        $migration = require $file;
+
+        // 匿名类：文件返回 new class extends Migration
+        if ($migration instanceof Migration) {
+            return $migration;
+        }
+
+        // 命名类：通过类名实例化
         require_once $file;
 
         $class = $this->getMigrationClass($file);

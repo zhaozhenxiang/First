@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Database\Relations;
 
 use Bin\Database\Model;
+use Bin\Database\Pivot;
 use Bin\Database\QueryBuilder;
 
 /**
@@ -173,6 +174,8 @@ class BelongsToMany extends Relation
      */
     protected function hydratePivot($results): mixed
     {
+        $pivotClass = $this->pivotClass ?? Pivot::class;
+
         foreach ($results as $result) {
             $pivotAttributes = [];
 
@@ -190,11 +193,16 @@ class BelongsToMany extends Relation
             );
             $result->setRawAttributes($cleanAttributes);
 
-            // 设置 pivot 对象
-            $pivot = new \stdClass();
-            foreach ($pivotAttributes as $key => $value) {
-                $pivot->$key = $value;
+            // 创建 Pivot 模型实例
+            $pivot = new $pivotClass($pivotAttributes, $this->table);
+            $pivot->exists = true;
+
+            if ($pivot instanceof Pivot) {
+                $pivot->setPivotParent($this->parent)
+                    ->setForeignKey($this->foreignPivotKey)
+                    ->setRelatedKey($this->relatedPivotKey);
             }
+
             $result->setRelation('pivot', $pivot);
         }
 

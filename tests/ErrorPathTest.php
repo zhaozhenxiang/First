@@ -27,10 +27,10 @@ class ErrorPathTest extends TestCase
         $this->assertNull($collection->last());
     }
 
-    public function testPopOnEmptyReturnsNull(): void
+    public function testPopOnEmptyReturnsEmptyCollection(): void
     {
         $collection = Collection::make([]);
-        $this->assertNull($collection->pop());
+        $this->assertTrue($collection->pop()->isEmpty());
     }
 
     public function testSumOnEmptyReturnsZero(): void
@@ -185,7 +185,7 @@ class ErrorPathTest extends TestCase
     {
         $collection = Collection::make([1, 2, 3, 4, 5]);
         $result = $collection->slice(-2);
-        $this->assertEquals([4, 5], array_values($result));
+        $this->assertEquals([4, 5], $result->values()->toArray());
     }
 
     public function testChunkWithSizeLargerThanCollection(): void
@@ -193,21 +193,21 @@ class ErrorPathTest extends TestCase
         $collection = Collection::make([1, 2, 3]);
         $chunks = $collection->chunk(10);
         $this->assertCount(1, $chunks);
-        $this->assertEquals([1, 2, 3], $chunks[0]);
+        $this->assertEquals([1, 2, 3], $chunks[0]->toArray());
     }
 
     public function testMergeWithEmptyArray(): void
     {
         $collection = Collection::make([1, 2, 3]);
         $result = $collection->merge([]);
-        $this->assertEquals([1, 2, 3], $result);
+        $this->assertEquals([1, 2, 3], $result->toArray());
     }
 
     public function testDiffWithEmptyArray(): void
     {
         $collection = Collection::make([1, 2, 3]);
         $result = $collection->diff([]);
-        $this->assertEquals([1, 2, 3], array_values($result));
+        $this->assertEquals([1, 2, 3], $result->values()->toArray());
     }
 
     // === Model 错误路径 ===

@@ -121,17 +121,17 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     protected static ?QueryBuilder $queryBuilder = null;
 
     /**
-     * 全局作用域
+     * 全局作用域（per-class 存储）
      */
     protected static array $globalScopes = [];
 
     /**
-     * 是否已引导（每个模型类独立）
+     * 是否已引导（per-class 存储）
      */
     protected static array $bootedModels = [];
 
     /**
-     * 多态映射
+     * 多态映射（per-class 存储）
      */
     protected static array $morphMap = [];
 
@@ -248,8 +248,9 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
 
         $query->from($model->getTable());
 
-        // 应用全局作用域
-        foreach (static::$globalScopes as $identifier => $callback) {
+        // 应用当前模型类的全局作用域
+        $classScopes = static::$globalScopes[static::class] ?? [];
+        foreach ($classScopes as $identifier => $callback) {
             $query->withGlobalScope($identifier, $callback);
         }
 
@@ -261,7 +262,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function addGlobalScope(string $identifier, \Closure $callback): void
     {
-        static::$globalScopes[$identifier] = $callback;
+        static::$globalScopes[static::class][$identifier] = $callback;
     }
 
     /**
@@ -269,7 +270,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function forgetGlobalScope(string $identifier): void
     {
-        unset(static::$globalScopes[$identifier]);
+        unset(static::$globalScopes[static::class][$identifier]);
     }
 
     /**
@@ -277,7 +278,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function getGlobalScopes(): array
     {
-        return static::$globalScopes;
+        return static::$globalScopes[static::class] ?? [];
     }
 
     /**
@@ -285,7 +286,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function clearGlobalScopes(): void
     {
-        static::$globalScopes = [];
+        static::$globalScopes[static::class] = [];
     }
 
     /**
@@ -295,7 +296,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     {
         $class = static::class;
         unset(static::$bootedModels[$class]);
-        static::$globalScopes = [];
+        static::$globalScopes[static::class] = [];
     }
 
     /**
@@ -430,10 +431,10 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function sole(array|string $columns = ['*']): self
     {
-        $query = is_array($columns) ? static::query() : static::where($columns);
+        $query = static::query();
 
-        if (is_string($columns)) {
-            $query = static::query();
+        if (is_array($columns)) {
+            $query->select($columns);
         }
 
         $results = $query->limit(2)->get();
@@ -1710,7 +1711,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function getMorphMap(): array
     {
-        return static::$morphMap;
+        return static::$morphMap[static::class] ?? [];
     }
 
     /**
@@ -1718,7 +1719,7 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
      */
     public static function enforceMorphMap(array $map): void
     {
-        static::$morphMap = $map;
+        static::$morphMap[static::class] = $map;
     }
 
     /**
