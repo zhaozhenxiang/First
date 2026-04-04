@@ -213,6 +213,173 @@ class IocBehaviorTest extends TestCase
         $this->assertTrue($data['singletonIf_no_override']);
     }
 
+    public function testAliasResolution(): void
+    {
+        $data = $this->getJson('/ioc/alias');
+
+        $this->assertEquals('alias_resolution', $data['test']);
+        $this->assertTrue($data['alias_registered']);
+        $this->assertTrue($data['original_not_alias']);
+        $this->assertEquals('cache.redis', $data['alias_resolves_to']);
+        $this->assertTrue($data['make_via_alias_works']);
+    }
+
+    public function testBatchOperations(): void
+    {
+        $data = $this->getJson('/ioc/batch');
+
+        $this->assertEquals('batch_operations', $data['test']);
+        $this->assertTrue($data['bind_array_a']);
+        $this->assertTrue($data['bind_array_b']);
+        $this->assertTrue($data['singleton_array_c']);
+        $this->assertTrue($data['instance_array_d']);
+        $this->assertTrue($data['bind_and_make']);
+        $this->assertTrue($data['singleton_and_make']);
+        $this->assertTrue($data['factory_works']);
+    }
+
+    public function testContextualGiveTagged(): void
+    {
+        $data = $this->getJson('/ioc/contextual-tagged');
+
+        $this->assertEquals('contextual_give_tagged', $data['test']);
+        $this->assertTrue($data['received_array']);
+        $this->assertEquals(2, $data['count']);
+    }
+
+    public function testInspectionMethods(): void
+    {
+        $data = $this->getJson('/ioc/inspection');
+
+        $this->assertEquals('inspection_methods', $data['test']);
+        $this->assertTrue($data['bound_before']);
+        $this->assertTrue($data['has_binding']);
+        $this->assertTrue($data['not_bound']);
+        $this->assertTrue($data['not_resolved_before_make']);
+        $this->assertTrue($data['resolved_after_make']);
+        $this->assertTrue($data['get_bindings_has_svc']);
+        $this->assertTrue($data['has_instance']);
+        $this->assertTrue($data['get_instance_of']);
+        $this->assertTrue($data['no_instance_for_missing']);
+    }
+
+    public function testFlushForget(): void
+    {
+        $data = $this->getJson('/ioc/flush-forget');
+
+        $this->assertEquals('flush_forget', $data['test']);
+        $this->assertTrue($data['resolved_before_forget']);
+        $this->assertTrue($data['resolved_after_forget']);
+        $this->assertTrue($data['not_bound_after_forget']);
+        $this->assertTrue($data['b_still_bound']);
+        $this->assertTrue($data['b_not_bound_after_flush']);
+    }
+
+    public function testMockService(): void
+    {
+        $data = $this->getJson('/ioc/mock');
+
+        $this->assertEquals('mock_service', $data['test']);
+        $this->assertTrue($data['mock_is_correct_type']);
+        $this->assertTrue($data['make_returns_mock']);
+    }
+
+    public function testFacadeResolve(): void
+    {
+        $data = $this->getJson('/ioc/facade-resolve');
+
+        $this->assertEquals('facade_resolve', $data['test']);
+        $this->assertTrue($data['facade_resolves']);
+        $this->assertTrue($data['unknown_returns_null']);
+    }
+
+    public function testCallVariants(): void
+    {
+        $data = $this->getJson('/ioc/call-variants');
+
+        $this->assertEquals('call_variants', $data['test']);
+        $this->assertEquals('file_closure', $data['closure']);
+        $this->assertEquals('file:array', $data['array']);
+        $this->assertEquals('file:classat', $data['class_at']);
+    }
+
+    public function testInstanceBinding(): void
+    {
+        $data = $this->getJson('/ioc/instance');
+
+        $this->assertEquals('instance_binding', $data['test']);
+        $this->assertTrue($data['same_instance']);
+        $this->assertTrue($data['value_preserved']);
+    }
+
+    public function testMultiExtender(): void
+    {
+        $data = $this->getJson('/ioc/multi-extender');
+
+        $this->assertEquals('multi_extender', $data['test']);
+        $this->assertEquals(2, $data['step']);
+        $this->assertEquals('chained', $data['extra']);
+        $this->assertTrue($data['has_extenders']);
+    }
+
+    public function testResolvingDetail(): void
+    {
+        $data = $this->getJson('/ioc/resolving-detail');
+
+        $this->assertEquals('resolving_detail', $data['test']);
+        $this->assertTrue($data['singleton_resolving_fired_once']);
+    }
+
+    public function testDeepInjection(): void
+    {
+        $data = $this->getJson('/ioc/deep-injection');
+
+        $this->assertEquals('deep_injection', $data['test']);
+        $this->assertTrue($data['a_has_b']);
+        $this->assertTrue($data['b_has_c']);
+        $this->assertTrue($data['c_has_logger']);
+        $this->assertEquals('file', $data['logger_name']);
+    }
+
+    public function testClosureFactory(): void
+    {
+        $data = $this->getJson('/ioc/closure-factory');
+
+        $this->assertEquals('closure_factory', $data['test']);
+        $this->assertTrue($data['factory_creates_different']);
+        $this->assertTrue($data['singleton_factory_same']);
+    }
+
+    public function testContainerFlush(): void
+    {
+        $data = $this->getJson('/ioc/container-flush');
+
+        $this->assertEquals('container_flush', $data['test']);
+        $this->assertTrue($data['not_bound_a']);
+        $this->assertTrue($data['not_bound_b']);
+        $this->assertTrue($data['no_alias']);
+        $this->assertTrue($data['empty_bindings']);
+    }
+
+    public function testDependencyOverride(): void
+    {
+        $data = $this->getJson('/ioc/dependency-override');
+
+        $this->assertEquals('dependency_override', $data['test']);
+        $this->assertTrue($data['first_was_file']);
+        $this->assertTrue($data['second_is_cloud']);
+    }
+
+    public function testBuildStackInspection(): void
+    {
+        $data = $this->getJson('/ioc/build-stack');
+
+        $this->assertEquals('build_stack', $data['test']);
+        $this->assertTrue($data['empty_initial']);
+        $this->assertTrue($data['not_in_stack']);
+        $this->assertTrue($data['after_resolving_fired']);
+    }
+
     // ===== 辅助方法 =====
 
     private function getJson(string $path): array
