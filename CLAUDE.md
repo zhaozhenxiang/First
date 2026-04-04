@@ -13,6 +13,7 @@ This is a custom PHP8.5 web framework inspired by Laravel, built with PHP 8.3+. 
 ### Directory Structure
 - `bin/` - Framework core (PSR-4 namespace: `Bin\`)
   - `App/` - IoC container and service management
+  - `Container/` - IoC 容器核心（Container, ContextualBindingBuilder, Exceptions）
   - `Route/` - Route collection, routing, and action dispatch
   - `Request/` - HTTP request handling with ArrayAccess/Iterator
   - `Response/` - HTTP response formatting (string/array/view)
@@ -21,6 +22,8 @@ This is a custom PHP8.5 web framework inspired by Laravel, built with PHP 8.3+. 
   - `Middleware/` - Abstract middleware class
   - `Reflection/` - Dependency injection via reflection
   - `Facade/` - Static proxy pattern
+  - `Psr/Container/` - PSR-11 接口定义
+  - `Contracts/` - 框架接口约定
   - `Func/helpers.php` - Global helper functions
 - `app/` - Application code (PSR-4 namespace: `App\`)
   - `Controllers/` - Controller classes
@@ -81,15 +84,124 @@ The framework uses reflection for automatic dependency injection:
 - **Closures**: Non-type-hinted parameters receive URL path parameters; type-hinted receive container instances
 - **Constructor DI**: Use `app(ClassName::class)` or `App::make(ClassName::class)` for manual resolution
 
-### IoC Container (`Bin\App\App`)
+### IoC Container
+
+框架包含两层容器架构：`Bin\App\App`（应用门面）和 `Bin\Container\Container`（底层容器）。
+
+**注意**：PHP 8.5 不允许对已有实例方法使用静态调用，`__callStatic` 不会拦截。所有静态调用需通过 `App::getInstance()` 获取实例后调用。
 
 ```php
-// Resolve from container
-$instance = App::make(ClassName::class);
-$instance = app('ClassName');  // helper function
+// 解析服务（推荐通过 app() 辅助函数）
+$instance = app(ClassName::class);
 
-// Registered aliases: 'Request', 'Response', 'Route'
+// 或通过 App 门面
+$instance = App::getInstance()->make(ClassName::class);
 ```
+
+#### 绑定
+
+```php
+// 基础绑定（每次解析返回新实例）
+$container->bind('service', ClassName::class);
+$container->bind('service', function ($container) { return new ClassName(); });
+
+// 单例绑定（多次解析返回同一实例）
+$container->singleton('service', ClassName::class);
+
+// 实例绑定
+$container->instance('service', new ClassName());
+
+// 条件绑定（仅在未绑定时绑定）
+$container->bindIf('service', ClassName::class);
+$container->singletonIf('service', ClassName::class);
+```
+
+#### 作用域绑定
+
+```php
+// 作用域内共享，resetScope() 后重新创建
+$container->scoped('service', ClassName::class);
+$container->resetScope();  // 重置所有作用域实例（不影响 singleton）
+```
+
+#### 标签绑定
+
+```php
+$container->bind('cache.redis', RedisCache::class);
+$container->bind('cache.file', FileCache::class);
+$container->tag(['cache.redis', 'cache.file'], 'cache');
+
+$services = $container->tagged('cache'); // 返回所有标签下的实例
+```
+
+#### 上下文绑定
+
+```php
+// when()->needs()->give() 流畅接口
+$container->when(AuditService::class)
+    ->needs(LoggerInterface::class)
+    ->give(function () { return new CloudLogger(); });
+
+// 原始参数注入
+$container->when(TimeoutService::class)
+    ->needs('timeout')
+    ->give(60);
+```
+
+#### 解析回调
+
+```php
+// 全局回调
+$container->resolving(function ($object, $container) { /* ... */ });
+$container->afterResolving(function ($object, $container) { /* ... */ });
+
+// 特定抽象名回调
+$container->resolving('service', function ($object, $container) { /* ... */ });
+```
+
+#### 重绑定回调
+
+```php
+$container->rebinding('cache', function ($container, $instance) {
+    // 绑定重新注册时触发
+});
+```
+
+#### 扩展器（装饰器模式）
+
+```php
+$container->extend('service', function ($instance, $container) {
+    $instance->extra = 'decorated';
+    return $instance;
+});
+```
+
+#### 方法注入
+
+```php
+// 支持 Closure、Class@method、数组回调
+$result = $container->call(ServiceImpl::class . '@handle', ['message' => 'hello']);
+$result = $container->call([$instance, 'method'], ['param' => 'value']);
+$result = $container->call(function (Logger $logger) { return $logger->name(); });
+```
+
+#### PSR-11 兼容
+
+```php
+// Container 实现了 Psr\Container\ContainerInterface
+$has = $container->has('service');     // bool
+$instance = $container->get('service'); // 解析或抛 NotFoundException
+```
+
+#### 循环依赖检测
+
+容器自动检测循环依赖并抛出 `CircularDependencyException`。
+
+#### 异常体系
+
+- `BindingResolutionException` - 绑定/解析失败（含 `getAbstract()`）
+- `CircularDependencyException` - 循环依赖（含 `getPath()`）
+- `NotFoundException` - PSR-11 未找到条目
 
 ### Model (`Bin\Model\Model`)
 
@@ -178,6 +290,60 @@ php -S localhost:8000 -t public
 # Regenerate autoload
 composer dump-autoload
 ```
+
+## Testing
+
+```bash
+# Run all tests
+php test
+
+# Run specific test file
+php test tests/IocContainerTest.php
+php test tests/IocBehaviorTest.php
+
+# Run with verbose output
+php test --verbose
+
+# Stop on first failure
+php test --stop-on-failure
+
+# Filter tests by name
+php test --filter=testBind
+```
+
+### IoC Container Tests
+
+**单元测试** (`tests/IocContainerTest.php`)：32 个测试，直接实例化 Container 进行测试，覆盖：
+- 标签绑定（tag/tagged）
+- 解析回调（resolving/afterResolving）
+- 重绑定回调（rebinding）
+- 方法注入（call Class@method, 数组回调, 闭包 DI）
+- 作用域绑定（scoped/resetScope）
+- 条件绑定（when/needs/give）
+- PSR-11 兼容（has/get/异常）
+- 异常体系（BindingResolution/CircularDependency）
+- 条件注册（bindIf/singletonIf）
+
+**行为测试** (`tests/IocBehaviorTest.php`)：14 个测试，启动 PHP 内置服务器通过 HTTP 请求端到端验证，对应路由：
+
+| 路由 | 验证功能 |
+|------|---------|
+| `/ioc/bind` | bind 每次返回新实例 |
+| `/ioc/singleton` | singleton 返回同一实例 |
+| `/ioc/tagged` | 标签批量解析 |
+| `/ioc/resolving` | resolving/afterResolving 回调顺序 |
+| `/ioc/scoped` | scoped + resetScope |
+| `/ioc/scoped-singleton` | scoped 不影响 singleton |
+| `/ioc/conditional` | when/needs/give 条件绑定 |
+| `/ioc/psr11` | PSR-11 get/has |
+| `/ioc/circular` | 循环依赖异常 |
+| `/ioc/method-injection` | call() 方法注入 |
+| `/ioc/rebinding` | 重绑定回调 |
+| `/ioc/extend` | extend 装饰器 |
+| `/ioc/app-facade` | App 门面 singleton |
+| `/ioc/bind-if` | bindIf/singletonIf |
+
+行为测试使用端口 9876，需确保该端口可用。
 
 ## Code Conventions
 

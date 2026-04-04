@@ -161,7 +161,7 @@ class Route
         // 匹配参数
         $fullPattern = '/^' . implode('\\/', $patterns) . '$/';
         if (preg_match($fullPattern, $url, $matches) > 0) {
-            App::make(Request::class)->setUrlParam(explode('/', $matches[0]));
+            App::getInstance()->make(Request::class)->setUrlParam(explode('/', $matches[0]));
             return true;
         }
 

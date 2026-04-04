@@ -68,7 +68,7 @@ class Reflection
         }
 
         // 获取 URL 中的参数
-        $urlParam = App::make(Request::class)->getUrlParam();
+        $urlParam = App::getInstance()->make(Request::class)->getUrlParam();
 
         if ($nullCount > count($urlParam)) {
             throw new \Exception('param is not enough');

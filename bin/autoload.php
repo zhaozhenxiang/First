@@ -34,6 +34,9 @@ spl_autoload_register(function (string $class) {
     return false;
 });
 
+// 加载辅助函数
+require_once BASE_PATH . '/bin/Func/helpers.php';
+
 // 加载路由（仅在 Web 请求时需要）
 if (PHP_SAPI !== 'cli' && file_exists(APP_PATH . '/routes.php')) {
     require_once APP_PATH . '/routes.php';

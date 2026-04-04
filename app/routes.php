@@ -37,7 +37,7 @@ Route::get('/get/200', function(){
 
 //使用app容器类
 Route::get('/get/app', function(){
-    var_dump(App::make(User::class) === App::make(User::class));
+    var_dump(App::getInstance()->make(User::class) === App::getInstance()->make(User::class));
 });
 
 //request
@@ -69,3 +69,19 @@ Route::get('/get/di', 'BB@request');
 Route::get('/a/a/{no}', function($a){
     return $a;
 })->with('[0-9]+');
+
+// ===== IoC 容器行为测试路由 =====
+Route::get('/ioc/bind', 'IocTestController@bindMake');
+Route::get('/ioc/singleton', 'IocTestController@singleton');
+Route::get('/ioc/tagged', 'IocTestController@taggedBindings');
+Route::get('/ioc/resolving', 'IocTestController@resolvingCallbacks');
+Route::get('/ioc/scoped', 'IocTestController@scopedBinding');
+Route::get('/ioc/scoped-singleton', 'IocTestController@scopedWithSingleton');
+Route::get('/ioc/conditional', 'IocTestController@conditionalBinding');
+Route::get('/ioc/psr11', 'IocTestController@psr11');
+Route::get('/ioc/circular', 'IocTestController@circularDependency');
+Route::get('/ioc/method-injection', 'IocTestController@methodInjection');
+Route::get('/ioc/rebinding', 'IocTestController@rebindingCallback');
+Route::get('/ioc/extend', 'IocTestController@extendDecorator');
+Route::get('/ioc/app-facade', 'IocTestController@appFacade');
+Route::get('/ioc/bind-if', 'IocTestController@conditionalRegister');
