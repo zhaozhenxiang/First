@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\App;
 
 use Bin\Container\Container;
+use Bin\Container\ContextualBindingBuilder;
 use Bin\Contracts\ContainerInterface;
 use Bin\Facade\Facade;
 use Bin\Providers\ProviderRepository;
@@ -465,6 +466,86 @@ class App implements ContainerInterface
     public function isResolving(string $abstract): bool
     {
         return $this->container->isResolving($abstract);
+    }
+
+    /**
+     * 为服务注册标签
+     */
+    public function tag(array|string $abstracts, array|string $tags): void
+    {
+        $this->container->tag($abstracts, $tags);
+    }
+
+    /**
+     * 获取标签下的所有服务实例
+     */
+    public function tagged(string $tag): array
+    {
+        return $this->container->tagged($tag);
+    }
+
+    /**
+     * 作用域绑定
+     */
+    public function scoped(string $abstract, callable|string $concrete = null): void
+    {
+        $this->container->scoped($abstract, $concrete);
+    }
+
+    /**
+     * 重置作用域实例
+     */
+    public function resetScope(): void
+    {
+        $this->container->resetScope();
+    }
+
+    /**
+     * 注册解析回调
+     */
+    public function resolving(string|callable $abstract, ?callable $callback = null): void
+    {
+        $this->container->resolving($abstract, $callback);
+    }
+
+    /**
+     * 注册解析后回调
+     */
+    public function afterResolving(string|callable $abstract, ?callable $callback = null): void
+    {
+        $this->container->afterResolving($abstract, $callback);
+    }
+
+    /**
+     * 注册重绑定回调
+     */
+    public function rebinding(string $abstract, \Closure $callback): void
+    {
+        $this->container->rebinding($abstract, $callback);
+    }
+
+    /**
+     * 条件绑定流畅接口
+     */
+    public function when(string|array $concrete): ContextualBindingBuilder
+    {
+        return $this->container->when($concrete);
+    }
+
+    /**
+     * 条件绑定：仅在未绑定时绑定
+     */
+    public function bindIf(string $abstract, callable|string $concrete = null, bool $shared = false): void
+    {
+        $this->container->bindIf($abstract, $concrete, $shared);
+    }
+
+    /**
+     * 条件单例：仅在未绑定时绑定单例
+     */
+    public function singletonIf(string $abstract, callable|string $concrete = null): void
+    {
+        $this->container->singletonIf($abstract, $concrete);
     }
 
     /**
