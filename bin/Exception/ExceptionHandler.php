@@ -124,8 +124,6 @@ class ExceptionHandler
             return false;
         }
 
-        $error = $this->getErrorFromLevel($level);
-
         throw new \ErrorException($message, 0, $level, $file, $line);
     }
 

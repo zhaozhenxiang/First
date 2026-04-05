@@ -8,6 +8,8 @@
 # Test files
 test.php
 *.test.php
+/1.php
+/test_*.php
 
 # Vendor
 /vendor/

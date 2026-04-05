@@ -294,10 +294,7 @@ class ValidationManager
 
     private function validateFilled(string $field, mixed $value): bool
     {
-        if (is_array($value)) {
-            return count($value) > 0;
-        }
-        return $value !== null && $value !== '';
+        return $this->validateRequired($field, $value);
     }
 
     private function validateNullable(): bool

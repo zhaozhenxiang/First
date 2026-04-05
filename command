@@ -6,8 +6,7 @@ declare(strict_types=1);
  * CLI 命令行入口
  */
 
-require_once __DIR__ . '/../autoload.php';
-require_once __DIR__ . '/../bin/autoload.php';
+require_once __DIR__ . '/bin/autoload.php';
 
 use Bin\Console\Kernel;
 

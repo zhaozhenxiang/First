@@ -10,20 +10,11 @@ class View
     public const string viewSuffix = '.php';
     private static string $targetView;
     private static array $targetData = [];
-    private static $instance;
-
-
     public function __construct()
     {
-
     }
 
-    /**
-     *  处理path
-     * @param $path
-     * @return View
-     */
-    public static function make($path)
+    public static function make($path): self
     {
         if (false == preg_match('/.+?\.php/', $path)) {
             $path .= self::viewSuffix;
@@ -31,7 +22,7 @@ class View
 
         self::$targetView = self::viewPath . $path;
 
-        return self::$instance ?? new self;
+        return new self;
     }
 
     public function with($key, $value): self

@@ -8,9 +8,8 @@ use Bin\Middleware\Middleware;
 
 class A extends Middleware
 {
-    protected function handle(array $param)
+    protected function handle(array $param): mixed
     {
-//        return true;
-        return '没有通过middle';
+        return true;
     }
 }

@@ -117,11 +117,6 @@ abstract class Model extends BaseModel implements ArrayAccess, JsonSerializable
     public bool $wasRecentlyCreated = false;
 
     /**
-     * 查询构建器
-     */
-    protected static ?QueryBuilder $queryBuilder = null;
-
-    /**
      * 全局作用域（per-class 存储）
      */
     protected static array $globalScopes = [];

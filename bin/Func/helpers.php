@@ -249,12 +249,7 @@ if (!function_exists('session')) {
      */
     function session(string $key, mixed $default = null): mixed
     {
-        if (func_num_args() === 2) {
-            return $_SESSION[$key] ?? $default;
-        }
-
-        $_SESSION[$key] = $default;
-        return null;
+        return $_SESSION[$key] ?? $default;
     }
 }
 
@@ -416,19 +411,17 @@ if (!function_exists('cache')) {
      * 设置缓存: cache('key', 'value', 3600)
      * 获取缓存管理器: cache()
      */
-    function cache(?string $key = null, mixed $value = null, int $ttl = null): mixed
+    function cache(?string $key = null, mixed $value = null, ?int $ttl = null): mixed
     {
-        $manager = \Bin\Cache\CacheManager::class;
-
         if ($key === null) {
-            return $manager;
+            return \Bin\Cache\CacheManager::store();
         }
 
         if ($value === null) {
-            return $manager::get($key);
+            return \Bin\Cache\CacheManager::get($key);
         }
 
-        return $manager::set($key, $value, $ttl);
+        return \Bin\Cache\CacheManager::set($key, $value, $ttl);
     }
 }
 
