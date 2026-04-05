@@ -19,9 +19,14 @@ class ConfigRepository
     protected array $items = [];
 
     /**
-     * 配置文件路径
+     * 配置文件路径（源文件）
      */
     protected string $path;
+
+    /**
+     * 编译缓存路径
+     */
+    protected string $compiledPath;
 
     /**
      * 配置缓存
@@ -46,6 +51,7 @@ class ConfigRepository
     public function __construct(?string $path = null)
     {
         $this->path = $path ?? basePath('/config');
+        $this->compiledPath = basePath('/storage/config');
     }
 
     /**
@@ -108,7 +114,7 @@ class ConfigRepository
     }
 
     /**
-     * 加载配置文件
+     * 加载配置文件（优先编译缓存，fallback 源文件）
      */
     public function load(string $file): array
     {
@@ -116,7 +122,13 @@ class ConfigRepository
             return $this->items[$file];
         }
 
-        $path = $this->path . '/' . $file . '.php';
+        // 优先读取编译缓存
+        $compiledFile = $this->compiledPath . '/' . $file . '.php';
+        if (file_exists($compiledFile)) {
+            $path = $compiledFile;
+        } else {
+            $path = $this->path . '/' . $file . '.php';
+        }
 
         if (!file_exists($path)) {
             throw new RuntimeException("Configuration file not found: {$file}");
@@ -370,6 +382,22 @@ class ConfigRepository
     public function getPath(): string
     {
         return $this->path;
+    }
+
+    /**
+     * 设置编译缓存路径
+     */
+    public function setCompiledPath(string $path): void
+    {
+        $this->compiledPath = $path;
+    }
+
+    /**
+     * 获取编译缓存路径
+     */
+    public function getCompiledPath(): string
+    {
+        return $this->compiledPath;
     }
 
     /**

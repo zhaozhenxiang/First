@@ -15,6 +15,8 @@ use Bin\Console\Kernel;
 Kernel::register('list', \Bin\Console\Commands\ListCommand::class);
 Kernel::register('help', \Bin\Console\Commands\HelpCommand::class);
 Kernel::register('cache:clear', \Bin\Console\Commands\ClearCacheCommand::class);
+Kernel::register('config:cache', \Bin\Console\Commands\ConfigCacheCommand::class);
+Kernel::register('config:clear', \Bin\Console\Commands\ConfigClearCommand::class);
 Kernel::register('serve', \Bin\Console\Commands\ServeCommand::class);
 Kernel::register('migrate', \Bin\Console\Commands\MigrateCommand::class);
 Kernel::register('test', \Bin\Console\Commands\TestCommand::class);

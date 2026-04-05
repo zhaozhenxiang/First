@@ -37,6 +37,9 @@ spl_autoload_register(function (string $class) {
 // 加载辅助函数
 require_once BASE_PATH . '/bin/Func/helpers.php';
 
+// 加载 .env 环境变量
+\Bin\Config\EnvLoader::load(BASE_PATH . '/.env');
+
 // 加载路由（仅在 Web 请求时需要）
 if (PHP_SAPI !== 'cli' && file_exists(APP_PATH . '/routes.php')) {
     require_once APP_PATH . '/routes.php';

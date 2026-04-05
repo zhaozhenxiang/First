@@ -345,6 +345,25 @@ php test --filter=testBind
 
 行为测试使用端口 9876，需确保该端口可用。
 
+## Claude Code 自动化
+
+### Skills
+
+| 命令 | 用途 |
+|------|------|
+| `/gen-test <源文件>` | 根据源文件自动生成测试骨架（如 `/gen-test bin/Cache/CacheManager.php`） |
+| `/new-feature <模块名>` | 创建新模块脚手架（管理器、测试、配置等，如 `/new-feature Queue`） |
+
+### Hooks
+
+- **PHP 语法检查**: 编辑 `.php` 文件后自动运行 `php -l` 检查语法（配置在 `.claude/settings.json`）
+
+### 权限配置
+
+- 权限通配符配置在 `.claude/settings.local.json`（不提交到 git）
+- `./test:*` 覆盖所有测试命令
+- `Bash(php:*)`、`Bash(git:*)`、`Bash(curl:*)` 等通配符模式
+
 ## Code Conventions
 
 - All files use `declare(strict_types=1);`
@@ -352,3 +371,4 @@ php test --filter=testBind
 - Controllers extend `BaseController`
 - Use type hints on all method parameters and return types
 - Framework uses singleton pattern for `RouteCollection` and `App`
+- 使用TDD开发驱动

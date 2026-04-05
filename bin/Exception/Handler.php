@@ -280,7 +280,7 @@ class Handler
      */
     private static function isDebug(): bool
     {
-        return config('app:debug', false) === true;
+        return config('app.debug', false) === true;
     }
 
     /**

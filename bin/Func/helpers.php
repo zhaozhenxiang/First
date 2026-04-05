@@ -117,8 +117,8 @@ if (!function_exists('config')) {
     /**
      * 获取/设置配置值
      *
-     * 获取配置: config('app:name', 'default')
-     * 设置配置: config(['app:name' => 'value'])
+     * 获取配置: config('app.name', 'default')
+     * 设置配置: config(['app.name' => 'value'])
      * 保存配置: config()->save('app')
      */
     function config(...$args): mixed

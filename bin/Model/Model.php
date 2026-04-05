@@ -44,10 +44,10 @@ abstract class Model
 
     private static function getDBConfig(): array
     {
-        $driver = config('db:driver');
-        self::$resultType = config('db:resultType');
+        $driver = config('database.default');
+        self::$resultType = config('database.resultType');
 
-        return array_merge(config('db:connection:' . $driver), ['driver' => $driver, 'resultType' => self::$resultType]);
+        return array_merge(config('database.connections.' . $driver), ['driver' => $driver, 'resultType' => self::$resultType]);
     }
 
     final public static function select(string $sql, array $data): array
