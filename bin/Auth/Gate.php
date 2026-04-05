@@ -14,38 +14,61 @@ class Gate
     /**
      * 已注册的授权能力
      */
-    private static array $abilities = [];
+    private array $abilities = [];
 
     /**
      * 授权策略映射
      */
-    private static array $policies = [];
+    private array $policies = [];
 
     /**
      * 默认拒绝状态
      */
-    private static bool $defaultDeny = true;
+    private bool $defaultDeny = true;
 
     /**
      * 当前用户获取器
      */
-    private static $userResolver = null;
+    private $userResolver = null;
+
+    /** @var self|null 单例实例 */
+    private static ?self $instance = null;
+
+    public function __construct()
+    {
+    }
+
+    /**
+     * 获取单例实例
+     */
+    public static function getInstance(): self
+    {
+        return self::$instance ??= new self();
+    }
+
+    /**
+     * 重置单例（用于测试）
+     */
+    public static function resetInstance(): void
+    {
+        self::$instance = null;
+    }
 
     /**
      * 设置用户解析器
      */
-    public static function setUserResolver(callable $resolver): void
+    public function setUserResolverFor(callable $resolver): void
     {
-        self::$userResolver = $resolver;
+        $this->userResolver = $resolver;
     }
 
     /**
      * 获取当前用户
      */
-    public static function user(): ?object
+    public function userFor(): ?object
     {
-        if (self::$userResolver !== null) {
-            return call_user_func(self::$userResolver);
+        if ($this->userResolver !== null) {
+            return call_user_func($this->userResolver);
         }
 
         return AuthManager::user();
@@ -54,96 +77,76 @@ class Gate
     /**
      * 定义授权能力
      */
-    public static function define(string $ability, callable $callback): void
+    public function defineFor(string $ability, callable $callback): void
     {
-        self::$abilities[$ability] = $callback;
+        $this->abilities[$ability] = $callback;
     }
 
     /**
      * 批量定义授权能力
      */
-    public static function defineAbilities(array $abilities): void
+    public function defineAbilitiesFor(array $abilities): void
     {
         foreach ($abilities as $name => $callback) {
-            self::define($name, $callback);
+            $this->defineFor($name, $callback);
         }
     }
 
     /**
      * 注册策略类
      */
-    public static function policy(string $class, string $policy): void
+    public function policyFor(string $class, string $policy): void
     {
-        self::$policies[$class] = $policy;
+        $this->policies[$class] = $policy;
     }
 
     /**
      * 批量注册策略
      */
-    public static function definePolicies(array $policies): void
+    public function definePoliciesFor(array $policies): void
     {
-        self::$policies = array_merge(self::$policies, $policies);
+        $this->policies = array_merge($this->policies, $policies);
     }
 
     /**
      * 检查权限
      */
-    public static function allows(string $ability, mixed $arguments = []): bool
+    public function checkFor(string $ability, mixed $arguments = []): bool
     {
-        return self::check($ability, $arguments);
-    }
+        $user = $this->userFor();
 
-    /**
-     * 检查权限（拒绝）
-     */
-    public static function denies(string $ability, mixed $arguments = []): bool
-    {
-        return !self::check($ability, $arguments);
-    }
-
-    /**
-     * 检查权限
-     */
-    public static function check(string $ability, mixed $arguments = []): bool
-    {
-        $user = self::user();
-
-        // 首先检查已定义的能力
-        if (isset(self::$abilities[$ability])) {
-            $result = call_user_func(self::$abilities[$ability], $user, $arguments);
+        if (isset($this->abilities[$ability])) {
+            $result = call_user_func($this->abilities[$ability], $user, $arguments);
 
             return (bool) $result;
         }
 
-        // 尝试从策略中查找
         if (is_object($arguments)) {
-            $policy = self::getPolicyFor($arguments);
+            $policy = $this->getPolicyFor($arguments);
 
             if ($policy !== null) {
-                return self::checkPolicy($policy, $ability, $user, $arguments);
+                return $this->checkPolicy($policy, $ability, $user, $arguments);
             }
         }
 
-        // 使用默认设置
-        return !self::$defaultDeny;
+        return !$this->defaultDeny;
     }
 
     /**
      * 检查策略权限
      */
-    protected static function checkPolicy(
+    protected function checkPolicy(
         string $policy,
         string $ability,
         ?object $user,
         object $model
     ): bool {
         if (!class_exists($policy)) {
-            return !self::$defaultDeny;
+            return !$this->defaultDeny;
         }
 
         $policyInstance = new $policy();
 
-        // 检查 before 方法
         if (method_exists($policyInstance, 'before')) {
             $result = $policyInstance->before($user, $ability, $model);
 
@@ -152,11 +155,10 @@ class Gate
             }
         }
 
-        // 检查具体的方法
         $method = $ability;
 
         if (!method_exists($policyInstance, $method)) {
-            return !self::$defaultDeny;
+            return !$this->defaultDeny;
         }
 
         $result = $policyInstance->$method($user, $model);
@@ -167,17 +169,16 @@ class Gate
     /**
      * 获取模型的策略
      */
-    protected static function getPolicyFor(object $model): ?string
+    protected function getPolicyFor(object $model): ?string
     {
         $class = get_class($model);
 
-        foreach (self::$policies as $modelClass => $policy) {
+        foreach ($this->policies as $modelClass => $policy) {
             if ($class === $modelClass || is_subclass_of($class, $modelClass)) {
                 return $policy;
             }
         }
 
-        // 尝试自动发现策略
         $policy = str_replace('App\\Model\\', 'App\\Policies\\', $class) . 'Policy';
 
         if (class_exists($policy)) {
@@ -190,10 +191,10 @@ class Gate
     /**
      * 检查多个权限（任一通过）
      */
-    public static function any(array $abilities, mixed $arguments = []): bool
+    public function anyFor(array $abilities, mixed $arguments = []): bool
     {
         foreach ($abilities as $ability) {
-            if (self::check($ability, $arguments)) {
+            if ($this->checkFor($ability, $arguments)) {
                 return true;
             }
         }
@@ -204,10 +205,10 @@ class Gate
     /**
      * 检查多个权限（全部通过）
      */
-    public static function all(array $abilities, mixed $arguments = []): bool
+    public function allFor(array $abilities, mixed $arguments = []): bool
     {
         foreach ($abilities as $ability) {
-            if (!self::check($ability, $arguments)) {
+            if (!$this->checkFor($ability, $arguments)) {
                 return false;
             }
         }
@@ -218,41 +219,171 @@ class Gate
     /**
      * 设置默认拒绝状态
      */
-    public static function setDefaultDeny(bool $deny): void
+    public function setDefaultDenyFor(bool $deny): void
     {
-        self::$defaultDeny = $deny;
+        $this->defaultDeny = $deny;
     }
 
     /**
      * 清除所有注册
      */
-    public static function clear(): void
+    public function clearFor(): void
     {
-        self::$abilities = [];
-        self::$policies = [];
+        $this->abilities = [];
+        $this->policies = [];
     }
 
     /**
      * 获取所有已定义的能力
      */
-    public static function abilities(): array
+    public function abilitiesFor(): array
     {
-        return self::$abilities;
+        return $this->abilities;
     }
 
     /**
      * 获取所有策略
      */
-    public static function policies(): array
+    public function policiesFor(): array
     {
-        return self::$policies;
+        return $this->policies;
     }
 
     /**
      * 检查能力是否存在
      */
+    public function hasFor(string $ability): bool
+    {
+        return isset($this->abilities[$ability]);
+    }
+
+    // ─── @deprecated 静态兼容层 ───────────────────────────
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->setUserResolverFor()
+     */
+    public static function setUserResolver(callable $resolver): void
+    {
+        self::getInstance()->setUserResolverFor($resolver);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->userFor()
+     */
+    public static function user(): ?object
+    {
+        return self::getInstance()->userFor();
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->defineFor()
+     */
+    public static function define(string $ability, callable $callback): void
+    {
+        self::getInstance()->defineFor($ability, $callback);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->defineAbilitiesFor()
+     */
+    public static function defineAbilities(array $abilities): void
+    {
+        self::getInstance()->defineAbilitiesFor($abilities);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->policyFor()
+     */
+    public static function policy(string $class, string $policy): void
+    {
+        self::getInstance()->policyFor($class, $policy);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->definePoliciesFor()
+     */
+    public static function definePolicies(array $policies): void
+    {
+        self::getInstance()->definePoliciesFor($policies);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->checkFor()
+     */
+    public static function allows(string $ability, mixed $arguments = []): bool
+    {
+        return self::getInstance()->checkFor($ability, $arguments);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->checkFor()
+     */
+    public static function denies(string $ability, mixed $arguments = []): bool
+    {
+        return !self::getInstance()->checkFor($ability, $arguments);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->checkFor()
+     */
+    public static function check(string $ability, mixed $arguments = []): bool
+    {
+        return self::getInstance()->checkFor($ability, $arguments);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->anyFor()
+     */
+    public static function any(array $abilities, mixed $arguments = []): bool
+    {
+        return self::getInstance()->anyFor($abilities, $arguments);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->allFor()
+     */
+    public static function all(array $abilities, mixed $arguments = []): bool
+    {
+        return self::getInstance()->allFor($abilities, $arguments);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->setDefaultDenyFor()
+     */
+    public static function setDefaultDeny(bool $deny): void
+    {
+        self::getInstance()->setDefaultDenyFor($deny);
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->clearFor()
+     */
+    public static function clear(): void
+    {
+        self::getInstance()->clearFor();
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->abilitiesFor()
+     */
+    public static function abilities(): array
+    {
+        return self::getInstance()->abilitiesFor();
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->policiesFor()
+     */
+    public static function policies(): array
+    {
+        return self::getInstance()->policiesFor();
+    }
+
+    /**
+     * @deprecated 使用 Gate::getInstance()->hasFor()
+     */
     public static function has(string $ability): bool
     {
-        return isset(self::$abilities[$ability]);
+        return self::getInstance()->hasFor($ability);
     }
 }

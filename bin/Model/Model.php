@@ -7,6 +7,11 @@ namespace Bin\Model;
 use PDO;
 use PDOException;
 
+/**
+ * 遗留模型基类 — 仅提供原始 SQL 查询和连接管理
+ *
+ * @deprecated 请改用 Bin\Database\Model（Eloquent 风格 ORM）或 Bin\Database\ConnectionManager
+ */
 abstract class Model
 {
     private static $connection;

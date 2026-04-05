@@ -254,17 +254,7 @@ class ValidationManager
      */
     private function getValue(string $field): mixed
     {
-        $segments = explode('.', $field);
-        $value = $this->data;
-
-        foreach ($segments as $segment) {
-            if (!is_array($value) || !isset($value[$segment])) {
-                return null;
-            }
-            $value = $value[$segment];
-        }
-
-        return $value;
+        return data_get($this->data, $field);
     }
 
     /**
@@ -513,78 +503,49 @@ class ValidationManager
 
     private function validateGt(string $field, mixed $value, array $parameters): bool
     {
-        $other = $this->getValue($parameters[0] ?? '');
-
-        if (is_numeric($value) && is_numeric($other)) {
-            return (float) $value > (float) $other;
-        }
-
-        if (is_string($value) && is_string($other)) {
-            return mb_strlen($value) > mb_strlen($other);
-        }
-
-        if (is_array($value) && is_array($other)) {
-            return count($value) > count($other);
-        }
-
-        return false;
+        return $this->compareValues($value, $this->getValue($parameters[0] ?? ''), '>');
     }
 
     private function validateLt(string $field, mixed $value, array $parameters): bool
     {
-        $other = $this->getValue($parameters[0] ?? '');
-
-        if (is_numeric($value) && is_numeric($other)) {
-            return (float) $value < (float) $other;
-        }
-
-        if (is_string($value) && is_string($other)) {
-            return mb_strlen($value) < mb_strlen($other);
-        }
-
-        if (is_array($value) && is_array($other)) {
-            return count($value) < count($other);
-        }
-
-        return false;
+        return $this->compareValues($value, $this->getValue($parameters[0] ?? ''), '<');
     }
 
     private function validateGte(string $field, mixed $value, array $parameters): bool
     {
-        $other = $this->getValue($parameters[0] ?? '');
-
-        if (is_numeric($value) && is_numeric($other)) {
-            return (float) $value >= (float) $other;
-        }
-
-        if (is_string($value) && is_string($other)) {
-            return mb_strlen($value) >= mb_strlen($other);
-        }
-
-        if (is_array($value) && is_array($other)) {
-            return count($value) >= count($other);
-        }
-
-        return false;
+        return $this->compareValues($value, $this->getValue($parameters[0] ?? ''), '>=');
     }
 
     private function validateLte(string $field, mixed $value, array $parameters): bool
     {
-        $other = $this->getValue($parameters[0] ?? '');
+        return $this->compareValues($value, $this->getValue($parameters[0] ?? ''), '<=');
+    }
 
+    /**
+     * 通用值比较
+     */
+    private function compareValues(mixed $value, mixed $other, string $operator): bool
+    {
         if (is_numeric($value) && is_numeric($other)) {
-            return (float) $value <= (float) $other;
+            $a = (float) $value;
+            $b = (float) $other;
+        } elseif (is_string($value) && is_string($other)) {
+            $a = mb_strlen($value);
+            $b = mb_strlen($other);
+        } elseif (is_array($value) && is_array($other)) {
+            $a = count($value);
+            $b = count($other);
+        } else {
+            return false;
         }
 
-        if (is_string($value) && is_string($other)) {
-            return mb_strlen($value) <= mb_strlen($other);
-        }
-
-        if (is_array($value) && is_array($other)) {
-            return count($value) <= count($other);
-        }
-
-        return false;
+        return match ($operator) {
+            '>' => $a > $b,
+            '<' => $a < $b,
+            '>=' => $a >= $b,
+            '<=' => $a <= $b,
+            default => false,
+        };
     }
 
     private function validateStartsWith(string $field, mixed $value, array $parameters): bool

@@ -74,7 +74,7 @@ class ProgressBar
      */
     public function setProgress(int $step): self
     {
-        $this->progress = min($step, $this->max);
+        $this->progress = $step;
 
         if ($this->started && !$this->finished) {
             $this->display();
@@ -88,7 +88,7 @@ class ProgressBar
      */
     public function advance(int $step = 1): self
     {
-        $this->progress = min($this->progress + $step, $this->max);
+        $this->progress = $this->progress + $step;
 
         if ($this->started && !$this->finished) {
             $this->display();

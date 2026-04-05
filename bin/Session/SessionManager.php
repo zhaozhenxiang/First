@@ -114,17 +114,7 @@ class SessionManager implements SessionInterface
     {
         $this->ensureStarted();
 
-        $segments = explode('.', $key);
-        $value = $_SESSION;
-
-        foreach ($segments as $segment) {
-            if (!is_array($value) || !isset($value[$segment])) {
-                return $default;
-            }
-            $value = $value[$segment];
-        }
-
-        return $value;
+        return data_get($_SESSION, $key, $default);
     }
 
     /**
@@ -134,19 +124,7 @@ class SessionManager implements SessionInterface
     {
         $this->ensureStarted();
 
-        $segments = explode('.', $key);
-        $session = &$_SESSION;
-
-        foreach ($segments as $i => $segment) {
-            if ($i === count($segments) - 1) {
-                $session[$segment] = $value;
-            } else {
-                if (!isset($session[$segment]) || !is_array($session[$segment])) {
-                    $session[$segment] = [];
-                }
-                $session = &$session[$segment];
-            }
-        }
+        data_set($_SESSION, $key, $value);
     }
 
     /**
@@ -156,17 +134,7 @@ class SessionManager implements SessionInterface
     {
         $this->ensureStarted();
 
-        $segments = explode('.', $key);
-        $value = $_SESSION;
-
-        foreach ($segments as $segment) {
-            if (!is_array($value) || !isset($value[$segment])) {
-                return false;
-            }
-            $value = $value[$segment];
-        }
-
-        return true;
+        return data_has($_SESSION, $key);
     }
 
     /**

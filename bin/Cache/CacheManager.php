@@ -13,53 +13,76 @@ class CacheManager
      * 缓存存储实例
      * @var array<string, CacheRepository>
      */
-    protected static array $stores = [];
+    protected array $stores = [];
 
     /**
      * 默认存储名称
      */
-    protected static string $defaultStore = 'file';
+    protected string $defaultStore = 'file';
 
     /**
      * 存储配置
      * @var array<string, mixed>
      */
-    protected static array $config = [];
+    protected array $config = [];
+
+    /** @var self|null 单例实例 */
+    private static ?self $instance = null;
+
+    public function __construct()
+    {
+    }
+
+    /**
+     * 获取单例实例
+     */
+    public static function getInstance(): self
+    {
+        return self::$instance ??= new self();
+    }
+
+    /**
+     * 重置单例（用于测试）
+     */
+    public static function resetInstance(): void
+    {
+        self::$instance = null;
+    }
 
     /**
      * 设置配置
      */
-    public static function setConfig(array $config): void
+    public function setConfigFor(array $config): void
     {
-        self::$config = $config;
+        $this->config = $config;
     }
 
     /**
      * 获取缓存存储
      */
-    public static function store(?string $name = null): CacheRepository
+    public function storeFor(?string $name = null): CacheRepository
     {
-        $name = $name ?? self::$defaultStore;
+        $name = $name ?? $this->defaultStore;
 
-        if (!isset(self::$stores[$name])) {
-            self::$stores[$name] = self::resolveStore($name);
+        if (!isset($this->stores[$name])) {
+            $this->stores[$name] = $this->resolveStore($name);
         }
 
-        return self::$stores[$name];
+        return $this->stores[$name];
     }
 
     /**
      * 解析缓存存储
      */
-    protected static function resolveStore(string $name): CacheRepository
+    protected function resolveStore(string $name): CacheRepository
     {
-        $config = self::$config[$name] ?? [];
+        $config = $this->config[$name] ?? [];
 
         $driver = $config['driver'] ?? $name;
 
         return match ($driver) {
             'file' => new FileStore($config['path'] ?? null),
-            'redis' => self::createRedisStore($config),
+            'redis' => $this->createRedisStore($config),
             'array' => new ArrayStore(),
             'null' => new NullStore(),
             default => throw new \RuntimeException("Unsupported cache driver: {$driver}"),
@@ -69,9 +92,8 @@ class CacheManager
     /**
      * 创建 Redis 存储
      */
-    protected static function createRedisStore(array $config): CacheRepository
+    protected function createRedisStore(array $config): CacheRepository
     {
-        // Redis 存储需要 Redis 扩展
         if (!extension_loaded('redis')) {
             throw new \RuntimeException('Redis extension is not loaded.');
         }
@@ -87,80 +109,122 @@ class CacheManager
     /**
      * 设置默认存储
      */
-    public static function setDefaultStore(string $name): void
+    public function setDefaultStoreFor(string $name): void
     {
-        self::$defaultStore = $name;
+        $this->defaultStore = $name;
     }
 
     /**
      * 获取默认存储名称
      */
-    public static function getDefaultStore(): string
+    public function getDefaultStoreFor(): string
     {
-        return self::$defaultStore;
+        return $this->defaultStore;
     }
 
     /**
      * 清除所有存储实例
      */
-    public static function flush(): void
+    public function flushFor(): void
     {
-        self::$stores = [];
+        $this->stores = [];
+    }
+
+    // ─── @deprecated 静态兼容层 ───────────────────────────
+
+    /**
+     * @deprecated 使用 CacheManager::getInstance()->setConfigFor()
+     */
+    public static function setConfig(array $config): void
+    {
+        self::getInstance()->setConfigFor($config);
     }
 
     /**
-     * 快捷方法 - 获取
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()
+     */
+    public static function store(?string $name = null): CacheRepository
+    {
+        return self::getInstance()->storeFor($name);
+    }
+
+    /**
+     * @deprecated 使用 CacheManager::getInstance()->setDefaultStoreFor()
+     */
+    public static function setDefaultStore(string $name): void
+    {
+        self::getInstance()->setDefaultStoreFor($name);
+    }
+
+    /**
+     * @deprecated 使用 CacheManager::getInstance()->getDefaultStoreFor()
+     */
+    public static function getDefaultStore(): string
+    {
+        return self::getInstance()->getDefaultStoreFor();
+    }
+
+    /**
+     * @deprecated 使用 CacheManager::getInstance()->flushFor()
+     */
+    public static function flush(): void
+    {
+        self::getInstance()->flushFor();
+    }
+
+    /**
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->get()
      */
     public static function get(string $key, mixed $default = null): mixed
     {
-        return self::store()->get($key, $default);
+        return self::getInstance()->storeFor()->get($key, $default);
     }
 
     /**
-     * 快捷方法 - 设置
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->set()
      */
     public static function set(string $key, mixed $value, int $ttl = null): bool
     {
-        return self::store()->set($key, $value, $ttl);
+        return self::getInstance()->storeFor()->set($key, $value, $ttl);
     }
 
     /**
-     * 快捷方法 - 删除
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->delete()
      */
     public static function delete(string $key): bool
     {
-        return self::store()->delete($key);
+        return self::getInstance()->storeFor()->delete($key);
     }
 
     /**
-     * 快捷方法 - 记住
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->remember()
      */
     public static function remember(string $key, int $ttl, \Closure $callback): mixed
     {
-        return self::store()->remember($key, $ttl, $callback);
+        return self::getInstance()->storeFor()->remember($key, $ttl, $callback);
     }
 
     /**
-     * 快捷方法 - 永久存储
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->forever()
      */
     public static function forever(string $key, mixed $value): bool
     {
-        return self::store()->forever($key, $value);
+        return self::getInstance()->storeFor()->forever($key, $value);
     }
 
     /**
-     * 快捷方法 - 清空
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->clear()
      */
     public static function clear(): bool
     {
-        return self::store()->clear();
+        return self::getInstance()->storeFor()->clear();
     }
 
     /**
-     * 快捷方法 - 检查存在
+     * @deprecated 使用 CacheManager::getInstance()->storeFor()->has()
      */
     public static function has(string $key): bool
     {
-        return self::store()->has($key);
+        return self::getInstance()->storeFor()->has($key);
     }
 }

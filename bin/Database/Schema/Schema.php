@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Bin\Database\Schema;
 
 use PDO;
-use Bin\Model\Model;
+use Bin\Database\ConnectionManager;
 
 /**
  * Schema 门面 - 提供静态接口访问 Schema Builder
@@ -20,7 +20,7 @@ class Schema
     public static function builder(): SchemaBuilder
     {
         if (self::$builder === null) {
-            self::$builder = new SchemaBuilder(Model::getConnection());
+            self::$builder = new SchemaBuilder(ConnectionManager::getConnection());
         }
 
         return self::$builder;

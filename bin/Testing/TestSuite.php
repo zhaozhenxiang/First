@@ -76,7 +76,7 @@ abstract class TestSuite extends TestCase
                 Schema::table($table, function ($table) {
                     // SQLite 风格
                     try {
-                        \Bin\Model\Model::getConnection()->exec("DELETE FROM {$table->getTable()}");
+                        \Bin\Database\ConnectionManager::getConnection()->exec("DELETE FROM {$table->getTable()}");
                     } catch (\Exception $e) {
                         // 忽略错误
                     }

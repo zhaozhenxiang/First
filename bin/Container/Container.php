@@ -932,6 +932,8 @@ class Container implements ContainerInterface, PsrContainerInterface
 
     /**
      * 设置别名
+     *
+     * @deprecated 使用 alias() 代替
      */
     public function setAlias(string $abstract, string $alias): void
     {

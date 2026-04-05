@@ -16,36 +16,58 @@ class AuthManager
     /**
      * 当前认证用户
      */
-    private static ?object $user = null;
+    private ?object $user = null;
 
     /**
      * 用户提供者（模型类名）
      */
-    private static ?string $provider = null;
+    private ?string $provider = null;
 
     /**
      * Session 键名
      */
-    private static string $sessionKey = '_auth_user';
+    private string $sessionKey = '_auth_user';
+
+    /** @var self|null 单例实例 */
+    private static ?self $instance = null;
+
+    public function __construct()
+    {
+    }
+
+    /**
+     * 获取单例实例
+     */
+    public static function getInstance(): self
+    {
+        return self::$instance ??= new self();
+    }
+
+    /**
+     * 重置单例（用于测试）
+     */
+    public static function resetInstance(): void
+    {
+        self::$instance = null;
+    }
 
     /**
      * 设置用户提供者
      */
-    public static function setProvider(string $provider): void
+    public function setProviderFor(string $provider): void
     {
-        self::$provider = $provider;
+        $this->provider = $provider;
     }
 
     /**
      * 获取用户提供者
      */
-    public static function getProvider(): ?string
+    public function getProviderFor(): ?string
     {
-        if (self::$provider !== null) {
-            return self::$provider;
+        if ($this->provider !== null) {
+            return $this->provider;
         }
 
-        // 尝试从配置获取，如果失败则使用默认值
         try {
             return config('auth.provider') ?? 'App\\Model\\User';
         } catch (\Exception $e) {
@@ -56,38 +78,36 @@ class AuthManager
     /**
      * 设置 Session 键名
      */
-    public static function setSessionKey(string $key): void
+    public function setSessionKeyFor(string $key): void
     {
-        self::$sessionKey = $key;
+        $this->sessionKey = $key;
     }
 
     /**
      * 获取 Session 键名
      */
-    public static function getSessionKey(): string
+    public function getSessionKeyFor(): string
     {
-        return self::$sessionKey;
+        return $this->sessionKey;
     }
 
     /**
      * 尝试登录用户
      */
-    public static function attempt(array $credentials, bool $remember = false): bool
+    public function attemptFor(array $credentials, bool $remember = false): bool
     {
-        $provider = self::getProvider();
+        $provider = $this->getProviderFor();
 
         if ($provider === null || !class_exists($provider)) {
             throw new \RuntimeException("Auth provider not found: {$provider}");
         }
 
-        // 获取用户标识符（通常是 email 或 username）
         $identifier = $credentials['email'] ?? $credentials['username'] ?? null;
 
         if ($identifier === null) {
             return false;
         }
 
-        // 查找用户
         $user = $provider::where('email', $identifier)
             ->orWhere('username', $identifier)
             ->first();
@@ -96,7 +116,6 @@ class AuthManager
             return false;
         }
 
-        // 验证密码
         $password = $credentials['password'] ?? null;
         if ($password === null) {
             return false;
@@ -106,8 +125,7 @@ class AuthManager
             return false;
         }
 
-        // 登录成功
-        self::login($user, $remember);
+        $this->loginFor($user, $remember);
 
         return true;
     }
@@ -115,25 +133,24 @@ class AuthManager
     /**
      * 登录用户
      */
-    public static function login(object $user, bool $remember = false): void
+    public function loginFor(object $user, bool $remember = false): void
     {
-        self::$user = $user;
+        $this->user = $user;
 
         $session = session_manager();
-        $session->set(self::$sessionKey, $user->id ?? $user->id);
+        $session->set($this->sessionKey, $user->id ?? $user->id);
 
-        // Remember Me 功能
         if ($remember) {
-            self::remember($user);
+            $this->rememberUser($user);
         }
     }
 
     /**
      * 使用 ID 登录用户
      */
-    public static function loginUsingId(mixed $id, bool $remember = false): ?object
+    public function loginUsingIdFor(mixed $id, bool $remember = false): ?object
     {
-        $provider = self::getProvider();
+        $provider = $this->getProviderFor();
 
         if ($provider === null || !class_exists($provider)) {
             return null;
@@ -142,7 +159,7 @@ class AuthManager
         $user = $provider::find($id);
 
         if ($user !== null) {
-            self::login($user, $remember);
+            $this->loginFor($user, $remember);
         }
 
         return $user;
@@ -151,43 +168,40 @@ class AuthManager
     /**
      * 登出用户
      */
-    public static function logout(): void
+    public function logoutFor(): void
     {
         $session = session_manager();
-        $session->remove(self::$sessionKey);
+        $session->remove($this->sessionKey);
         $session->remove('_auth_remember');
 
-        self::$user = null;
+        $this->user = null;
 
-        // 清除 remember me cookie
-        if (isset($_COOKIE['_auth_remember'])) {
-            setcookie('_auth_remember', '', time() - 3600, '/');
-            unset($_COOKIE['_auth_remember']);
+        if (cookie('_auth_remember') !== null) {
+            cookie_forget('_auth_remember');
         }
     }
 
     /**
      * 获取当前认证用户
      */
-    public static function user(): ?object
+    public function userFor(): ?object
     {
-        if (self::$user !== null) {
-            return self::$user;
+        if ($this->user !== null) {
+            return $this->user;
         }
 
         $session = session_manager();
-        $userId = $session->get(self::$sessionKey);
+        $userId = $session->get($this->sessionKey);
 
         if ($userId === null) {
-            // 尝试从 remember me 恢复
-            $userId = self::getRememberUserId();
+            $userId = $this->getRememberUserIdFor();
         }
 
         if ($userId === null) {
             return null;
         }
 
-        $provider = self::getProvider();
+        $provider = $this->getProviderFor();
 
         if ($provider === null || !class_exists($provider)) {
             return null;
@@ -196,42 +210,42 @@ class AuthManager
         $user = $provider::find($userId);
 
         if ($user !== null) {
-            self::$user = $user;
+            $this->user = $user;
         }
 
-        return self::$user;
+        return $this->user;
     }
 
     /**
      * 获取当前用户 ID
      */
-    public static function id(): mixed
+    public function idFor(): mixed
     {
-        return self::user()?->id;
+        return $this->userFor()?->id;
     }
 
     /**
      * 检查用户是否已认证
      */
-    public static function check(): bool
+    public function checkFor(): bool
     {
-        return self::user() !== null;
+        return $this->userFor() !== null;
     }
 
     /**
      * 检查用户是否是访客
      */
-    public static function guest(): bool
+    public function guestFor(): bool
     {
-        return !self::check();
+        return !$this->checkFor();
     }
 
     /**
      * 验证用户凭据但不登录
      */
-    public static function validate(array $credentials): bool
+    public function validateFor(array $credentials): bool
     {
-        $provider = self::getProvider();
+        $provider = $this->getProviderFor();
 
         if ($provider === null || !class_exists($provider)) {
             return false;
@@ -260,9 +274,17 @@ class AuthManager
     }
 
     /**
+     * 重置用户缓存
+     */
+    public function resetUserFor(): void
+    {
+        $this->user = null;
+    }
+
+    /**
      * 设置 Remember Me
      */
-    protected static function remember(object $user): void
+    protected function rememberUser(object $user): void
     {
         $token = bin2hex(random_bytes(32));
         $payload = base64_encode(json_encode([
@@ -270,20 +292,18 @@ class AuthManager
             'token' => $token,
         ]));
 
-        // 存储到 session
         $session = session_manager();
         $session->set('_auth_remember', $payload);
 
-        // 设置 cookie（30 天）
         setcookie('_auth_remember', $payload, time() + (30 * 86400), '/', '', false, true);
     }
 
     /**
      * 从 Remember Me 获取用户 ID
      */
-    protected static function getRememberUserId(): mixed
+    protected function getRememberUserIdFor(): mixed
     {
-        $payload = $_COOKIE['_auth_remember'] ?? session_manager()->get('_auth_remember');
+        $payload = cookie('_auth_remember') ?? session_manager()->get('_auth_remember');
 
         if ($payload === null) {
             return null;
@@ -302,11 +322,117 @@ class AuthManager
         }
     }
 
+    // ─── @deprecated 静态兼容层 ───────────────────────────
+
     /**
-     * 重置用户缓存
+     * @deprecated 使用 AuthManager::getInstance()->setProviderFor()
+     */
+    public static function setProvider(string $provider): void
+    {
+        self::getInstance()->setProviderFor($provider);
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->getProviderFor()
+     */
+    public static function getProvider(): ?string
+    {
+        return self::getInstance()->getProviderFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->setSessionKeyFor()
+     */
+    public static function setSessionKey(string $key): void
+    {
+        self::getInstance()->setSessionKeyFor($key);
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->getSessionKeyFor()
+     */
+    public static function getSessionKey(): string
+    {
+        return self::getInstance()->getSessionKeyFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->attemptFor()
+     */
+    public static function attempt(array $credentials, bool $remember = false): bool
+    {
+        return self::getInstance()->attemptFor($credentials, $remember);
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->loginFor()
+     */
+    public static function login(object $user, bool $remember = false): void
+    {
+        self::getInstance()->loginFor($user, $remember);
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->loginUsingIdFor()
+     */
+    public static function loginUsingId(mixed $id, bool $remember = false): ?object
+    {
+        return self::getInstance()->loginUsingIdFor($id, $remember);
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->logoutFor()
+     */
+    public static function logout(): void
+    {
+        self::getInstance()->logoutFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->userFor()
+     */
+    public static function user(): ?object
+    {
+        return self::getInstance()->userFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->idFor()
+     */
+    public static function id(): mixed
+    {
+        return self::getInstance()->idFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->checkFor()
+     */
+    public static function check(): bool
+    {
+        return self::getInstance()->checkFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->guestFor()
+     */
+    public static function guest(): bool
+    {
+        return self::getInstance()->guestFor();
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->validateFor()
+     */
+    public static function validate(array $credentials): bool
+    {
+        return self::getInstance()->validateFor($credentials);
+    }
+
+    /**
+     * @deprecated 使用 AuthManager::getInstance()->resetUserFor()
      */
     public static function resetUser(): void
     {
-        self::$user = null;
+        self::getInstance()->resetUserFor();
     }
 }

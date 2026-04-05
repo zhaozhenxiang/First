@@ -216,21 +216,7 @@ class ConfigRepository
      */
     protected function getNested(array $array, ?string $key, mixed $default): mixed
     {
-        if ($key === null) {
-            return $array;
-        }
-
-        $keys = explode('.', $key);
-
-        foreach ($keys as $segment) {
-            if (!is_array($array) || !array_key_exists($segment, $array)) {
-                return $default;
-            }
-
-            $array = $array[$segment];
-        }
-
-        return $array;
+        return data_get($array, $key, $default);
     }
 
     /**

@@ -1,0 +1,85 @@
+<?php
+
+declare(strict_types=1);
+
+if (!function_exists('getUrl')) {
+    /**
+     * 获取请求 URI
+     */
+    function getUrl(): string
+    {
+        return $_SERVER['REQUEST_URI'] ?? '/';
+    }
+}
+
+if (!function_exists('getMethod')) {
+    /**
+     * 获取请求方法
+     */
+    function getMethod(): string
+    {
+        return $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    }
+}
+
+if (!function_exists('abort')) {
+    /**
+     * 中止请求并返回错误码
+     */
+    function abort(int $code, string $message = ''): never
+    {
+        http_response_code($code);
+        if ($message !== '') {
+            echo $message;
+        } else {
+            echo $code;
+        }
+        exit;
+    }
+}
+
+if (!function_exists('response')) {
+    /**
+     * 创建响应
+     */
+    function response(mixed $data = '', int $status = 200): \Bin\Response\Response
+    {
+        $response = new \Bin\Response\Response($data);
+        $response->setStatus($status);
+        return $response;
+    }
+}
+
+if (!function_exists('redirect')) {
+    /**
+     * 重定向到指定 URL
+     */
+    function redirect(string $url, int $status = 302): never
+    {
+        http_response_code($status);
+        header("Location: {$url}");
+        exit;
+    }
+}
+
+if (!function_exists('back')) {
+    /**
+     * 返回上一页
+     */
+    function back(): never
+    {
+        $referer = $_SERVER['HTTP_REFERER'] ?? '/';
+        redirect($referer);
+    }
+}
+
+if (!function_exists('is_ajax')) {
+    /**
+     * 检查是否为 AJAX 请求
+     */
+    function is_ajax(): bool
+    {
+        return isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+            && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+}

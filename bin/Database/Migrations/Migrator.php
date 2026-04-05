@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Bin\Database\Migrations;
 
 use Bin\Database\Schema\Schema;
+use Bin\Database\ConnectionManager;
 use PDO;
-use Bin\Model\Model;
 use Exception;
 
 /**
@@ -22,7 +22,7 @@ class Migrator
 
     public function __construct(string $path = '')
     {
-        $this->connection = Model::getConnection();
+        $this->connection = ConnectionManager::getConnection();
         $this->path = $path ?: basePath('/database/migrations');
     }
 

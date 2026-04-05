@@ -1,0 +1,421 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Bin\Database\Model;
+
+use Bin\Database\Relations;
+use Bin\Database\Collection;
+
+/**
+ * HasRelationships trait - 从 Model 中提取的关系管理逻辑
+ */
+trait HasRelationships
+{
+    /**
+     * 已加载的关系
+     */
+    protected array $relations = [];
+
+    /**
+     * 设置关系
+     */
+    public function setRelation(string $relation, mixed $value): self
+    {
+        $this->relations[$relation] = $value;
+
+        return $this;
+    }
+
+    /**
+     * 获取关系
+     */
+    public function getRelation(string $relation): mixed
+    {
+        return $this->relations[$relation] ?? null;
+    }
+
+    /**
+     * 获取所有关系
+     */
+    public function getRelations(): array
+    {
+        return $this->relations;
+    }
+
+    /**
+     * 设置多个关系
+     */
+    public function setRelations(array $relations): self
+    {
+        $this->relations = $relations;
+
+        return $this;
+    }
+
+    /**
+     * 检查关系是否已加载
+     */
+    public function relationLoaded(string $key): bool
+    {
+        return isset($this->relations[$key]);
+    }
+
+    /**
+     * 转为数组（包含关系）
+     */
+    public function toArrayWithRelations(): array
+    {
+        $array = $this->toArray();
+
+        foreach ($this->relations as $key => $value) {
+            if ($value instanceof Model) {
+                $array[$key] = $value->toArray();
+            } elseif (is_array($value)) {
+                $array[$key] = array_map(fn($item) => $item instanceof Model ? $item->toArray() : $item, $value);
+            }
+        }
+
+        return $array;
+    }
+
+    /**
+     * 定义 Has One 关系
+     */
+    protected function hasOne(string $related, string $foreignKey = null, string $localKey = null): \Bin\Database\Relations\HasOne
+    {
+        $instance = new $related();
+
+        $foreignKey = $foreignKey ?? $this->getForeignKey();
+
+        $localKey = $localKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new \Bin\Database\Relations\HasOne($query, $this, $foreignKey, $localKey);
+    }
+
+    /**
+     * 定义 Has Many 关系
+     */
+    protected function hasMany(string $related, string $foreignKey = null, string $localKey = null): \Bin\Database\Relations\HasMany
+    {
+        $instance = new $related();
+
+        $foreignKey = $foreignKey ?? $this->getForeignKey();
+
+        $localKey = $localKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new \Bin\Database\Relations\HasMany($query, $this, $foreignKey, $localKey);
+    }
+
+    /**
+     * 定义 Belongs To 关系
+     */
+    protected function belongsTo(string $related, string $foreignKey = null, string $ownerKey = null, string $relation = null): \Bin\Database\Relations\BelongsTo
+    {
+        $relation = $relation ?? $this->guessBelongsToRelation();
+
+        $instance = new $related();
+
+        $foreignKey = $foreignKey ?? $this->getForeignKey();
+
+        $ownerKey = $ownerKey ?? $instance->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new \Bin\Database\Relations\BelongsTo($query, $this, $foreignKey, $ownerKey, $related);
+    }
+
+    /**
+     * 定义 Belongs To Many 关系
+     */
+    protected function belongsToMany(
+        string $related,
+        string $table = null,
+        string $foreignPivotKey = null,
+        string $relatedPivotKey = null,
+        string $parentKey = null,
+        string $relatedKey = null
+    ): \Bin\Database\Relations\BelongsToMany {
+        $instance = new $related();
+
+        $table = $table ?? $this->joiningTable($related);
+
+        $foreignPivotKey = $foreignPivotKey ?? $this->getForeignKey();
+
+        $relatedPivotKey = $relatedPivotKey ?? $instance->getForeignKey();
+
+        $parentKey = $parentKey ?? $this->getKeyName();
+
+        $relatedKey = $relatedKey ?? $instance->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new \Bin\Database\Relations\BelongsToMany(
+            $query,
+            $this,
+            $table,
+            $foreignPivotKey,
+            $relatedPivotKey,
+            $parentKey,
+            $relatedKey
+        );
+    }
+
+    /**
+     * 定义 Has One Through 远层一对一关系
+     */
+    protected function hasOneThrough(
+        string $related,
+        string $through,
+        string $firstKey = null,
+        string $secondKey = null,
+        string $localKey = null,
+        string $secondLocalKey = null
+    ): \Bin\Database\Relations\HasOneThrough {
+        $relatedInstance = new $related();
+        $throughInstance = new $through();
+
+        $firstKey = $firstKey ?? $this->getForeignKey();
+        $secondKey = $secondKey ?? $throughInstance->getForeignKey();
+        $localKey = $localKey ?? $this->getKeyName();
+        $secondLocalKey = $secondLocalKey ?? $throughInstance->getKeyName();
+
+        $query = $relatedInstance->newQuery();
+
+        return new \Bin\Database\Relations\HasOneThrough(
+            $query, $this, $through, $firstKey, $secondKey, $localKey, $secondLocalKey
+        );
+    }
+
+    /**
+     * 定义 Has Many Through 远层一对多关系
+     */
+    protected function hasManyThrough(
+        string $related,
+        string $through,
+        string $firstKey = null,
+        string $secondKey = null,
+        string $localKey = null,
+        string $secondLocalKey = null
+    ): \Bin\Database\Relations\HasManyThrough {
+        $relatedInstance = new $related();
+        $throughInstance = new $through();
+
+        $firstKey = $firstKey ?? $this->getForeignKey();
+        $secondKey = $secondKey ?? $throughInstance->getForeignKey();
+        $localKey = $localKey ?? $this->getKeyName();
+        $secondLocalKey = $secondLocalKey ?? $throughInstance->getKeyName();
+
+        $query = $relatedInstance->newQuery();
+
+        return new \Bin\Database\Relations\HasManyThrough(
+            $query, $this, $through, $firstKey, $secondKey, $localKey, $secondLocalKey
+        );
+    }
+
+    /**
+     * 定义多态一对一关系
+     */
+    protected function morphOne(string $related, string $name, string $type = null, string $id = null, string $localKey = null): Relations\MorphOne
+    {
+        $instance = new $related();
+        $type = $type ?? $name . '_type';
+        $id = $id ?? $name . '_id';
+        $localKey = $localKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphOne(
+            $query, $this, $type, $id, $localKey
+        );
+    }
+
+    /**
+     * 定义多态一对多关系
+     */
+    protected function morphMany(string $related, string $name, string $type = null, string $id = null, string $localKey = null): Relations\MorphMany
+    {
+        $instance = new $related();
+        $type = $type ?? $name . '_type';
+        $id = $id ?? $name . '_id';
+        $localKey = $localKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphMany(
+            $query, $this, $type, $id, $localKey
+        );
+    }
+
+    /**
+     * 定义多态多对多关系
+     */
+    protected function morphToMany(
+        string $related,
+        string $name,
+        string $table = null,
+        string $foreignPivotKey = null,
+        string $relatedPivotKey = null,
+        string $parentKey = null,
+        string $relatedKey = null
+    ): Relations\MorphToMany {
+        $instance = new $related();
+        $table = $table ?? $name . 's';
+        $foreignPivotKey = $foreignPivotKey ?? $name . '_id';
+        $relatedPivotKey = $relatedPivotKey ?? $instance->getForeignKey();
+        $parentKey = $parentKey ?? $this->getKeyName();
+        $relatedKey = $relatedKey ?? $instance->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphToMany(
+            $query, $this, $name, $table, $foreignPivotKey, $relatedPivotKey, $parentKey, $relatedKey
+        );
+    }
+
+    /**
+     * 定义多态逆向关系（MorphTo）
+     */
+    protected function morphTo(?string $name = null, ?string $type = null, ?string $id = null): Relations\MorphTo
+    {
+        if ($name === null) {
+            $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2)[1];
+            $name = $caller['function'];
+        }
+
+        $type = $type ?? $name . '_type';
+        $id = $id ?? $name . '_id';
+
+        return new Relations\MorphTo(static::query(), $this, $type, $id, 'id', $name);
+    }
+
+    /**
+     * 定义多态多对多反向关系
+     */
+    protected function morphedByMany(
+        string $related,
+        string $name,
+        string $table = null,
+        string $foreignPivotKey = null,
+        string $relatedPivotKey = null,
+        string $parentKey = null,
+        string $relatedKey = null
+    ): Relations\MorphToMany {
+        $instance = new $related();
+        $table = $table ?? $name . 's';
+        $foreignPivotKey = $foreignPivotKey ?? $instance->getForeignKey();
+        $relatedPivotKey = $relatedPivotKey ?? $name . '_id';
+        $parentKey = $parentKey ?? $instance->getKeyName();
+        $relatedKey = $relatedKey ?? $this->getKeyName();
+
+        $query = $instance->newQuery();
+
+        return new Relations\MorphToMany(
+            $query, $this, $name, $table, $foreignPivotKey, $relatedPivotKey, $parentKey, $relatedKey,
+            true
+        );
+    }
+
+    /**
+     * 获取外键名
+     */
+    protected function getForeignKey(): string
+    {
+        return strtolower(substr(strrchr(get_class($this), '\\'), 1)) . '_id';
+    }
+
+    /**
+     * 猜测 Belongs To 关系名
+     */
+    protected function guessBelongsToRelation(): string
+    {
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2];
+
+        return $caller['function'];
+    }
+
+    /**
+     * 获取中间表名
+     */
+    protected function joiningTable(string $related): string
+    {
+        $segments = [
+            strtolower(substr(strrchr(get_class($this), '\\'), 1)),
+            strtolower(substr(strrchr($related, '\\'), 1)),
+        ];
+
+        sort($segments);
+
+        return strtolower(implode('_', $segments));
+    }
+
+    /**
+     * 延迟加载关系计数
+     */
+    public function loadCount(string|array $relations): self
+    {
+        $relations = is_array($relations) ? $relations : func_get_args();
+
+        foreach ($relations as $relation) {
+            $relationObj = $this->{$relation}();
+            $count = $relationObj->getQuery()->count();
+            $this->setAttribute("{$relation}_count", $count);
+        }
+
+        return $this;
+    }
+
+    /**
+     * 延迟加载关系聚合
+     */
+    public function loadSum(string $relation, string $column): self
+    {
+        $relationObj = $this->{$relation}();
+        $sum = $relationObj->getQuery()->sum($column);
+        $this->setAttribute("{$relation}_{$column}_sum", $sum);
+
+        return $this;
+    }
+
+    /**
+     * 获取多态映射
+     */
+    public static function getMorphMap(): array
+    {
+        return static::$morphMap[static::class] ?? [];
+    }
+
+    /**
+     * 设置多态映射
+     */
+    public static function enforceMorphMap(array $map): void
+    {
+        static::$morphMap[static::class] = $map;
+    }
+
+    /**
+     * 动态加载关系
+     */
+    public function load(string $relation): self
+    {
+        $this->relations[$relation] = $this->$relation();
+
+        return $this;
+    }
+
+    /**
+     * 加载多个关系
+     */
+    public function loadMultiple(array $relations): self
+    {
+        foreach ($relations as $relation) {
+            $this->load($relation);
+        }
+
+        return $this;
+    }
+}

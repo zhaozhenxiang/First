@@ -7,6 +7,7 @@ namespace Bin\Database;
 use Bin\Database\Debug\DatabaseDebugger;
 use Bin\Database\Debug\QueryLog;
 use Bin\Database\Model;
+use Bin\Database\QueryBuilder\CompilesQueries;
 use Bin\Database\Relations\Relation;
 use InvalidArgumentException;
 use PDO;
@@ -17,6 +18,8 @@ use PDOStatement;
  */
 class QueryBuilder
 {
+    use CompilesQueries;
+
     protected PDO $connection;
 
     protected string $from = '';
@@ -64,6 +67,9 @@ class QueryBuilder
 
     /** @var array<string> 已移除的全局作用域 */
     protected array $removedScopes = [];
+
+    /** @var \Closure|null 页码解析回调（替代直接读取 $_GET） */
+    protected static ?\Closure $pageResolver = null;
 
     public function __construct(PDO $connection, string $modelClass = '')
     {
@@ -849,10 +855,30 @@ class QueryBuilder
     }
 
     /**
+     * 设置页码解析回调
+     */
+    public static function setPageResolver(\Closure $resolver): void
+    {
+        static::$pageResolver = $resolver;
+    }
+
+    /**
+     * 恢复默认页码解析
+     */
+    public static function disablePageResolver(): void
+    {
+        static::$pageResolver = null;
+    }
+
+    /**
      * 解析当前页码
      */
     protected function resolveCurrentPage(string $pageName = 'page'): int
     {
+        if (static::$pageResolver !== null) {
+            return (static::$pageResolver)($pageName);
+        }
+
         $page = $_GET[$pageName] ?? 1;
 
         if (filter_var($page, FILTER_VALIDATE_INT) !== false && (int) $page >= 1) {
@@ -867,6 +893,10 @@ class QueryBuilder
      */
     protected function resolvePath(): string
     {
+        if (static::$pageResolver !== null) {
+            return '/';
+        }
+
         return $_SERVER['REQUEST_URI'] ?? '/';
     }
 
@@ -875,6 +905,10 @@ class QueryBuilder
      */
     protected function resolveQuery(): array
     {
+        if (static::$pageResolver !== null) {
+            return [];
+        }
+
         $query = $_GET;
         unset($query['page']);
 
@@ -1585,24 +1619,7 @@ class QueryBuilder
      */
     public function increment(string $column, int $amount = 1, array $extra = []): int
     {
-        $sql = "UPDATE {$this->from} SET {$column} = {$column} + ?";
-
-        if (!empty($extra)) {
-            $sets = [];
-            foreach (array_keys($extra) as $key) {
-                $sets[] = "{$key} = ?";
-            }
-            $sql .= ', ' . implode(', ', $sets);
-        }
-
-        $sql .= ' ' . $this->compileWheres();
-
-        $bindings = array_merge([$amount], array_values($extra), $this->getBindings());
-
-        $stmt = $this->connection->prepare($sql);
-        $stmt->execute($bindings);
-
-        return $stmt->rowCount();
+        return $this->buildIncrementQuery($column, '+', $amount, $extra);
     }
 
     /**
@@ -1610,7 +1627,15 @@ class QueryBuilder
      */
     public function decrement(string $column, int $amount = 1, array $extra = []): int
     {
-        $sql = "UPDATE {$this->from} SET {$column} = {$column} - ?";
+        return $this->buildIncrementQuery($column, '-', $amount, $extra);
+    }
+
+    /**
+     * 构建增量/减量查询
+     */
+    private function buildIncrementQuery(string $column, string $operator, int $amount, array $extra): int
+    {
+        $sql = "UPDATE {$this->from} SET {$column} = {$column} {$operator} ?";
 
         if (!empty($extra)) {
             $sets = [];
@@ -1647,22 +1672,6 @@ class QueryBuilder
     }
 
     /**
-     * 构建 UPDATE SQL
-     */
-    protected function grammarUpdate(array $values): string
-    {
-        $columns = [];
-
-        foreach (array_keys($values) as $key) {
-            $columns[] = "{$key} = ?";
-        }
-
-        $columns = implode(', ', $columns);
-
-        return "UPDATE {$this->from} SET {$columns} {$this->compileWheres()}";
-    }
-
-    /**
      * 构建 SELECT SQL
      */
     public function toSql(): string
@@ -1696,231 +1705,6 @@ class QueryBuilder
         $bindings = $this->getBindings();
 
         dd(['sql' => $sql, 'bindings' => $bindings]);
-    }
-
-    /**
-     * 构建 SELECT 语句
-     */
-    protected function grammarSelect(): string
-    {
-        $columns = $this->columns === ['*'] ? '*' : implode(', ', $this->columns);
-
-        $distinct = $this->distinct ? 'DISTINCT ' : '';
-
-        $sql = "SELECT {$distinct}{$columns} FROM {$this->from}";
-
-        $sql .= $this->compileJoins();
-
-        $sql .= $this->compileWheres();
-
-        $sql .= $this->compileGroups();
-
-        $sql .= $this->compileHavings();
-
-        $sql .= $this->compileOrders();
-
-        $sql .= $this->compileLimit();
-
-        $sql .= $this->compileOffset();
-
-        $sql .= $this->compileLock();
-
-        // 编译 UNION
-        if (!empty($this->unionQueries)) {
-            $sql = $this->compileUnions($sql);
-        }
-
-        return $sql;
-    }
-
-    /**
-     * 编译 UNION 查询
-     */
-    protected function compileUnions(string $sql): string
-    {
-        foreach ($this->unionQueries as $union) {
-            $type = $union['all'] ? ' UNION ALL ' : ' UNION ';
-            $sql .= $type . $union['query']->toSql();
-        }
-
-        if ($this->unionOrder !== '') {
-            $sql .= " ORDER BY {$this->unionOrder}";
-        }
-
-        if ($this->unionLimit !== null) {
-            $sql .= " LIMIT {$this->unionLimit}";
-        }
-
-        if ($this->unionOffset !== null) {
-            $sql .= " OFFSET {$this->unionOffset}";
-        }
-
-        return $sql;
-    }
-
-    /**
-     * 编译悲观锁
-     */
-    protected function compileLock(): string
-    {
-        return $this->lock !== null ? " {$this->lock}" : '';
-    }
-
-    /**
-     * 构建聚合查询语句
-     */
-    protected function grammarAggregate(): string
-    {
-        $column = $this->aggregate['columns'];
-
-        if ($this->aggregate['function'] !== 'count') {
-            $column = "IFNULL({$column}, 0)";
-        }
-
-        return "SELECT {$this->aggregate['function']}({$column}) AS aggregate FROM {$this->from} {$this->compileWheres()}";
-    }
-
-    /**
-     * 编译 JOIN
-     */
-    protected function compileJoins(): string
-    {
-        if (empty($this->joins)) {
-            return '';
-        }
-
-        $joins = [];
-
-        foreach ($this->joins as $join) {
-            $table = $join['table'];
-            $first = $join['first'];
-            $operator = $join['operator'];
-            $second = $join['second'];
-            $type = strtoupper($join['type']);
-
-            $joins[] = "{$type} JOIN {$table} ON {$first} {$operator} {$second}";
-        }
-
-        return ' ' . implode(' ', $joins);
-    }
-
-    /**
-     * 编译 WHERE
-     */
-    protected function compileWheres(): string
-    {
-        if (empty($this->wheres)) {
-            return '';
-        }
-
-        $sql = '';
-
-        foreach ($this->wheres as $index => $where) {
-            $condition = $this->compileWhere($where);
-
-            if ($index === 0) {
-                $sql .= $condition;
-            } else {
-                $boolean = strtoupper($where['boolean'] ?? 'and');
-                $sql .= " {$boolean} {$condition}";
-            }
-        }
-
-        return ' WHERE ' . $sql;
-    }
-
-    /**
-     * 编译单个 WHERE 条件
-     */
-    protected function compileWhere(array $where): string
-    {
-        $not = !empty($where['not']) ? 'NOT ' : '';
-
-        return match ($where['type']) {
-            'Basic' => ($not ? "NOT " : '') . "{$where['column']} {$where['operator']} ?",
-            'Nested' => "({$where['query']->compileWheres()})",
-            'Column' => ($not ? "NOT " : '') . "{$where['first']} {$where['operator']} {$where['second']}",
-            'Raw' => $where['sql'],
-            'In' => "{$where['column']} IN (" . rtrim(str_repeat('?,', count($where['values'])), ',') . ')',
-            'NotIn' => "{$where['column']} NOT IN (" . rtrim(str_repeat('?,', count($where['values'])), ',') . ')',
-            'InSub' => "{$where['column']} IN ({$where['query']->toSql()})",
-            'NotInSub' => "{$where['column']} NOT IN ({$where['query']->toSql()})",
-            'Null' => "{$where['column']} IS NULL",
-            'NotNull' => "{$where['column']} IS NOT NULL",
-            'Between' => "{$where['column']} BETWEEN ? AND ?",
-            'NotBetween' => "{$where['column']} NOT BETWEEN ? AND ?",
-            'Exists' => "EXISTS ({$where['query']->toSql()})",
-            'NotExists' => "NOT EXISTS ({$where['query']->toSql()})",
-            default => '',
-        };
-    }
-
-    /**
-     * 编译 GROUP BY
-     */
-    protected function compileGroups(): string
-    {
-        return empty($this->groups) ? '' : ' GROUP BY ' . implode(', ', $this->groups);
-    }
-
-    /**
-     * 编译 HAVING
-     */
-    protected function compileHavings(): string
-    {
-        if (empty($this->havings)) {
-            return '';
-        }
-
-        $havings = [];
-
-        foreach ($this->havings as $having) {
-            if (isset($having['type']) && $having['type'] === 'Raw') {
-                $havings[] = "{$having['boolean']} {$having['sql']}";
-            } else {
-                $havings[] = "{$having['boolean']} {$having['column']} {$having['operator']} ?";
-            }
-        }
-
-        return ' HAVING ' . implode(' ', $havings);
-    }
-
-    /**
-     * 编译 ORDER BY
-     */
-    protected function compileOrders(): string
-    {
-        if (empty($this->orders)) {
-            return '';
-        }
-
-        $orders = [];
-
-        foreach ($this->orders as $order) {
-            if (isset($order['type']) && $order['type'] === 'Raw') {
-                $orders[] = $order['sql'];
-            } else {
-                $orders[] = "{$order['column']} {$order['direction']}";
-            }
-        }
-
-        return ' ORDER BY ' . implode(', ', $orders);
-    }
-
-    /**
-     * 编译 LIMIT
-     */
-    protected function compileLimit(): string
-    {
-        return $this->limit !== null ? " LIMIT {$this->limit}" : '';
-    }
-
-    /**
-     * 编译 OFFSET
-     */
-    protected function compileOffset(): string
-    {
-        return $this->offset !== null ? " OFFSET {$this->offset}" : '';
     }
 
     /**

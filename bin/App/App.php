@@ -251,7 +251,10 @@ class App implements ContainerInterface
     /**
      * 上下文绑定
      */
-    public function contextual(string $concrete, string $abstract, callable $implementation): void
+    /**
+     * @deprecated 直接使用 container()->contextual() 代替
+     */
+        public function contextual(string $concrete, string $abstract, callable $implementation): void
     {
         $this->container->contextual($concrete, $abstract, $implementation);
     }
@@ -267,7 +270,10 @@ class App implements ContainerInterface
     /**
      * 检查是否已绑定
      */
-    public function bound(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->bound() 代替
+     */
+        public function bound(string $abstract): bool
     {
         return $this->container->bound($abstract);
     }
@@ -275,7 +281,10 @@ class App implements ContainerInterface
     /**
      * 检查服务是否已解析
      */
-    public function resolved(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->resolved() 代替
+     */
+        public function resolved(string $abstract): bool
     {
         return $this->container->resolved($abstract);
     }
@@ -283,7 +292,10 @@ class App implements ContainerInterface
     /**
      * 伪装实例（用于测试）
      */
-    public function mock(string $abstract, ?object $mock = null): object
+    /**
+     * @deprecated 直接使用 container()->mock() 代替
+     */
+        public function mock(string $abstract, ?object $mock = null): object
     {
         return $this->container->mock($abstract, $mock);
     }
@@ -308,7 +320,10 @@ class App implements ContainerInterface
     /**
      * 刷新单个服务
      */
-    public function forget(string $abstract): void
+    /**
+     * @deprecated 直接使用 container()->forget() 代替
+     */
+        public function forget(string $abstract): void
     {
         $this->container->forget($abstract);
     }
@@ -316,7 +331,10 @@ class App implements ContainerInterface
     /**
      * 获取所有绑定
      */
-    public function getBindings(): array
+    /**
+     * @deprecated 直接使用 container()->getBindings() 代替
+     */
+        public function getBindings(): array
     {
         return $this->container->getBindings();
     }
@@ -324,7 +342,10 @@ class App implements ContainerInterface
     /**
      * 检查是否有特定绑定
      */
-    public function hasBinding(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->hasBinding() 代替
+     */
+        public function hasBinding(string $abstract): bool
     {
         return $this->container->hasBinding($abstract);
     }
@@ -367,7 +388,10 @@ class App implements ContainerInterface
     /**
      * 批量绑定
      */
-    public function bindArray(array $bindings): void
+    /**
+     * @deprecated 直接使用 container()->bindArray() 代替
+     */
+        public function bindArray(array $bindings): void
     {
         $this->container->bindArray($bindings);
     }
@@ -375,7 +399,10 @@ class App implements ContainerInterface
     /**
      * 批量单例
      */
-    public function singletonArray(array $bindings): void
+    /**
+     * @deprecated 直接使用 container()->singletonArray() 代替
+     */
+        public function singletonArray(array $bindings): void
     {
         $this->container->singletonArray($bindings);
     }
@@ -383,7 +410,10 @@ class App implements ContainerInterface
     /**
      * 批量实例
      */
-    public function instanceArray(array $instances): void
+    /**
+     * @deprecated 直接使用 container()->instanceArray() 代替
+     */
+        public function instanceArray(array $instances): void
     {
         $this->container->instanceArray($instances);
     }
@@ -391,7 +421,10 @@ class App implements ContainerInterface
     /**
      * 检查是否在构建堆栈中
      */
-    public function isBuildStack(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->isBuildStack() 代替
+     */
+        public function isBuildStack(string $abstract): bool
     {
         return $this->container->isBuildStack($abstract);
     }
@@ -399,7 +432,10 @@ class App implements ContainerInterface
     /**
      * 检查是否有扩展
      */
-    public function hasExtenders(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->hasExtenders() 代替
+     */
+        public function hasExtenders(string $abstract): bool
     {
         return $this->container->hasExtenders($abstract);
     }
@@ -407,7 +443,10 @@ class App implements ContainerInterface
     /**
      * 检查是否有实例
      */
-    public function hasInstance(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->hasInstance() 代替
+     */
+        public function hasInstance(string $abstract): bool
     {
         return $this->container->hasInstance($abstract);
     }
@@ -415,7 +454,10 @@ class App implements ContainerInterface
     /**
      * 获取实例
      */
-    public function getInstanceOf(string $abstract): ?object
+    /**
+     * @deprecated 直接使用 container()->getInstanceOf() 代替
+     */
+        public function getInstanceOf(string $abstract): ?object
     {
         return $this->container->getInstanceOf($abstract);
     }
@@ -423,7 +465,10 @@ class App implements ContainerInterface
     /**
      * 设置实例
      */
-    public function setInstanceOf(string $abstract, object $instance): void
+    /**
+     * @deprecated 直接使用 container()->setInstanceOf() 代替
+     */
+        public function setInstanceOf(string $abstract, object $instance): void
     {
         $this->container->setInstanceOf($abstract, $instance);
     }
@@ -439,7 +484,10 @@ class App implements ContainerInterface
     /**
      * 注册工厂函数
      */
-    public function factory(string $abstract, callable $factory): void
+    /**
+     * @deprecated 直接使用 container()->factory() 代替
+     */
+        public function factory(string $abstract, callable $factory): void
     {
         $this->container->factory($abstract, $factory);
     }
@@ -447,7 +495,10 @@ class App implements ContainerInterface
     /**
      * 绑定并立即解析
      */
-    public function bindAndMake(string $abstract, callable|string $concrete = null): object
+    /**
+     * @deprecated 直接使用 container()->bindAndMake() 代替
+     */
+        public function bindAndMake(string $abstract, callable|string $concrete = null): object
     {
         return $this->container->bindAndMake($abstract, $concrete);
     }
@@ -455,7 +506,10 @@ class App implements ContainerInterface
     /**
      * 绑定单例并立即解析
      */
-    public function singletonAndMake(string $abstract, callable|string $concrete = null): object
+    /**
+     * @deprecated 直接使用 container()->singletonAndMake() 代替
+     */
+        public function singletonAndMake(string $abstract, callable|string $concrete = null): object
     {
         return $this->container->singletonAndMake($abstract, $concrete);
     }
@@ -463,7 +517,10 @@ class App implements ContainerInterface
     /**
      * 检查是否在解析中
      */
-    public function isResolving(string $abstract): bool
+    /**
+     * @deprecated 直接使用 container()->isResolving() 代替
+     */
+        public function isResolving(string $abstract): bool
     {
         return $this->container->isResolving($abstract);
     }
@@ -551,7 +608,10 @@ class App implements ContainerInterface
     /**
      * 获取构建堆栈
      */
-    public function getBuildStack(): array
+    /**
+     * @deprecated 直接使用 container()->getBuildStack() 代替
+     */
+        public function getBuildStack(): array
     {
         return $this->container->getBuildStack();
     }
@@ -567,7 +627,10 @@ class App implements ContainerInterface
     /**
      * 检查是否有别名
      */
-    public function hasAlias(string $name): bool
+    /**
+     * @deprecated 直接使用 container()->hasAlias() 代替
+     */
+        public function hasAlias(string $name): bool
     {
         return $this->container->hasAlias($name);
     }
@@ -575,17 +638,22 @@ class App implements ContainerInterface
     /**
      * 获取别名对应的抽象名
      */
-    public function getAlias(string $abstract): string
+    /**
+     * @deprecated 直接使用 container()->getAlias() 代替
+     */
+        public function getAlias(string $abstract): string
     {
         return $this->container->getAlias($abstract);
     }
 
     /**
-     * 设置别名（别名）
+     * 设置别名
+     *
+     * @deprecated 使用 alias() 代替
      */
     public function setAlias(string $abstract, string $alias): void
     {
-        $this->container->setAlias($abstract, $alias);
+        $this->alias($abstract, $alias);
     }
 
     /**

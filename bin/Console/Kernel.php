@@ -235,6 +235,8 @@ class Kernel
             $exitCode = $instance->run($input, $output);
 
             return $exitCode;
+        } catch (RuntimeException $e) {
+            return 1;
         } finally {
             ob_end_clean();
         }
