@@ -18,13 +18,7 @@ declare(strict_types=1);
  * php migrate make:create_posts posts  # 创建指定表的迁移
  */
 
-$autoload = __DIR__ . '/../../../bin/autoload.php';
-
-if (!file_exists($autoload)) {
-    $autoload = __DIR__ . '/../../../vendor/autoload.php';
-}
-
-require_once $autoload;
+require_once __DIR__ . '/../../autoload.php';
 
 use Bin\Database\Migrations\Migrator;
 use Bin\Database\Migrations\MigrationCreator;

@@ -92,6 +92,7 @@ class Kernel
     {
         // 默认搜索路径
         $paths = array_merge([
+            basePath('bin/Console/Commands'),
             basePath('app/Console/Commands'),
         ], self::$paths);
 
@@ -114,9 +115,11 @@ class Kernel
 
                     if ($reflection->isSubclassOf(Command::class) && !$reflection->isAbstract()) {
                         $instance = $reflection->newInstance();
+                        $instance->parseSignature();
 
-                        if ($instance->getName() !== '') {
-                            self::$commands[$instance->getName()] = $instance;
+                        $name = $instance->getName();
+                        if ($name !== '') {
+                            self::$commands[$name] = $instance;
                         }
                     }
                 } catch (ReflectionException) {
@@ -131,10 +134,15 @@ class Kernel
      */
     private static function pathToClassName(string $path): string
     {
-        $path = str_replace([basePath(), '.php', '/'], ['', '', '\\'], $path);
+        $relativePath = str_replace([basePath(), '.php'], ['', ''], $path);
 
-        // 添加应用命名空间前缀
-        $className = self::$appNamespace . 'Commands\\' . $path;
+        // 框架命令直接用 Bin\ 命名空间
+        if (str_starts_with($relativePath, '/bin/')) {
+            return str_replace('/', '\\', substr($relativePath, 1));
+        }
+
+        // 应用命令使用 App 命名空间
+        $className = self::$appNamespace . 'Commands\\' . str_replace('/', '\\', ltrim($relativePath, '/'));
 
         return $className;
     }

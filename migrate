@@ -1,6 +1,8 @@
 #!/usr/bin/env php
 <?php
 
+declare(strict_types=1);
+
 /**
  * 快捷迁移命令脚本
  *
@@ -14,4 +16,4 @@
  * php migrate make:xxxxx           # 创建迁移文件
  */
 
-require_once __DIR__ . '/bin/Database/Migrations/MigrateCommand.php';
+require __DIR__ . '/bin/Database/Migrations/MigrateCommand.php';

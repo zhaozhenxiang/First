@@ -4,371 +4,184 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a custom PHP8.5 web framework inspired by Laravel, built with PHP 8.3+. The framework implements core MVC patterns with IoC/DI containers, routing, middleware, and database abstraction. 
+Custom PHP 8.3+ MVC framework inspired by Laravel. Implements IoC/DI container, routing, middleware, Eloquent-style ORM, event system, authentication/authorization, caching, logging, validation, console commands, migrations, and pagination.
+
+## Commands
+
+```bash
+php test                              # Run all tests (1085 tests)
+php test tests/QueryBuilderTest.php   # Run single test file
+php test --filter=testBind            # Filter tests by name
+php test --verbose                    # Verbose output
+php test --stop-on-failure            # Stop on first failure
+php -l <file>                         # Syntax check a PHP file
+composer dump-autoload                # Regenerate autoloader
+php -S localhost:8000 -t public       # Dev server
+php migrate migrate                   # Run migrations
+php command db:seed                   # Run seeders
+php command list                      # List CLI commands
+```
+
 ## Architecture
-
-### Entry Point
-- `public/index.php` - Application entry point. Loads autoloader, includes routes, executes `RouteAction::action()`
-
-### Directory Structure
-- `bin/` - Framework core (PSR-4 namespace: `Bin\`)
-  - `App/` - IoC container and service management
-  - `Container/` - IoC 容器核心（Container, ContextualBindingBuilder, Exceptions）
-  - `Route/` - Route collection, routing, and action dispatch
-  - `Request/` - HTTP request handling with ArrayAccess/Iterator
-  - `Response/` - HTTP response formatting (string/array/view)
-  - `View/` - Template rendering with compiler
-  - `Model/` - Database model base and query builder
-  - `Middleware/` - Abstract middleware class
-  - `Reflection/` - Dependency injection via reflection
-  - `Facade/` - Static proxy pattern
-  - `Psr/Container/` - PSR-11 接口定义
-  - `Contracts/` - 框架接口约定
-  - `Func/helpers.php` - Global helper functions
-- `app/` - Application code (PSR-4 namespace: `App\`)
-  - `Controllers/` - Controller classes
-  - `Middleware/` - Custom middleware
-  - `Model/` - Eloquent-like models
-  - `routes.php` - Route definitions
-- `config/` - Configuration files
-- `views/` - Template files
-- `vendor/` - Composer dependencies
 
 ### Request Flow
 
-1. `public/index.php` → autoload → `app/routes.php`
-2. `RouteAction::action()` matches route via `RouteCollection::getRoute()`
-3. Middleware executes (if defined) - must return `true` to continue
-4. Action dispatches to:
-   - Closure with DI parameters via `Reflection::getCallBackParam()`
-   - Controller method via `Reflection::getClassMethodParamInject()`
-5. Response returned as string and echoed
-
-### Route Definition
-
-Routes are defined in `app/routes.php` using `RouteCollection`:
-
-```php
-use Bin\Route\RouteCollection as Route;
-
-// Closure callback
-Route::get('/path', function() { return 'response'; });
-
-// Controller@method syntax
-Route::get('/path', 'ControllerName@methodName');
-
-// POST request
-Route::post('/path', 'ControllerName@method');
-
-// Parameter with regex validation
-Route::get('/user/{id}', function($id) { return $id; })->with('[0-9]+');
-
-// Multiple parameters
-Route::get('/post/{id}/{comment}', function($id, $comment) { })
-    ->with('[0-9]+')->with('[0-9]+');
-
-// Middleware group
-Route::middle(['middleware_name' => [param1, param2]], function() {
-    Route::get('/protected', 'Controller@method');
-});
-
-// Bulk routes
-Route::getArray(['/path1' => 'Controller@method1', '/path2' => 'Controller@method2']);
+```
+public/index.php → autoload → app/routes.php
+  → RouteAction::action() → RouteCollection::getRoute()
+  → Middleware chain (must return true to continue)
+  → Controller method / Closure (with DI via reflection)
+  → Response echoed
 ```
 
-### Dependency Injection
+### Namespace Mapping
 
-The framework uses reflection for automatic dependency injection:
+| Namespace | Directory |
+|-----------|-----------|
+| `Bin\` | `bin/` |
+| `App\` | `app/` |
 
-- **Controller methods**: Type-hinted parameters are auto-resolved from the IoC container
-- **Closures**: Non-type-hinted parameters receive URL path parameters; type-hinted receive container instances
-- **Constructor DI**: Use `app(ClassName::class)` or `App::make(ClassName::class)` for manual resolution
+### Core Modules
 
-### IoC Container
+| Module | Location | Key Classes |
+|--------|----------|-------------|
+| **IoC Container** | `bin/Container/` | `Container` (底层), `ContextualBindingBuilder` |
+| **App Facade** | `bin/App/` | `App` extends `Container`，22+ 透传方法标 `@deprecated` |
+| **Router** | `bin/Route/` | `RouteCollection`, `RouteAction` |
+| **Request** | `bin/Request/` | `Request` (ArrayAccess + Iterator) |
+| **Response** | `bin/Response/` | `Response` (string/array/view) |
+| **View** | `bin/View/` | `View` (template compiler) |
+| **Database ORM** | `bin/Database/` | See ORM section below |
+| **Auth** | `bin/Auth/` | `AuthManager`, `Gate`, `Rbac`, `HashManager`, `RateLimiter` |
+| **Cache** | `bin/Cache/` | `CacheManager`, `FileStore`, `RedisStore`, `ArrayStore` |
+| **Log** | `bin/Log/` | `LogManager`, `Logger` |
+| **Session** | `bin/Session/` | `SessionManager`, handlers for file/db/redis |
+| **Validation** | `bin/Validation/` | `ValidationManager`, `Validator` |
+| **Cookie** | `bin/Cookie/` | `CookieManager` (AES-256-CBC encryption) |
+| **Events** | `bin/Events/` | `EventDispatcher`, `Event`, `Subscriber` |
+| **Console** | `bin/Console/` | `Kernel`, `Command`, `Input`, `Output`, `ProgressBar` |
+| **Config** | `bin/Config/` | `ConfigRepository` (dot-notation, compiled cache) |
+| **Middleware** | `bin/Middleware/` | `Middleware` base, `AuthMiddleware`, `RateLimitMiddleware` |
+| **Facade** | `bin/Facade/` | `Facade` (static proxy to container) |
+| **Helpers** | `bin/Func/helpers/` | 17 domain-split files loaded via glob |
 
-框架包含两层容器架构：`Bin\App\App`（应用门面）和 `Bin\Container\Container`（底层容器）。
+### ORM Architecture
 
-**注意**：PHP 8.5 不允许对已有实例方法使用静态调用，`__callStatic` 不会拦截。所有静态调用需通过 `App::getInstance()` 获取实例后调用。
+```
+Bin\Database\Model (665 lines, abstract base)
+  ├── use HasAttributes        (421 lines) — 属性访问/修改/类型转换/fillable/guarded/hidden/visible
+  ├── use HasEvents            (168 lines) — 模型事件 + Observer + withoutEvents
+  ├── use HasRelationships     (421 lines) — 11 种关联 + eager loading + morph map
+  ├── use HasTimestamps        (65 lines)  — created_at/updated_at
+  └── use HasSerialization     (85 lines)  — toArray/toJson/append
 
-```php
-// 解析服务（推荐通过 app() 辅助函数）
-$instance = app(ClassName::class);
+Bin\Database\QueryBuilder (1996 lines)
+  └── use CompilesQueries      (252 lines) — SQL 语法编译 (WHERE/JOIN/GROUP/HAVING/ORDER/LIMIT/OFFSET/UNION/LOCK)
 
-// 或通过 App 门面
-$instance = App::getInstance()->make(ClassName::class);
+Bin\Database\ConnectionManager (79 lines) — PDO 连接管理，替代遗留 Bin\Model\Model
+Bin\Database\ModelEventDispatcher — 模型事件委托到 EventDispatcher
 ```
 
-#### 绑定
+**关联类型**：`hasOne`, `hasMany`, `belongsTo`, `belongsToMany`, `hasOneThrough`, `hasManyThrough`, `morphOne`, `morphMany`, `morphToMany`, `morphTo`, `morphedByMany`
+
+**分页**：`paginate()` (LengthAwarePaginator), `simplePaginate()` (Paginator), `cursorPaginate()` (CursorPaginator)
+
+**软删除**：`Bin\Database\SoftDeletes` trait
+
+### Helper Functions
+
+`bin/Func/helpers.php` is a glob loader; actual functions live in `bin/Func/helpers/*.php`:
+
+| File | Key Functions |
+|------|---------------|
+| `array.php` | `data_get`, `data_set`, `data_has` |
+| `http.php` | `getUrl`, `getMethod`, `abort`, `response`, `redirect`, `back`, `is_ajax` |
+| `config.php` | `config`, `env` |
+| `container.php` | `app` |
+| `session.php` | `session`, `session_*` (11 functions) |
+| `auth.php` | `auth`, `auth_*`, `csrf_token`, `csrf_field` |
+| `cache.php` | `cache`, `remember`, `cache_forever`, `cache_forget` |
+| `cookie.php` | `cookie`, `cookie_*` |
+| `validation.php` | `validate` (delegates to ValidationManager), `escape` |
+| `authorization.php` | `gate`, `can`, `cannot`, `allows`, `denies` |
+| `log.php` | `logger`, `info`, `error` |
+| `debug.php` | `db_debug*`, `profiler*` (20 functions) |
+
+All functions use `function_exists()` guards for safe loading.
+
+### Static Managers (Migration in Progress)
+
+AuthManager, CacheManager, LogManager, and Gate have been converted to instance-based with singleton pattern. Static methods are retained as `@deprecated` compatibility layer delegating to `getInstance()`:
 
 ```php
-// 基础绑定（每次解析返回新实例）
+// Legacy (still works, @deprecated)
+AuthManager::user();
+
+// New approach
+AuthManager::getInstance()->userFor();
+```
+
+### Container API
+
+```php
+// Bindings
 $container->bind('service', ClassName::class);
-$container->bind('service', function ($container) { return new ClassName(); });
-
-// 单例绑定（多次解析返回同一实例）
 $container->singleton('service', ClassName::class);
-
-// 实例绑定
 $container->instance('service', new ClassName());
+$container->scoped('service', ClassName::class);  // resetScope() re-creates
 
-// 条件绑定（仅在未绑定时绑定）
-$container->bindIf('service', ClassName::class);
-$container->singletonIf('service', ClassName::class);
+// Tags
+$container->tag(['redis', 'file'], 'cache');
+$container->tagged('cache');
+
+// Contextual
+$container->when(AuditService::class)->needs(LoggerInterface::class)->give(fn() => new CloudLogger());
+
+// Resolving callbacks
+$container->resolving(function ($obj, $container) { /* ... */ });
+$container->rebinding('cache', function ($container, $instance) { /* ... */ });
+
+// Method injection
+$container->call(ServiceImpl::class . '@handle', ['message' => 'hello']);
 ```
 
-#### 作用域绑定
+### PHP 8.5 Constraint
 
-```php
-// 作用域内共享，resetScope() 后重新创建
-$container->scoped('service', ClassName::class);
-$container->resetScope();  // 重置所有作用域实例（不影响 singleton）
-```
-
-#### 标签绑定
-
-```php
-$container->bind('cache.redis', RedisCache::class);
-$container->bind('cache.file', FileCache::class);
-$container->tag(['cache.redis', 'cache.file'], 'cache');
-
-$services = $container->tagged('cache'); // 返回所有标签下的实例
-```
-
-#### 上下文绑定
-
-```php
-// when()->needs()->give() 流畅接口
-$container->when(AuditService::class)
-    ->needs(LoggerInterface::class)
-    ->give(function () { return new CloudLogger(); });
-
-// 原始参数注入
-$container->when(TimeoutService::class)
-    ->needs('timeout')
-    ->give(60);
-```
-
-#### 解析回调
-
-```php
-// 全局回调
-$container->resolving(function ($object, $container) { /* ... */ });
-$container->afterResolving(function ($object, $container) { /* ... */ });
-
-// 特定抽象名回调
-$container->resolving('service', function ($object, $container) { /* ... */ });
-```
-
-#### 重绑定回调
-
-```php
-$container->rebinding('cache', function ($container, $instance) {
-    // 绑定重新注册时触发
-});
-```
-
-#### 扩展器（装饰器模式）
-
-```php
-$container->extend('service', function ($instance, $container) {
-    $instance->extra = 'decorated';
-    return $instance;
-});
-```
-
-#### 方法注入
-
-```php
-// 支持 Closure、Class@method、数组回调
-$result = $container->call(ServiceImpl::class . '@handle', ['message' => 'hello']);
-$result = $container->call([$instance, 'method'], ['param' => 'value']);
-$result = $container->call(function (Logger $logger) { return $logger->name(); });
-```
-
-#### PSR-11 兼容
-
-```php
-// Container 实现了 Psr\Container\ContainerInterface
-$has = $container->has('service');     // bool
-$instance = $container->get('service'); // 解析或抛 NotFoundException
-```
-
-#### 循环依赖检测
-
-容器自动检测循环依赖并抛出 `CircularDependencyException`。
-
-#### 异常体系
-
-- `BindingResolutionException` - 绑定/解析失败（含 `getAbstract()`）
-- `CircularDependencyException` - 循环依赖（含 `getPath()`）
-- `NotFoundException` - PSR-11 未找到条目
-
-### Model (`Bin\Model\Model`)
-
-Models extend `Bin\Model\Model`:
-
-```php
-class User extends Model
-{
-    protected $table = 'users';
-}
-
-// Query with raw SQL
-User::select('SELECT * FROM users WHERE id = ?', [$id]);
-```
-
-Database config in `config/db.php`:
-- `driver` - Database driver (mysql)
-- `resultType` - PDO fetch mode (PDO::FETCH_ASSOC)
-- `connection.{driver}` - Connection credentials
-
-### View (`Bin\View\View`)
-
-```php
-return View::make('template.php')->with('key', $value);
-```
-
-Templates are stored in `views/` directory.
-
-### Response (`Bin\Response\Response`)
-
-```php
-// String response
-new Response('text');
-
-// JSON response
-new Response(['key' => 'value']);
-
-// View response
-new Response(View::make('template.php'));
-
-// With status code
-(new Response())->setStatus(200, 'content');
-```
-
-### Facade Pattern
-
-Classes extending `Bin\Facade\Facade` provide static access to container instances. The `Request` facade is pre-registered:
-
-```php
-use Bin\Facade\Request;
-
-\Request::getPath();  // proxies to app('Request')->getPath()
-```
-
-### Helper Functions (`bin/Func/helpers.php`)
-
-- `getUrl()` - Get request URI
-- `getMethod()` - Get request method
-- `basePath()` - Get base path constant
-- `config('database.default')` - Get nested config value
-- `app($class)` - Resolve from IoC container
-- `abort($code)` - Die with HTTP status code
-- `getKeyByArray($needle, $arr, $key)` - Search 2D array by key
-
-### Middleware
-
-Extend `Bin\Middleware\Middleware`:
-
-```php
-class CustomMiddleware extends Middleware
-{
-    protected function handle(array $param): mixed
-    {
-        // Return true to continue, or any other value to abort
-        return true;
-    }
-}
-```
-
-## Development Commands
-
-```bash
-# Start PHP built-in server (development)
-php -S localhost:8000 -t public
-
-# Regenerate autoload
-composer dump-autoload
-```
+PHP 8.5 不允许对已有实例方法使用静态调用，`__callStatic` 不会拦截。所有静态调用需通过 `App::getInstance()` 获取实例后调用。
 
 ## Testing
 
-```bash
-# Run all tests
-php test
+1085 tests across 50 test files. Custom test runner (`php test`).
 
-# Run specific test file
-php test tests/IocContainerTest.php
-php test tests/IocBehaviorTest.php
+**IoC behavior tests** use PHP built-in server on port 9876 (`tests/IocBehaviorTest.php`).
 
-# Run with verbose output
-php test --verbose
+### Test Conventions
 
-# Stop on first failure
-php test --stop-on-failure
-
-# Filter tests by name
-php test --filter=testBind
-```
-
-### IoC Container Tests
-
-**单元测试** (`tests/IocContainerTest.php`)：32 个测试，直接实例化 Container 进行测试，覆盖：
-- 标签绑定（tag/tagged）
-- 解析回调（resolving/afterResolving）
-- 重绑定回调（rebinding）
-- 方法注入（call Class@method, 数组回调, 闭包 DI）
-- 作用域绑定（scoped/resetScope）
-- 条件绑定（when/needs/give）
-- PSR-11 兼容（has/get/异常）
-- 异常体系（BindingResolution/CircularDependency）
-- 条件注册（bindIf/singletonIf）
-
-**行为测试** (`tests/IocBehaviorTest.php`)：14 个测试，启动 PHP 内置服务器通过 HTTP 请求端到端验证，对应路由：
-
-| 路由 | 验证功能 |
-|------|---------|
-| `/ioc/bind` | bind 每次返回新实例 |
-| `/ioc/singleton` | singleton 返回同一实例 |
-| `/ioc/tagged` | 标签批量解析 |
-| `/ioc/resolving` | resolving/afterResolving 回调顺序 |
-| `/ioc/scoped` | scoped + resetScope |
-| `/ioc/scoped-singleton` | scoped 不影响 singleton |
-| `/ioc/conditional` | when/needs/give 条件绑定 |
-| `/ioc/psr11` | PSR-11 get/has |
-| `/ioc/circular` | 循环依赖异常 |
-| `/ioc/method-injection` | call() 方法注入 |
-| `/ioc/rebinding` | 重绑定回调 |
-| `/ioc/extend` | extend 装饰器 |
-| `/ioc/app-facade` | App 门面 singleton |
-| `/ioc/bind-if` | bindIf/singletonIf |
-
-行为测试使用端口 9876，需确保该端口可用。
-
-## Claude Code 自动化
-
-### Skills
-
-| 命令 | 用途 |
-|------|------|
-| `/gen-test <源文件>` | 根据源文件自动生成测试骨架（如 `/gen-test bin/Cache/CacheManager.php`） |
-| `/new-feature <模块名>` | 创建新模块脚手架（管理器、测试、配置等，如 `/new-feature Queue`） |
-
-### Hooks
-
-- **PHP 语法检查**: 编辑 `.php` 文件后自动运行 `php -l` 检查语法（配置在 `.claude/settings.json`）
-
-### 权限配置
-
-- 权限通配符配置在 `.claude/settings.local.json`（不提交到 git）
-- `./test:*` 覆盖所有测试命令
-- `Bash(php:*)`、`Bash(git:*)`、`Bash(curl:*)` 等通配符模式
+- TDD driven: write tests first, then implement
+- Test files in `tests/` follow `<Module>Test.php` naming
+- All helpers (session, cache, auth, etc.) use test mode flags to avoid side effects
+- `Bin\Database\Model::setConnection()` injects in-memory SQLite for database tests
 
 ## Code Conventions
 
-- All files use `declare(strict_types=1);`
-- PSR-4 autoloading: `Bin\` → `bin/`, `App\` → `app/`
-- Controllers extend `BaseController`
-- Use type hints on all method parameters and return types
-- Framework uses singleton pattern for `RouteCollection` and `App`
-- 使用TDD开发驱动
+- `declare(strict_types=1)` in all files
+- PSR-4 autoloading
+- Type hints on all public method parameters and return types
+- `@deprecated` annotations for backward-compatible method transitions (not deleted immediately)
+
+## Claude Code Automation
+
+### Skills
+
+| Command | Purpose |
+|---------|---------|
+| `/gen-test <source>` | Generate test skeleton from source file |
+| `/new-feature <module>` | Create module scaffold (manager, tests, config) |
+
+### Hooks
+
+PHP syntax check auto-runs on `.php` file edits (configured in `.claude/settings.json`).
+
+### Permissions
+
+Wildcard patterns in `.claude/settings.local.json` (not committed): `./test:*`, `Bash(php:*)`, `Bash(git:*)`, `Bash(curl:*)`

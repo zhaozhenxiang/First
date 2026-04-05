@@ -13,23 +13,7 @@ declare(strict_types=1);
  * php test tests/ExampleTest.php # 运行指定测试文件
  */
 
-$autoload = dirname(__DIR__, 2) . '/bin/autoload.php';
-
-if (!file_exists($autoload)) {
-    $autoload = dirname(__DIR__, 2) . '/vendor/autoload.php';
-}
-
-if (!file_exists($autoload)) {
-    die("Error: Could not find autoloader.\n");
-}
-
-require_once $autoload;
-
-// 加载辅助函数
-$helpersPath = dirname(__DIR__, 2) . '/bin/Func/helpers.php';
-if (file_exists($helpersPath)) {
-    require_once $helpersPath;
-}
+require_once dirname(__DIR__) . '/autoload.php';
 
 use Bin\Testing\TestRunner;
 
