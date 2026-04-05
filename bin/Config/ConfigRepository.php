@@ -35,11 +35,6 @@ class ConfigRepository
     protected array $cache = [];
 
     /**
-     * 配置缓存状态
-     */
-    protected bool $cached = false;
-
-    /**
      * 配置变更（尚未保存）
      * @var array<string, array>
      */
@@ -69,7 +64,7 @@ class ConfigRepository
             return $this->getPendingChange($key);
         }
 
-        // 解析键: "filename:key" 或 "filename:key.subkey"
+        // 解析键: "filename.key" 或 "filename.key.subkey"
         [$file, $fileKey] = $this->parseKey($key);
 
         // 加载配置文件

@@ -261,7 +261,7 @@ use Bin\Facade\Request;
 - `getUrl()` - Get request URI
 - `getMethod()` - Get request method
 - `basePath()` - Get base path constant
-- `config('db:driver')` - Get nested config value
+- `config('database.default')` - Get nested config value
 - `app($class)` - Resolve from IoC container
 - `abort($code)` - Die with HTTP status code
 - `getKeyByArray($needle, $arr, $key)` - Search 2D array by key

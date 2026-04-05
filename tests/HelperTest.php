@@ -64,18 +64,18 @@ class HelperTest extends TestCase
 
     public function testConfigSetAndGet(): void
     {
-        config(['test_helper:key1' => 'value1']);
-        $this->assertEquals('value1', config('test_helper:key1'));
+        config(['test_helper.key1' => 'value1']);
+        $this->assertEquals('value1', config('test_helper.key1'));
     }
 
     public function testConfigSetMultiple(): void
     {
         config([
-            'test_helper:a' => '1',
-            'test_helper:b' => '2',
+            'test_helper.a' => '1',
+            'test_helper.b' => '2',
         ]);
-        $this->assertEquals('1', config('test_helper:a'));
-        $this->assertEquals('2', config('test_helper:b'));
+        $this->assertEquals('1', config('test_helper.a'));
+        $this->assertEquals('2', config('test_helper.b'));
     }
 
     public function testConfigReturnsRepositoryWhenNoArgs(): void
