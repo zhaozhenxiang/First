@@ -64,6 +64,14 @@ class Response
     }
 
     /**
+     * 发送响应内容到输出缓冲区
+     */
+    public function send(): void
+    {
+        echo $this->getContent();
+    }
+
+    /**
      *  设置状态
      * @param  int     $httpStatus
      * @param  string  $content
