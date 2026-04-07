@@ -8,27 +8,24 @@ use Bin\Auth\Throttle;
 
 /**
  * 速率限制中间件
+ *
+ * 支持参数格式：throttle:60,1
+ *   - 60 = max_attempts
+ *   - 1  = decay_minutes
  */
 class RateLimitMiddleware extends Middleware
 {
     /**
      * 处理请求
-     *
-     * @param array $param 配置参数:
-     *   - max_attempts: 最大尝试次数
-     *   - decay_seconds: 时间窗口（秒）
-     *   - key_prefix: 键名前缀
-     *   - identifier: 标识符类型 (ip, user, both)
      */
-    protected function handle(array $param = []): mixed
+    public function handle(mixed $request, \Closure $next): mixed
     {
-        $maxAttempts = $param['max_attempts'] ?? 60;
-        $decaySeconds = $param['decay_seconds'] ?? 60;
-        $keyPrefix = $param['key_prefix'] ?? 'default';
-        $identifierType = $param['identifier'] ?? 'ip';
+        // 从 options 解析参数（throttle:60,1 → [60, 1]）
+        $maxAttempts = (int) ($this->options[0] ?? 60);
+        $decaySeconds = (int) ($this->options[1] ?? 60) * 60; // 分钟转秒
+        $keyPrefix = $this->options[2] ?? 'default';
 
-        // 确定标识符
-        $identifier = $this->getIdentifier($identifierType);
+        $identifier = Throttle::ip();
 
         // 检查速率限制
         $passed = Throttle::custom($identifier, $keyPrefix, $maxAttempts, $decaySeconds);
@@ -40,20 +37,7 @@ class RateLimitMiddleware extends Middleware
         // 添加速率限制响应头
         $this->addRateLimitHeaders($identifier, $keyPrefix, $maxAttempts, $decaySeconds);
 
-        return true;
-    }
-
-    /**
-     * 获取标识符
-     */
-    protected function getIdentifier(string $type): string
-    {
-        return match ($type) {
-            'ip' => Throttle::ip(),
-            'user' => Throttle::userId() ?? Throttle::ip(),
-            'both' => Throttle::userId() ? Throttle::userId() : Throttle::ip(),
-            default => Throttle::ip(),
-        };
+        return $next($request);
     }
 
     /**
@@ -68,11 +52,9 @@ class RateLimitMiddleware extends Middleware
         $remaining = Throttle::remaining($identifier, $keyPrefix, $maxAttempts, $decaySeconds);
         $availableIn = Throttle::availableIn($identifier, $keyPrefix, $decaySeconds);
 
-        // AJAX 请求返回 JSON
-        if ($this->isAjax()) {
+        if (is_ajax()) {
             header('Content-Type: application/json');
-            http_response_code(429); // Too Many Requests
-
+            http_response_code(429);
             echo json_encode([
                 'error' => 'Too Many Requests',
                 'message' => 'Rate limit exceeded. Please try again later.',
@@ -83,42 +65,18 @@ class RateLimitMiddleware extends Middleware
             exit;
         }
 
-        // 普通请求返回 HTML 页面
         http_response_code(429);
-
         $retryAfter = ceil($availableIn);
-
         echo "<!DOCTYPE html>
 <html>
 <head>
     <title>Too Many Requests</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background: #f5f5f5;
-        }
-        .container {
-            text-align: center;
-            padding: 40px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
+        body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+        .container { text-align: center; padding: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #e74c3c; margin-bottom: 20px; }
         p { color: #555; line-height: 1.6; }
-        .retry-after {
-            background: #e74c3c;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 4px;
-            display: inline-block;
-            margin-top: 20px;
-        }
+        .retry-after { background: #e74c3c; color: white; padding: 10px 20px; border-radius: 4px; display: inline-block; margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -129,7 +87,6 @@ class RateLimitMiddleware extends Middleware
     </div>
 </body>
 </html>";
-
         exit;
     }
 
@@ -152,13 +109,5 @@ class RateLimitMiddleware extends Middleware
         if ($remaining === 0) {
             header("Retry-After: {$availableIn}");
         }
-    }
-
-    /**
-     * 检查是否是 AJAX 请求
-     */
-    private function isAjax(): bool
-    {
-        return is_ajax();
     }
 }

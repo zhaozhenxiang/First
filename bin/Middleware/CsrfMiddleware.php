@@ -15,6 +15,36 @@ class CsrfMiddleware extends Middleware
     private static ?string $token = null;
 
     /**
+     * 处理请求
+     */
+    public function handle(mixed $request, \Closure $next): mixed
+    {
+        $method = $request instanceof Request
+            ? $request->getMethod()
+            : strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+
+        // 安全方法跳过验证
+        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
+            return $next($request);
+        }
+
+        // 获取 token
+        $token = null;
+        if ($request instanceof Request) {
+            $token = $request->input(self::$tokenName)
+                ?? $request->header('X-CSRF-Token')
+                ?? $request->header('X-XSRF-Token');
+        }
+
+        if (!self::validateToken($token)) {
+            http_response_code(403);
+            return 'CSRF token validation failed';
+        }
+
+        return $next($request);
+    }
+
+    /**
      * 生成或获取 CSRF token
      */
     public static function generateToken(): string
@@ -51,32 +81,5 @@ class CsrfMiddleware extends Middleware
             self::$tokenName,
             self::generateToken()
         );
-    }
-
-    /**
-     * 中间件处理逻辑
-     */
-    protected function handle(array $param): mixed
-    {
-        /** @var Request $request */
-        $request = app(Request::class);
-
-        // 跳过安全方法的验证
-        $method = $request->getMethod();
-        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
-            return true;
-        }
-
-        // 获取 token
-        $token = $request->input(self::$tokenName)
-            ?? ($request->header('X-CSRF-Token')
-            ?? $request->header('X-XSRF-Token'));
-
-        if (!self::validateToken($token)) {
-            http_response_code(403);
-            return 'CSRF token validation failed';
-        }
-
-        return true;
     }
 }

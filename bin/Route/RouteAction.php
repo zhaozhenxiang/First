@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Bin\Route;
 
-use App\Middleware\Middle;
-use Bin\Response\Response;
+use Bin\Middleware\MiddlewareNameResolver;
+use Bin\Middleware\MiddlewareStack;
+use Bin\Middleware\Pipeline;
 use Bin\Reflection\Reflection;
+use Bin\Response\Response;
 use Exception;
 
 class RouteAction
@@ -22,50 +24,96 @@ class RouteAction
     public static function action(): mixed
     {
         $route = RouteCollection::getRoute();
+        $request = \Bin\Request\Request::capture();
 
-        // 处理中间件
-        $result = self::handleMiddleware($route);
-        if ($result !== true) {
-            return $result;
+        // 收集所有中间件（全局 + 组 + 路由指定 - 排除）
+        $stack = MiddlewareStack::getInstance();
+        $middleware = $stack->collectRouteMiddleware(
+            $route->getMiddleware(),
+            $route->getMiddlewareGroups(),
+            $route->getExcludedMiddleware()
+        );
+
+        // 兼容旧 API：如果新 middleware 为空但旧 middle 有值
+        if ($middleware === [] && $route->getMiddle() !== null) {
+            $middleware = static::legacyMiddleware($route);
         }
 
-        // 分发到 action
-        $action = $route->getAction();
+        // 解析中间件别名和参数
+        $aliases = $stack->getAliases();
+        $resolved = MiddlewareNameResolver::resolveAll($middleware, $aliases);
 
-        return match (true) {
-            is_callable($action) => self::doCallback($action),
-            is_string($action) => self::doClassMethod($action),
-            default => abort(404)
-        };
+        // 构建 Pipeline
+        return (new Pipeline())
+            ->send($request)
+            ->through(static::buildMiddlewareInstances($resolved))
+            ->then(function () use ($route): mixed {
+                return static::dispatch($route);
+            });
     }
 
     /**
-     * 处理中间件
+     * 分发到路由的 action
+     * @throws \Exception
      */
-    private static function handleMiddleware(Route $route): mixed
+    private static function dispatch(Route $route): mixed
+    {
+        $action = $route->getAction();
+
+        $result = match (true) {
+            is_callable($action) => static::doCallback($action),
+            is_string($action) => static::doClassMethod($action),
+            default => abort(404)
+        };
+
+        return $result instanceof Response ? $result : new Response($result);
+    }
+
+    /**
+     * 兼容旧版中间件格式
+     *
+     * 旧格式：Route::middle(['middleware' => ['auth' => [...]]], callback)
+     */
+    private static function legacyMiddleware(Route $route): array
     {
         $middle = $route->getMiddle();
-
         if ($middle === null) {
-            return true;
+            return [];
         }
 
-        if (count($middle) !== 1) {
-            throw new Exception('middle param count must one');
+        $result = [];
+        foreach ($middle as $key => $value) {
+            if (is_array($value)) {
+                foreach ($value as $name => $params) {
+                    $result[] = is_string($name) ? $name : $params;
+                }
+            } else {
+                $result[] = $value;
+            }
         }
 
-        $key = array_keys($middle['middle'])[0];
-        $params = array_values($middle['middle'])[0];
+        return $result;
+    }
 
-        $className = (new Middle())->getClass($key);
-        if ($className === false) {
-            throw new Exception("middleware '{$key}' not found");
+    /**
+     * 构建中间件实例数组
+     *
+     * @param  array<array{0: class-string, 1: array}>  $resolved
+     * @return array
+     */
+    private static function buildMiddlewareInstances(array $resolved): array
+    {
+        $instances = [];
+
+        foreach ($resolved as [$class, $parameters]) {
+            $instance = new $class();
+            if ($parameters !== []) {
+                $instance->setOptions($parameters);
+            }
+            $instances[] = $instance;
         }
 
-        $instance = new $className();
-        $result = $instance->run($params);
-
-        return $result === true ? true : new Response($result);
+        return $instances;
     }
 
     /**

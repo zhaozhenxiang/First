@@ -16,38 +16,35 @@ class AuthMiddleware extends Middleware
     /**
      * 处理请求
      */
-    protected function handle(array $param = []): mixed
+    public function handle(mixed $request, \Closure $next): mixed
     {
         // 检查用户是否已认证
         if (!AuthManager::check()) {
-            // 未认证 - 返回 401 或重定向
-            if ($this->isAjax()) {
-                // AJAX 请求返回 JSON
-                header('Content-Type: application/json');
-                http_response_code(401);
-                echo json_encode([
-                    'error' => 'Unauthenticated',
-                    'message' => 'You must be logged in to access this resource.'
-                ]);
-                exit;
-            } else {
-                // 普通请求重定向到登录页
-                $loginUrl = $param['redirect'] ?? '/login';
-                header("Location: {$loginUrl}");
-                http_response_code(302);
-                exit;
-            }
+            return $this->unauthenticated($request);
         }
 
-        return true;
+        return $next($request);
     }
 
     /**
-     * 检查是否是 AJAX 请求
+     * 未认证响应
      */
-    private function isAjax(): bool
+    protected function unauthenticated(mixed $request): mixed
     {
-        return is_ajax();
+        if (is_ajax()) {
+            header('Content-Type: application/json');
+            http_response_code(401);
+            echo json_encode([
+                'error' => 'Unauthenticated',
+                'message' => 'You must be logged in to access this resource.',
+            ]);
+            exit;
+        }
+
+        $redirectUrl = $this->options[0] ?? '/login';
+        header("Location: {$redirectUrl}");
+        http_response_code(302);
+        exit;
     }
 }
 
@@ -61,16 +58,15 @@ class GuestMiddleware extends Middleware
     /**
      * 处理请求
      */
-    protected function handle(array $param = []): mixed
+    public function handle(mixed $request, \Closure $next): mixed
     {
-        // 如果已认证，重定向到首页
         if (AuthManager::check()) {
-            $redirectUrl = $param['redirect'] ?? '/';
+            $redirectUrl = $this->options[0] ?? '/';
             header("Location: {$redirectUrl}");
             http_response_code(302);
             exit;
         }
 
-        return true;
+        return $next($request);
     }
 }

@@ -12,6 +12,15 @@ class Route
     /** @var array<string, mixed> */
     private array $param = [];
 
+    /** @var array<string> 中间件列表（短名或类名，支持 "throttle:60,1" 格式） */
+    private array $middleware = [];
+
+    /** @var array<string> 要排除的中间件 */
+    private array $excludedMiddleware = [];
+
+    /** @var array<string> 使用的中间件组 */
+    private array $middlewareGroups = [];
+
     public function __construct(
         private string $method,
         private string $path,
@@ -52,6 +61,15 @@ class Route
     }
 
     /**
+     * 更新路径（路由组前缀场景）
+     */
+    public function updatePath(string $path): void
+    {
+        $this->param['path'] = $path;
+        $this->path = $path;
+    }
+
+    /**
      * 获取方法
      */
     public function getMethod(): string
@@ -68,11 +86,43 @@ class Route
     }
 
     /**
-     * 获取中间件
+     * 获取中间件（兼容旧 API）
+     *
+     * @deprecated 使用 getMiddleware() 替代
      */
     public function getMiddle(): ?array
     {
         return $this->param['middle'] ?? null;
+    }
+
+    /**
+     * 获取中间件列表
+     *
+     * @return array<string>
+     */
+    public function getMiddleware(): array
+    {
+        return $this->middleware;
+    }
+
+    /**
+     * 获取排除的中间件
+     *
+     * @return array<string>
+     */
+    public function getExcludedMiddleware(): array
+    {
+        return $this->excludedMiddleware;
+    }
+
+    /**
+     * 获取中间件组
+     *
+     * @return array<string>
+     */
+    public function getMiddlewareGroups(): array
+    {
+        return $this->middlewareGroups;
     }
 
     /**
@@ -102,11 +152,88 @@ class Route
     }
 
     /**
-     * 设置中间件
+     * 设置中间件（兼容旧 API）
+     *
+     * @deprecated 使用 middleware() 替代
      */
     public function middle(array $middle): void
     {
         $this->mergeParam(['middle' => $middle]);
+
+        // 同时维护新的 middleware 列表
+        if (isset($middle['middle'])) {
+            foreach ($middle['middle'] as $key => $value) {
+                // 旧格式：['middle' => ['auth' => [...]]]
+                if (is_string($key)) {
+                    if (!in_array($key, $this->middleware, true)) {
+                        $this->middleware[] = $key;
+                    }
+                } else {
+                    if (!in_array($value, $this->middleware, true)) {
+                        $this->middleware[] = $value;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 设置中间件（新 API，支持链式调用）
+     *
+     * 用法：
+     *   $route->middleware('auth')
+     *   $route->middleware('throttle:60,1')
+     *   $route->middleware(['auth', 'throttle:60,1'])
+     */
+    public function middleware(string|array $middleware): static
+    {
+        $middleware = is_array($middleware) ? $middleware : [$middleware];
+
+        foreach ($middleware as $m) {
+            if (!in_array($m, $this->middleware, true)) {
+                $this->middleware[] = $m;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * 排除中间件
+     *
+     * 用法：
+     *   $route->withoutMiddleware('csrf')
+     */
+    public function withoutMiddleware(string|array $middleware): static
+    {
+        $middleware = is_array($middleware) ? $middleware : [$middleware];
+
+        foreach ($middleware as $m) {
+            if (!in_array($m, $this->excludedMiddleware, true)) {
+                $this->excludedMiddleware[] = $m;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * 指定中间件组
+     *
+     * 用法：
+     *   $route->middlewareGroup('web')
+     */
+    public function middlewareGroup(string|array $groups): static
+    {
+        $groups = is_array($groups) ? $groups : [$groups];
+
+        foreach ($groups as $group) {
+            if (!in_array($group, $this->middlewareGroups, true)) {
+                $this->middlewareGroups[] = $group;
+            }
+        }
+
+        return $this;
     }
 
     /**
@@ -190,5 +317,3 @@ class Route
         return '/' . trim($url, '/');
     }
 }
-
-

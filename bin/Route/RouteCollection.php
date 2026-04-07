@@ -201,30 +201,53 @@ class RouteCollection
 
     /**
      * 路由分组
+     *
+     * 支持属性：
+     *   - prefix: 路径前缀
+     *   - middleware: 中间件列表
+     *   - middleware_group: 中间件组名
      */
     public static function group(array $attributes, \Closure $callback): void
     {
         $prefix = $attributes['prefix'] ?? '';
         $middleware = $attributes['middleware'] ?? [];
+        $middlewareGroup = $attributes['middleware_group'] ?? null;
 
-        $callback();
-
-        // 为组内添加的路由应用前缀和中间件
+        // 记录当前路由数量
         $startIndex = count(self::$route);
+
+        // 执行回调（只调用一次！）
         $callback();
 
+        // 为组内新增的路由应用属性
         for ($i = $startIndex; $i < count(self::$route); $i++) {
             $route = self::$route[$i];
 
-            // 应用前缀
+            // 应用前缀：需要更新静态/动态路由索引
             if ($prefix !== '') {
                 $newPath = '/' . trim($prefix, '/') . '/' . trim($route->getPath(), '/');
-                // 更新路由路径（这里简化处理，实际需要更复杂的逻辑）
+                $newPath = '/' . trim($newPath, '/');
+
+                // 更新静态路由索引
+                $oldKey = $route->getMethod() . ':' . $route->getPath();
+                if (isset(self::$staticRoutes[$oldKey])) {
+                    unset(self::$staticRoutes[$oldKey]);
+                    self::$staticRoutes[$route->getMethod() . ':' . $newPath] = $route;
+                }
+
+                // 更新路由路径
+                $route->updatePath($newPath);
             }
 
             // 应用中间件
             if ($middleware !== []) {
-                $route->middle(['middle' => $middleware]);
+                $middleware = is_array($middleware) ? $middleware : [$middleware];
+                $route->middleware($middleware);
+            }
+
+            // 应用中间件组
+            if ($middlewareGroup !== null) {
+                $route->middlewareGroup($middlewareGroup);
             }
         }
     }

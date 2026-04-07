@@ -9,88 +9,61 @@ use Bin\Middleware\Middleware;
 
 class MiddlewareTest extends TestCase
 {
-    // === 基础 Middleware 行为 ===
+    // === Middleware 基类行为 ===
 
-    public function testRunReturnsTrueWhenHandleReturnsTrue(): void
+    public function testHandlePassesThroughByDefault(): void
     {
         $middleware = new class extends Middleware {
-            protected function handle(array $param): mixed
+            // 使用默认 handle()，直接 $next($request)
+        };
+
+        $result = $middleware->handle('request', fn($r) => 'response');
+        $this->assertEquals('response', $result);
+    }
+
+    public function testHandleCanShortCircuit(): void
+    {
+        $middleware = new class extends Middleware {
+            public function handle(mixed $request, \Closure $next): mixed
             {
-                return true;
+                return 'blocked';
             }
         };
 
-        $result = $middleware->run([]);
-        $this->assertTrue($result);
+        $result = $middleware->handle('request', fn($r) => 'response');
+        $this->assertEquals('blocked', $result);
     }
 
-    public function testRunReturnsFalseWhenHandleReturnsFalse(): void
+    public function testSetOptionsReturnsSelf(): void
+    {
+        $middleware = new class extends Middleware {};
+        $result = $middleware->setOptions(['key' => 'value']);
+        $this->assertSame($middleware, $result);
+    }
+
+    public function testTerminateDoesNothingByDefault(): void
+    {
+        $middleware = new class extends Middleware {};
+        // 不应抛异常
+        $middleware->terminate('request', 'response');
+        $this->assertTrue(true);
+    }
+
+    public function testHandleCanWrapResponse(): void
     {
         $middleware = new class extends Middleware {
-            protected function handle(array $param): mixed
+            public function handle(mixed $request, \Closure $next): mixed
             {
-                return false;
+                $response = $next($request);
+                return strtoupper((string) $response);
             }
         };
 
-        $result = $middleware->run([]);
-        $this->assertFalse($result);
+        $result = $middleware->handle('request', fn($r) => 'hello');
+        $this->assertEquals('HELLO', $result);
     }
 
-    public function testRunReturnsStringWhenHandleReturnsString(): void
-    {
-        $middleware = new class extends Middleware {
-            protected function handle(array $param): mixed
-            {
-                return 'error message';
-            }
-        };
-
-        $result = $middleware->run([]);
-        $this->assertEquals('error message', $result);
-    }
-
-    public function testRunPassesParamsToHandle(): void
-    {
-        $middleware = new class extends Middleware {
-            protected function handle(array $param): mixed
-            {
-                return $param['key'] ?? null;
-            }
-        };
-
-        $result = $middleware->run(['key' => 'value']);
-        $this->assertEquals('value', $result);
-    }
-
-    public function testHandleReturnsNullAsBlock(): void
-    {
-        $middleware = new class extends Middleware {
-            protected function handle(array $param): mixed
-            {
-                return null;
-            }
-        };
-
-        $result = $middleware->run([]);
-        $this->assertNull($result);
-    }
-
-    public function testHandleReturnsArrayAsBlock(): void
-    {
-        $middleware = new class extends Middleware {
-            protected function handle(array $param): mixed
-            {
-                return ['error' => 'forbidden'];
-            }
-        };
-
-        $result = $middleware->run([]);
-        $this->assertTrue(is_array($result));
-        $this->assertArrayHasKey('error', $result);
-    }
-
-    // === CsrfMiddleware 韻态验证 ===
+    // === CsrfMiddleware 静态验证 ===
 
     public function testCsrfTokenGeneration(): void
     {
