@@ -378,7 +378,7 @@ class ValidationTest extends TestCase
 
         $validator->validate();
 
-        $this->assertEquals('请输入姓名', $validator->getError('name'));
+        $this->assertEquals('请输入姓名', $validator->getError('name')[0]);
     }
 
     public function testFieldAlias(): void
@@ -392,7 +392,7 @@ class ValidationTest extends TestCase
 
         $validator->validate();
 
-        $this->assertStringContainsString('姓名', $validator->getError('name'));
+        $this->assertStringContainsString('姓名', $validator->getError('name')[0]);
     }
 
     public function testDotNotation(): void

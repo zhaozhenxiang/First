@@ -25,11 +25,14 @@ class ValidationManager
     /** @var array<string, string> 自定义错误消息 */
     private array $customMessages = [];
 
-    /** @var array<string, string> 错误消息 */
-    private array $errors = [];
+    /** @var MessageBag 错误消息 */
+    private MessageBag $errors;
 
     /** @var array<string, mixed> 验证通过的数据 */
     private array $validated = [];
+
+    /** @var array<array{field: string, rules: mixed, callback: Closure}> 条件验证规则 */
+    private array $conditionalRules = [];
 
     /** @var bool 是否抛出异常 */
     private bool $throwOnFail = false;
@@ -73,6 +76,11 @@ class ValidationManager
         'lte' => 'validateLte',
         'starts_with' => 'validateStartsWith',
         'ends_with' => 'validateEndsWith',
+        'uuid' => 'validateUuid',
+        'mac_address' => 'validateMacAddress',
+        'timezone' => 'validateTimezone',
+        'prohibited' => 'validateProhibited',
+        'distinct' => 'validateDistinct',
     ];
 
     /**
@@ -115,6 +123,11 @@ class ValidationManager
         'lte' => ':attribute 必须小于或等于 :value',
         'starts_with' => ':attribute 必须以 :values 开头',
         'ends_with' => ':attribute 必须以 :values 结尾',
+        'uuid' => ':attribute 必须是有效的 UUID',
+        'mac_address' => ':attribute 必须是有效的 MAC 地址',
+        'timezone' => ':attribute 必须是有效的时区',
+        'prohibited' => ':attribute 字段被禁止',
+        'distinct' => ':attribute 字段有重复值',
     ];
 
     /**
@@ -124,6 +137,7 @@ class ValidationManager
     {
         $this->data = $data;
         $this->rules = $rules;
+        $this->errors = new MessageBag();
     }
 
     /**
@@ -139,18 +153,68 @@ class ValidationManager
      */
     public function validate(): array
     {
-        $this->errors = [];
+        $this->errors = new MessageBag();
         $this->validated = [];
 
+        // 处理条件验证
+        foreach ($this->conditionalRules as $conditional) {
+            if (($conditional['callback'])($this->data)) {
+                $field = $conditional['field'];
+                $this->rules[$field] = array_merge(
+                    isset($this->rules[$field])
+                        ? (is_array($this->rules[$field]) ? $this->rules[$field] : explode('|', $this->rules[$field]))
+                        : [],
+                    is_array($conditional['rules']) ? $conditional['rules'] : explode('|', $conditional['rules'])
+                );
+            }
+        }
+
         foreach ($this->rules as $field => $rules) {
-            $rules = is_string($rules) ? explode('|', $rules) : $rules;
+            // 字符串规则 → 拆分数组
+            if (is_string($rules)) {
+                $rules = explode('|', $rules);
+            }
+
+            // Rule 构建器 → 编译为数组
+            if ($rules instanceof Rule) {
+                $rules = $rules->compile();
+            }
+
+            // 确保是数组
+            $rules = is_array($rules) ? $rules : [$rules];
+
             $value = $this->getValue($field);
             $nullable = false;
 
             foreach ($rules as $rule) {
                 $parameters = [];
 
-                // 解析带参数的规则
+                // ValidationRule 自定义规则对象
+                if ($rule instanceof ValidationRule) {
+                    if (!$rule->passes($field, $value)) {
+                        $this->errors->add($field, $this->replaceAttribute(
+                            $rule->message(),
+                            $this->aliases[$field] ?? $field
+                        ));
+                    }
+                    continue;
+                }
+
+                // 闭包规则
+                if ($rule instanceof \Closure) {
+                    $result = $rule($field, $value, $this);
+                    if ($result === false) {
+                        $this->errors->add($field, $this->replaceAttribute(
+                            ':attribute 验证失败',
+                            $this->aliases[$field] ?? $field
+                        ));
+                    } elseif (is_string($result)) {
+                        $this->errors->add($field, $result);
+                    }
+                    continue;
+                }
+
+                // 解析带参数的字符串规则
                 if (str_contains($rule, ':')) {
                     [$rule, $parameterString] = explode(':', $rule, 2);
                     $parameters = explode(',', $parameterString);
@@ -177,7 +241,7 @@ class ValidationManager
             }
 
             // 验证通过，添加到已验证数据
-            if (!isset($this->errors[$field])) {
+            if (!$this->errors->has($field)) {
                 $this->validated[$field] = $value;
             }
         }
@@ -246,7 +310,7 @@ class ValidationManager
             $message = str_replace(':other', $parameters[0] ?? '', $message);
         }
 
-        $this->errors[$field] = $message;
+        $this->errors->add($field, $message);
     }
 
     /**
@@ -258,17 +322,25 @@ class ValidationManager
     }
 
     /**
+     * 替换消息中的 :attribute 占位符
+     */
+    private function replaceAttribute(string $message, string $attribute): string
+    {
+        return str_replace(':attribute', $attribute, $message);
+    }
+
+    /**
      * 处理验证失败
      */
     private function handleFailure(): void
     {
         if ($this->session) {
-            $this->session->flash('errors', $this->errors);
+            $this->session->flash('errors', $this->errors->toArray());
             $this->session->flashInput($this->data);
         }
 
         if ($this->throwOnFail) {
-            throw new ValidationException($this->errors);
+            throw new ValidationException($this->errors->toArray());
         }
     }
 
@@ -578,7 +650,64 @@ class ValidationManager
         return false;
     }
 
+    private function validateUuid(string $field, mixed $value): bool
+    {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        return preg_match(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+            $value
+        ) > 0;
+    }
+
+    private function validateMacAddress(string $field, mixed $value): bool
+    {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        return preg_match('/^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/', $value) > 0;
+    }
+
+    private function validateTimezone(string $field, mixed $value): bool
+    {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        return in_array($value, timezone_identifiers_list(), true);
+    }
+
+    private function validateProhibited(string $field, mixed $value): bool
+    {
+        return $value === null || $value === '';
+    }
+
+    private function validateDistinct(string $field, mixed $value): bool
+    {
+        if (!is_array($value)) {
+            return true;
+        }
+
+        return count($value) === count(array_unique($value));
+    }
+
     // ==================== 公共方法 ====================
+
+    /**
+     * 条件验证：仅当回调返回 true 时应用规则
+     *
+     * 用法：
+     *   $v->sometimes('password', 'required|string|min:8', fn($input) => $input['change_password'] === true);
+     */
+    public function sometimes(string $field, mixed $rules, \Closure $callback): self
+    {
+        $this->conditionalRules[] = compact('field', 'rules', 'callback');
+
+        return $this;
+    }
 
     /**
      * 设置字段别名
@@ -621,13 +750,13 @@ class ValidationManager
      */
     public function hasErrors(): bool
     {
-        return count($this->errors) > 0;
+        return $this->errors->isNotEmpty();
     }
 
     /**
-     * 获取所有错误
+     * 获取所有错误（MessageBag）
      */
-    public function getErrors(): array
+    public function getErrors(): MessageBag
     {
         return $this->errors;
     }
@@ -637,15 +766,18 @@ class ValidationManager
      */
     public function getFirstError(): string
     {
-        return $this->errors[array_key_first($this->errors)] ?? '';
+        $keys = $this->errors->keys();
+        return $this->errors->first($keys[0] ?? '');
     }
 
     /**
      * 获取指定字段的错误
+     *
+     * @return array<string>
      */
-    public function getError(string $field): ?string
+    public function getError(string $field): array
     {
-        return $this->errors[$field] ?? null;
+        return $this->errors->get($field);
     }
 
     /**
@@ -653,7 +785,7 @@ class ValidationManager
      */
     public function hasError(string $field): bool
     {
-        return isset($this->errors[$field]);
+        return $this->errors->has($field);
     }
 
     /**
