@@ -4,23 +4,40 @@ declare(strict_types=1);
 
 namespace Bin\View;
 
+use Bin\View\Blade\BladeCompiler;
+
 class View
 {
     public const string viewPath = BASE_PATH . '/views/';
     public const string viewSuffix = '.php';
+    public const string bladeSuffix = '.blade.php';
+    public const string cachePath = BASE_PATH . '/storage/views/';
+
     private static string $targetView;
     private static array $targetData = [];
+    private static ?BladeCompiler $bladeCompiler = null;
+
     public function __construct()
     {
     }
 
     public static function make($path): self
     {
-        if (false == preg_match('/.+?\.php/', $path)) {
-            $path .= self::viewSuffix;
+        // 优先查找 .blade.php
+        $bladePath = self::viewPath . $path . self::bladeSuffix;
+        $phpPath = self::viewPath . $path . self::viewSuffix;
+
+        if (file_exists($bladePath)) {
+            self::$targetView = self::getBladeCompiler()->compile($path . self::bladeSuffix);
+        } elseif (file_exists($phpPath)) {
+            self::$targetView = $phpPath;
+        } elseif (preg_match('/.+?\.php/', $path) && file_exists(self::viewPath . $path)) {
+            self::$targetView = self::viewPath . $path;
+        } else {
+            throw new \RuntimeException("View not found: {$path}");
         }
 
-        self::$targetView = self::viewPath . $path;
+        self::$targetData = [];
 
         return new self;
     }
@@ -36,10 +53,6 @@ class View
         return $this;
     }
 
-    /**
-     *
-     * @return string
-     */
     public function getView(): string
     {
         return self::$targetView;
@@ -50,13 +63,28 @@ class View
         return self::$targetData;
     }
 
-    /**
-     *
-     * @return string
-     * @throws \Exception
-     */
-    public function __toString()
+    public function __toString(): string
     {
-        return (new Compiler($this))->getPHP();
+        return (new Compiler($this))->render();
+    }
+
+    /**
+     * 获取 Blade 编译器实例
+     */
+    public static function getBladeCompiler(): BladeCompiler
+    {
+        if (self::$bladeCompiler === null) {
+            self::$bladeCompiler = new BladeCompiler(self::viewPath, self::cachePath);
+        }
+
+        return self::$bladeCompiler;
+    }
+
+    /**
+     * 获取共享的 Blade 编译器（用于注册自定义指令等）
+     */
+    public static function blade(): BladeCompiler
+    {
+        return self::getBladeCompiler();
     }
 }

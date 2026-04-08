@@ -29,7 +29,7 @@ class Response
 
         //todo 处理编译view的问题
         if ($response instanceof View) {
-            $this->originContent = (new Compiler($response))->getPHP();
+            $this->originContent = (new Compiler($response))->render();
         }
         //todo 处理active record
     }

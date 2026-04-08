@@ -6,23 +6,44 @@ namespace Bin\View;
 
 class Compiler
 {
-    private $view;
+    private View $view;
 
     public function __construct(View $view)
     {
         $this->view = $view;
     }
 
-    public function getPHP():string
+    /**
+     * @deprecated 使用 render() 代替
+     */
+    public function getPHP(): string
     {
-        try {
-            extract($this->view->getData());
+        return $this->render();
+    }
 
-            require_once $this->view->getView();
-        } catch (\Exception $e) {
-            throw new \Exception('View Compiler Error', 1);
+    /**
+     * 渲染视图并返回输出字符串
+     */
+    public function render(): string
+    {
+        $__path = $this->view->getView();
+        $__data = $this->view->getData();
+
+        if (!file_exists($__path)) {
+            throw new \RuntimeException("View file not found: {$__path}");
         }
 
-        return '';
+        extract($__data);
+
+        ob_start();
+
+        try {
+            require $__path;
+
+            return ob_get_clean() ?: '';
+        } catch (\Throwable $e) {
+            ob_end_clean();
+            throw new \RuntimeException('View render error: ' . $e->getMessage(), 0, $e);
+        }
     }
 }
