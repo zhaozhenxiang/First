@@ -62,7 +62,7 @@ class RouteAction
 
         $result = match (true) {
             is_callable($action) => static::doCallback($action),
-            is_string($action) => static::doClassMethod($action),
+            is_string($action) => static::doClassMethod($action, $route),
             default => abort(404)
         };
 
@@ -122,6 +122,10 @@ class RouteAction
     private static function doCallback(callable $action): mixed
     {
         $params = app(Reflection::class)->getCallBackParam($action);
+
+        // 模型绑定：检测参数类型提示
+        $params = static::resolveModelBindings($action, $params);
+
         return call_user_func_array($action, $params);
     }
 
@@ -129,14 +133,59 @@ class RouteAction
      * 执行控制器方法
      * @throws \Exception
      */
-    private static function doClassMethod(string $action): Response
+    private static function doClassMethod(string $action, ?Route $route = null): Response
     {
         [$class, $method] = explode('@', $action);
-        $fullClass = '\App\Controllers\\' . $class;
+
+        // 检查是否已经有完整命名空间
+        if (!str_contains($class, '\\')) {
+            $fullClass = '\App\Controllers\\' . $class;
+        } else {
+            $fullClass = $class;
+        }
 
         $params = app(Reflection::class)->getClassMethodParamInject($fullClass, $method);
         $instance = new $fullClass();
 
         return new Response(call_user_func_array([$instance, $method], $params));
+    }
+
+    /**
+     * 解析模型绑定参数
+     */
+    private static function resolveModelBindings(callable $action, array $params): array
+    {
+        $reflection = new \ReflectionFunction($action instanceof \Closure ? $action : \Closure::fromCallable($action));
+        $request = \Bin\Request\Request::capture();
+        $urlParams = $request->getUrlParam() ?? [];
+
+        foreach ($reflection->getParameters() as $index => $param) {
+            $type = $param->getType();
+            if ($type === null || $type->isBuiltin()) {
+                continue;
+            }
+
+            $typeName = $type->getName();
+            $paramName = $param->getName();
+
+            // 检查是否有显式绑定
+            if (RouteBinding::hasBinding($paramName)) {
+                $value = $urlParams[$paramName] ?? ($params[$index] ?? null);
+                if ($value !== null) {
+                    $params[$index] = RouteBinding::resolve($paramName, $value);
+                }
+                continue;
+            }
+
+            // 隐式绑定：类型是模型类
+            if (class_exists($typeName) && is_subclass_of($typeName, \Bin\Database\Model::class)) {
+                $value = $urlParams[$paramName] ?? ($params[$index] ?? null);
+                if ($value !== null && !($value instanceof $typeName)) {
+                    $params[$index] = RouteBinding::resolveForClass($typeName, $value);
+                }
+            }
+        }
+
+        return $params;
     }
 }

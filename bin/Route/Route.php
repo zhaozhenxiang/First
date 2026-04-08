@@ -86,6 +86,31 @@ class Route
     }
 
     /**
+     * 设置 action（路由组 namespace 场景）
+     */
+    public function setAction(mixed $action): void
+    {
+        $this->param['action'] = $action;
+        $this->action = $action;
+    }
+
+    /**
+     * 设置域名约束
+     */
+    public function setDomain(string $domain): void
+    {
+        $this->param['domain'] = $domain;
+    }
+
+    /**
+     * 获取域名约束
+     */
+    public function getDomain(): ?string
+    {
+        return $this->param['domain'] ?? null;
+    }
+
+    /**
      * 获取中间件（兼容旧 API）
      *
      * @deprecated 使用 getMiddleware() 替代
@@ -139,6 +164,7 @@ class Route
     public function name(string $name): self
     {
         $this->param['name'] = $name;
+        RouteCollection::registerNamedRoute($name, $this);
         return $this;
     }
 
@@ -148,6 +174,18 @@ class Route
     public function with(string $pattern): self
     {
         $this->addParam('preg', $pattern);
+        return $this;
+    }
+
+    /**
+     * 为指定参数添加正则约束
+     */
+    public function where(string $param, string $pattern): self
+    {
+        if (!isset($this->param['where'])) {
+            $this->param['where'] = [];
+        }
+        $this->param['where'][$param] = $pattern;
         return $this;
     }
 

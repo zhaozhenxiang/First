@@ -20,6 +20,10 @@ class RouteCollection
     private static array $methods = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'];
     /** @var array<string, Route> 命名路由 */
     private static array $namedRoutes = [];
+    /** @var Route|null 兜底路由 */
+    private static ?Route $fallbackRoute = null;
+    /** @var ResourceRegistrar|null */
+    private static ?ResourceRegistrar $registrar = null;
 
     private function __construct()
     {
@@ -56,6 +60,11 @@ class RouteCollection
             }
         }
 
+        // 兜底路由
+        if (self::$fallbackRoute !== null) {
+            return self::$fallbackRoute;
+        }
+
         throw new \Exception('ROUTE NO MATCH', 404);
     }
 
@@ -67,7 +76,7 @@ class RouteCollection
         return str_contains($path, '{');
     }
 
-    private static function action(string $method, string $path, mixed $action): Route
+    public static function action(string $method, string $path, mixed $action): Route
     {
         $method = strtoupper($method);
         $route = new Route($method, $path, $action);
@@ -83,6 +92,14 @@ class RouteCollection
         self::$route[] = $route;
 
         return $route;
+    }
+
+    /**
+     * 注册命名路由
+     */
+    public static function registerNamedRoute(string $name, Route $route): void
+    {
+        self::$namedRoutes[$name] = $route;
     }
 
     /**
@@ -206,12 +223,16 @@ class RouteCollection
      *   - prefix: 路径前缀
      *   - middleware: 中间件列表
      *   - middleware_group: 中间件组名
+     *   - namespace: 控制器命名空间前缀
+     *   - domain: 子域名约束
      */
     public static function group(array $attributes, \Closure $callback): void
     {
         $prefix = $attributes['prefix'] ?? '';
         $middleware = $attributes['middleware'] ?? [];
         $middlewareGroup = $attributes['middleware_group'] ?? null;
+        $namespace = $attributes['namespace'] ?? '';
+        $domain = $attributes['domain'] ?? '';
 
         // 记录当前路由数量
         $startIndex = count(self::$route);
@@ -237,6 +258,19 @@ class RouteCollection
 
                 // 更新路由路径
                 $route->updatePath($newPath);
+            }
+
+            // 应用命名空间前缀
+            if ($namespace !== '') {
+                $action = $route->getAction();
+                if (is_string($action) && !str_contains($action, '\\') && str_contains($action, '@')) {
+                    $route->setAction($namespace . '\\' . $action);
+                }
+            }
+
+            // 应用域名约束
+            if ($domain !== '') {
+                $route->setDomain($domain);
             }
 
             // 应用中间件
@@ -273,6 +307,7 @@ class RouteCollection
         self::$staticRoutes = [];
         self::$dynamicRoutes = [];
         self::$namedRoutes = [];
+        self::$fallbackRoute = null;
     }
 
     /**
@@ -281,5 +316,115 @@ class RouteCollection
     public static function getRoutes(): array
     {
         return self::$route;
+    }
+
+    // ================================================================
+    // RESTful 资源路由
+    // ================================================================
+
+    /**
+     * 注册 RESTful 资源路由
+     *
+     * @return Route[]
+     */
+    public static function resource(string $name, string $controller, array $options = []): array
+    {
+        return self::getRegistrar()->register($name, $controller, $options);
+    }
+
+    /**
+     * 注册 API 资源路由（无 create/edit）
+     *
+     * @return Route[]
+     */
+    public static function apiResource(string $name, string $controller, array $options = []): array
+    {
+        return self::getRegistrar()->apiRegister($name, $controller, $options);
+    }
+
+    /**
+     * 获取 ResourceRegistrar 实例
+     */
+    public static function getRegistrar(): ResourceRegistrar
+    {
+        if (self::$registrar === null) {
+            self::$registrar = new ResourceRegistrar();
+        }
+        return self::$registrar;
+    }
+
+    // ================================================================
+    // 快捷路由
+    // ================================================================
+
+    /**
+     * 注册兜底路由（无匹配时触发）
+     */
+    public static function fallback(mixed $action): Route
+    {
+        $route = new Route('GET', '{fallback}', $action);
+        self::$fallbackRoute = $route;
+        return $route;
+    }
+
+    /**
+     * 注册重定向路由
+     */
+    public static function redirect(string $path, string $destination, int $status = 302): Route
+    {
+        return self::action('GET', $path, function () use ($destination, $status) {
+            header("Location: {$destination}", true, $status);
+            exit;
+        });
+    }
+
+    /**
+     * 注册永久重定向路由
+     */
+    public static function permanentRedirect(string $path, string $destination): Route
+    {
+        return self::redirect($path, $destination, 301);
+    }
+
+    /**
+     * 注册返回视图的路由
+     */
+    public static function view(string $path, string $viewName, array $data = []): Route
+    {
+        return self::action('GET', $path, function () use ($viewName, $data) {
+            $v = \Bin\View\View::make($viewName);
+            foreach ($data as $key => $value) {
+                $v->with($key, $value);
+            }
+            return $v;
+        });
+    }
+
+    /**
+     * 根据名称查找路由
+     */
+    public static function namedRoute(string $name): ?Route
+    {
+        return self::$namedRoutes[$name] ?? null;
+    }
+
+    // ================================================================
+    // 路由模型绑定
+    // ================================================================
+
+    /**
+     * 注册模型绑定
+     */
+    public static function model(string $key, string $class, ?callable $callback = null): void
+    {
+        RouteBinding::model($key, $class, $callback);
+    }
+
+    /**
+     * 注册自定义绑定解析器
+     */
+    public static function bind(string $key, callable $resolver): void
+    {
+        RouteBinding::bind($key, $resolver);
     }
 }
