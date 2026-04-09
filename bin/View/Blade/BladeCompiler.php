@@ -59,14 +59,15 @@ class BladeCompiler
 
         $cachedPath = $this->getCachedPath($path);
 
-        // 缓存有效检查（需要检查所有依赖的模板文件）
-        $dependsOn = $this->scanExtends($fullPath);
+        // 一次读取文件，同时获取内容和依赖
+        [$content, $dependsOn] = $this->readWithDependencies($fullPath);
+
+        // 缓存有效检查
         if ($this->isCacheValid($fullPath, $cachedPath) && $this->areDependenciesValid($dependsOn, $cachedPath)) {
             return $cachedPath;
         }
 
         // 编译（可能递归处理继承）
-        $content = file_get_contents($fullPath);
         $compiled = $this->compileWithInheritance($content, dirname($path));
 
         // 写入缓存
@@ -292,9 +293,11 @@ class BladeCompiler
     }
 
     /**
-     * 扫描模板中的 @extends 依赖
+     * 读取模板文件并扫描 @extends 依赖（单次文件读取）
+     *
+     * @return array{0: string, 1: array<string>} [content, dependencyPaths]
      */
-    protected function scanExtends(string $fullPath): array
+    protected function readWithDependencies(string $fullPath): array
     {
         $content = file_get_contents($fullPath);
         $depends = [$fullPath];
@@ -303,11 +306,12 @@ class BladeCompiler
             $parent = str_replace('.', '/', $matches[1]);
             $parentBlade = $this->viewPath . '/' . $parent . '.blade.php';
             if (file_exists($parentBlade)) {
-                $depends = array_merge($depends, $this->scanExtends($parentBlade));
+                [, $parentDeps] = $this->readWithDependencies($parentBlade);
+                $depends = array_merge($depends, $parentDeps);
             }
         }
 
-        return $depends;
+        return [$content, $depends];
     }
 
     /**

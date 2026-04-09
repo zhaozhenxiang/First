@@ -241,7 +241,8 @@ class RouteCollection
         $callback();
 
         // 为组内新增的路由应用属性
-        for ($i = $startIndex; $i < count(self::$route); $i++) {
+        $routeCount = count(self::$route);
+        for ($i = $startIndex; $i < $routeCount; $i++) {
             $route = self::$route[$i];
 
             // 应用前缀：需要更新静态/动态路由索引

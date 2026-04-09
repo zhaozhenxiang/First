@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Bin\Validation;
 
 use Bin\Request\Request;
-use Bin\Response\Response;
 
 /**
  * 表单请求基类
@@ -19,47 +18,25 @@ use Bin\Response\Response;
  */
 abstract class FormRequest extends Request
 {
-    /** @var ValidationManager|null 验证器实例 */
     protected ?ValidationManager $validator = null;
-
-    /** @var array<string, mixed> 已验证的数据 */
     protected array $validatedData = [];
-
-    /** @var bool 验证是否已执行 */
     protected bool $validationResolved = false;
 
-    /**
-     * 定义验证规则
-     *
-     * @return array<string, string|array>
-     */
+    /** @var array<string, mixed>|null 缓存的 rules，避免重复调用 */
+    protected ?array $cachedRules = null;
+
     abstract public function rules(): array;
 
-    /**
-     * 自定义错误消息
-     *
-     * @return array<string, string>
-     */
     public function messages(): array
     {
         return [];
     }
 
-    /**
-     * 自定义字段别名
-     *
-     * @return array<string, string>
-     */
     public function attributes(): array
     {
         return [];
     }
 
-    /**
-     * 授权检查
-     *
-     * 返回 false 将拒绝访问（403）。
-     */
     public function authorize(): bool
     {
         return true;
@@ -68,7 +45,7 @@ abstract class FormRequest extends Request
     /**
      * 执行验证并处理结果
      *
-     * @throws \RuntimeException 授权失败时
+     * @throws \RuntimeException 授权失败时 (403)
      */
     public function validateResolved(): void
     {
@@ -78,46 +55,30 @@ abstract class FormRequest extends Request
 
         $this->validationResolved = true;
 
-        // 授权检查
         if (!$this->authorize()) {
             throw new \RuntimeException('Unauthorized', 403);
         }
 
-        // 创建验证器
-        $this->validator = new ValidationManager(
-            $this->all(),
-            $this->rules()
-        );
+        $this->cachedRules = $this->rules();
 
-        // 设置自定义消息
+        $this->validator = new ValidationManager($this->all(), $this->cachedRules);
+
         $messages = $this->messages();
         if ($messages !== []) {
             $this->validator->setCustomMessages($messages);
         }
 
-        // 执行验证
-        $result = $this->validator->validate();
-        $passed = $result === true || (is_array($result) && $result !== []);
+        $this->validator->validate();
 
-        // 检查是否有错误
-        $errors = $this->validator->getErrors();
-        $hasErrors = ($errors instanceof MessageBag && !$errors->isEmpty())
-            || (is_array($errors) && $errors !== []);
-
-        if ($hasErrors) {
+        if ($this->validator->hasErrors()) {
             $this->failedValidation($this->validator);
         }
 
-        // 存储已验证数据
         $this->validatedData = $this->extractValidatedData();
     }
 
     /**
-     * 获取已验证的数据
-     *
-     * 只返回在 rules() 中声明的字段数据。
-     *
-     * @throws \RuntimeException 验证未执行时
+     * 获取已验证的数据（只返回 rules 中声明的字段）
      */
     public function validated(): array
     {
@@ -130,18 +91,13 @@ abstract class FormRequest extends Request
 
     /**
      * 验证失败处理
-     *
-     * 根据请求类型决定响应方式。
      */
     protected function failedValidation(ValidationManager $validator): never
     {
-        // API 请求：返回 422 JSON
-        if ($this->expectsJson()) {
-            $errors = $validator->getErrors();
-            $errorArray = $errors instanceof MessageBag
-                ? $errors->all()
-                : (is_array($errors) ? $errors : []);
+        $errors = $validator->getErrors();
+        $errorArray = $errors instanceof MessageBag ? $errors->all() : [];
 
+        if ($this->expectsJson()) {
             header('Content-Type: application/json', true, 422);
             echo json_encode([
                 'message' => 'The given data was invalid.',
@@ -150,42 +106,29 @@ abstract class FormRequest extends Request
             exit;
         }
 
-        // Web 请求：闪存错误和旧输入，重定向回上一页
+        // Web 请求：闪存旧输入 + 错误，重定向回上一页
         $this->flash();
-
-        $errorBag = $validator->getErrors();
-        $errors = $errorBag instanceof MessageBag
-            ? $errorBag->all()
-            : (is_array($errorBag) ? $errorBag : []);
 
         if (function_exists('session')) {
             $session = session();
             if ($session !== null && method_exists($session, 'flash')) {
-                $session->flash('_errors', $errors);
-                $session->flash('_old_input', $this->all());
+                $session->flash('_errors', $errorArray);
             }
         }
 
-        // 重定向回上一页
         $referer = $this->header('REFERER') ?? '/';
         header("Location: {$referer}", true, 302);
         exit;
     }
 
-    /**
-     * 获取验证器实例
-     */
     public function getValidator(): ?ValidationManager
     {
         return $this->validator;
     }
 
-    /**
-     * 提取已验证的数据（只取 rules 中声明的字段）
-     */
     protected function extractValidatedData(): array
     {
-        $rules = $this->rules();
+        $rules = $this->cachedRules ?? $this->rules();
         $allData = $this->all();
         $validated = [];
 

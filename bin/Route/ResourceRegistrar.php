@@ -7,64 +7,49 @@ namespace Bin\Route;
 /**
  * RESTful 资源路由注册器
  *
- * 将 Route::resource('posts', PostController::class) 展开为 7 条标准 CRUD 路由。
+ * 将 Route::resource('posts', PostController::class) 展开为标准 CRUD 路由。
  */
 class ResourceRegistrar
 {
-    /** 默认资源路由映射 */
-    protected const array RESOURCE_MAP = [
-        'index'   => ['GET', '', 'index'],
-        'create'  => ['GET', '/create', 'create'],
-        'store'   => ['POST', '', 'store'],
-        'show'    => ['GET', '/{id}', 'show'],
-        'edit'    => ['GET', '/{id}/edit', 'edit'],
-        'update'  => ['PUT', '/{id}', 'update'],
-        'destroy' => ['DELETE', '/{id}', 'destroy'],
+    protected const array RESOURCE_ACTIONS = [
+        'index'   => ['GET', ''],
+        'create'  => ['GET', '/create'],
+        'store'   => ['POST', ''],
+        'show'    => ['GET', '/{id}'],
+        'edit'    => ['GET', '/{id}/edit'],
+        'update'  => ['PUT', '/{id}'],
+        'destroy' => ['DELETE', '/{id}'],
     ];
 
-    /** API 资源路由（排除 create/edit） */
-    protected const array API_MAP = [
-        'index'   => ['GET', '', 'index'],
-        'store'   => ['POST', '', 'store'],
-        'show'    => ['GET', '/{id}', 'show'],
-        'update'  => ['PUT', '/{id}', 'update'],
-        'destroy' => ['DELETE', '/{id}', 'destroy'],
-    ];
+    /** API 排除的动作 */
+    protected const array API_EXCLUDED = ['create', 'edit'];
 
-    /**
-     * 注册资源路由
-     *
-     * @param string $name 资源名称（如 'posts'）
-     * @param string $controller 控制器类名
-     * @param array $options 选项：only, except, names, parameters
-     * @return Route[]
-     */
+    /** update 动作额外注册 PATCH */
+    protected const array PATCH_ALIASES = ['update'];
+
     public function register(string $name, string $controller, array $options = []): array
     {
-        return $this->buildRoutes(self::RESOURCE_MAP, $name, $controller, $options);
+        return $this->buildRoutes($name, $controller, $options, []);
     }
 
-    /**
-     * 注册 API 资源路由（无 create/edit）
-     */
     public function apiRegister(string $name, string $controller, array $options = []): array
     {
-        return $this->buildRoutes(self::API_MAP, $name, $controller, $options);
+        return $this->buildRoutes($name, $controller, $options, self::API_EXCLUDED);
     }
 
-    /**
-     * 构建资源路由
-     */
-    protected function buildRoutes(array $map, string $name, string $controller, array $options): array
+    protected function buildRoutes(string $name, string $controller, array $options, array $excludedActions): array
     {
         $routes = [];
         $only = $options['only'] ?? null;
-        $except = $options['except'] ?? [];
+        $except = array_merge($options['except'] ?? [], $excludedActions);
         $names = $options['names'] ?? [];
         $parameters = $options['parameters'] ?? [];
 
-        foreach ($map as $action => [$method, $uriSuffix, $methodSuffix]) {
-            // 过滤
+        // 预计算参数名（只算一次）
+        $paramName = $this->getParameterName($name, $parameters);
+        $base = '/' . trim($name, '/');
+
+        foreach (self::RESOURCE_ACTIONS as $action => [$method, $uriSuffix]) {
             if ($only !== null && !in_array($action, $only, true)) {
                 continue;
             }
@@ -72,56 +57,35 @@ class ResourceRegistrar
                 continue;
             }
 
-            // 构建路径
-            $path = '/' . trim($name, '/');
-            if ($uriSuffix !== '') {
-                $path .= $uriSuffix;
-            }
-
-            // 自定义参数名
-            $paramName = $this->getParameterName($name, $parameters);
+            $path = $base . $uriSuffix;
             $path = str_replace('{id}', '{' . $paramName . '}', $path);
 
-            // PATCH 也映射到 update
-            $route = RouteCollection::action($method, $path, $controller . '@' . $methodSuffix);
-
-            // 路由命名
-            $routeName = $names[$action] ?? ($name . '.' . $action);
-            $route->name($routeName);
-
+            $route = RouteCollection::action($method, $path, $controller . '@' . $action);
+            $route->name($names[$action] ?? ($name . '.' . $action));
             $routes[] = $route;
-        }
 
-        // PUT 和 PATCH 都映射到 update
-        if (($only === null || in_array('update', $only, true)) && !in_array('update', $except, true)) {
-            $paramName = $this->getParameterName($name, $parameters);
-            $patchPath = '/' . trim($name, '/') . '/{' . $paramName . '}';
-            $patchRoute = RouteCollection::action('PATCH', $patchPath, $controller . '@update');
-            $routeName = $names['update'] ?? ($name . '.update');
-            $patchRoute->name($routeName);
-            $routes[] = $patchRoute;
+            // PUT 动作额外注册 PATCH
+            if (in_array($action, self::PATCH_ALIASES, true)) {
+                $patchRoute = RouteCollection::action('PATCH', $path, $controller . '@' . $action);
+                $patchRoute->name($names[$action] ?? ($name . '.' . $action));
+                $routes[] = $patchRoute;
+            }
         }
 
         return $routes;
     }
 
-    /**
-     * 获取参数名
-     */
     protected function getParameterName(string $resource, array $parameters): string
     {
         if (isset($parameters[$resource])) {
             $param = $parameters[$resource];
-            // 支持 'post:slug' 格式
             if (str_contains($param, ':')) {
                 return explode(':', $param)[1];
             }
             return $param;
         }
 
-        // 默认：资源名单数
         $singular = $this->singularize($resource);
-        // 嵌套资源取最后一段
         if (str_contains($singular, '.')) {
             $parts = explode('.', $singular);
             $singular = end($parts);
@@ -130,9 +94,6 @@ class ResourceRegistrar
         return $singular;
     }
 
-    /**
-     * 简单单数化
-     */
     protected function singularize(string $word): string
     {
         if (str_ends_with($word, 'ies')) {
