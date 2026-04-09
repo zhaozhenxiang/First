@@ -1,0 +1,22 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Bin\Request\Request;
+use Bin\Response\Response;
+
+/**
+ * {{ class }} 控制器
+ */
+class {{ class }}
+{
+    /**
+     * 单一动作控制器
+     */
+    public function __invoke(Request $request): Response
+    {
+        //
+    }
+}

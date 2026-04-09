@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Bin\Console\Command;
+
+/**
+ * {{ class }} 命令
+ */
+class {{ class }} extends Command
+{
+    public string $signature = '{{ commandName }} {argument}';
+
+    public string $description = 'Command description';
+
+    public function execute(): int
+    {
+        $argument = $this->argument('argument');
+
+        $this->info("Hello from {{ class }}!");
+
+        return 0;
+    }
+}

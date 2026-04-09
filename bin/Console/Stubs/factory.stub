@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Database\Factories;
+
+use Bin\Database\Factory;
+
+/**
+ * {{ class }} 模型工厂
+ */
+class {{ class }}
+{
+    /**
+     * 注册工厂定义
+     */
+    public function definition(): void
+    {
+        Factory::define({{ model }}::class, function () {
+            return [
+                // 'name' => fake()->name(),
+                // 'email' => fake()->email(),
+            ];
+        });
+    }
+}

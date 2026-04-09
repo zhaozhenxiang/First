@@ -1,0 +1,37 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Bin\Database\Observer;
+
+/**
+ * {{ class }} 模型观察者
+ */
+class {{ class }} extends Observer
+{
+    /**
+     * 模型创建后
+     */
+    public function created(object ${{ modelVariable }}): void
+    {
+        //
+    }
+
+    /**
+     * 模型更新后
+     */
+    public function updated(object ${{ modelVariable }}): void
+    {
+        //
+    }
+
+    /**
+     * 模型删除后
+     */
+    public function deleted(object ${{ modelVariable }}): void
+    {
+        //
+    }
+}

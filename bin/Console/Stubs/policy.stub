@@ -1,0 +1,45 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Bin\Auth\Policy;
+
+/**
+ * {{ class }} 授权策略
+ */
+class {{ class }} extends Policy
+{
+    /**
+     * 查看权限
+     */
+    public function view(?object $user, object ${{ modelVariable }}): bool
+    {
+        return $this->isOwner($user, ${{ modelVariable }});
+    }
+
+    /**
+     * 创建权限
+     */
+    public function create(?object $user): bool
+    {
+        return $user !== null;
+    }
+
+    /**
+     * 更新权限
+     */
+    public function update(?object $user, object ${{ modelVariable }}): bool
+    {
+        return $this->isOwner($user, ${{ modelVariable }});
+    }
+
+    /**
+     * 删除权限
+     */
+    public function delete(?object $user, object ${{ modelVariable }}): bool
+    {
+        return $this->isOwner($user, ${{ modelVariable }});
+    }
+}

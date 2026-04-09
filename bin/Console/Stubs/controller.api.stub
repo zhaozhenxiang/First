@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Bin\Request\Request;
+use Bin\Response\Response;
+
+/**
+ * {{ class }} API 控制器
+ */
+class {{ class }}
+{
+    /**
+     * 列表
+     */
+    public function index(): Response
+    {
+        //
+    }
+
+    /**
+     * 创建
+     */
+    public function store(Request $request): Response
+    {
+        //
+    }
+
+    /**
+     * 详情
+     */
+    public function show(int $id): Response
+    {
+        //
+    }
+
+    /**
+     * 更新
+     */
+    public function update(Request $request, int $id): Response
+    {
+        //
+    }
+
+    /**
+     * 删除
+     */
+    public function destroy(int $id): Response
+    {
+        //
+    }
+}

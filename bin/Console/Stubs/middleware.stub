@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Bin\Middleware\Middleware;
+
+/**
+ * {{ class }} 中间件
+ */
+class {{ class }} extends Middleware
+{
+    /**
+     * 处理请求
+     */
+    public function handle(mixed $request): bool
+    {
+        // 在这里编写中间件逻辑
+        // 返回 true 继续执行，返回 false 中断请求
+
+        return true;
+    }
+}
