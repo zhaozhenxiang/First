@@ -32,20 +32,44 @@ class App implements ContainerInterface
      * 核心服务别名映射
      */
     private static array $coreAliases = [
-        'request'  => \Bin\Request\Request::class,
-        'response' => Response::class,
-        'route'    => RouteCollection::class,
-        'app'      => self::class,
+        'request'   => \Bin\Request\Request::class,
+        'response'  => Response::class,
+        'route'     => RouteCollection::class,
+        'app'       => self::class,
         'container' => Container::class,
-        'events'   => \Bin\Events\EventDispatcher::class,
+        'events'    => \Bin\Events\EventDispatcher::class,
+        'cache'     => \Bin\Cache\CacheManager::class,
+        'config'    => \Bin\Config\ConfigRepository::class,
+        'log'       => \Bin\Log\LogManager::class,
+        'session'   => \Bin\Session\SessionManager::class,
+        'auth'      => \Bin\Auth\AuthManager::class,
+        'gate'      => \Bin\Auth\Gate::class,
+        'db'        => \Bin\Database\ConnectionManager::class,
+        'cookie'    => \Bin\Cookie\CookieManager::class,
+        'hash'      => \Bin\Auth\HashManager::class,
+        'view'      => \Bin\View\View::class,
+        'validator' => \Bin\Validation\ValidationManager::class,
     ];
 
     /**
      * Facade 别名映射
      */
     private static array $facades = [
-        'Request' => \Bin\Facade\Request::class,
-        'Event' => \Bin\Facade\Event::class,
+        'Request'   => \Bin\Facade\Request::class,
+        'Event'     => \Bin\Facade\Event::class,
+        'Cache'     => \Bin\Facade\Cache::class,
+        'Config'    => \Bin\Facade\Config::class,
+        'Log'       => \Bin\Facade\Log::class,
+        'Session'   => \Bin\Facade\Session::class,
+        'Auth'      => \Bin\Facade\Auth::class,
+        'Gate'      => \Bin\Facade\Gate::class,
+        'Hash'      => \Bin\Facade\Hash::class,
+        'DB'        => \Bin\Facade\DB::class,
+        'Cookie'    => \Bin\Facade\Cookie::class,
+        'Route'     => \Bin\Facade\Route::class,
+        'URL'       => \Bin\Facade\URL::class,
+        'View'      => \Bin\Facade\View::class,
+        'Validator' => \Bin\Facade\Validator::class,
     ];
 
     /**
