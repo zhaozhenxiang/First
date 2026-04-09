@@ -145,9 +145,57 @@ class RouteAction
         }
 
         $params = app(Reflection::class)->getClassMethodParamInject($fullClass, $method);
+
+        // 检测 FormRequest 参数并自动解析验证
+        $params = static::resolveFormRequests($fullClass, $method, $params);
+
         $instance = new $fullClass();
 
         return new Response(call_user_func_array([$instance, $method], $params));
+    }
+
+    /**
+     * 检测并解析 FormRequest 参数
+     *
+     * 通过 Reflection 检查控制器方法的参数类型，
+     * 如果参数是 FormRequest 子类，自动创建实例并执行验证。
+     */
+    private static function resolveFormRequests(string $class, string $method, array $params): array
+    {
+        if (!class_exists($class) || !method_exists($class, $method)) {
+            return $params;
+        }
+
+        $reflection = new \ReflectionMethod($class, $method);
+
+        foreach ($reflection->getParameters() as $index => $param) {
+            $type = $param->getType();
+            if ($type === null || $type->isBuiltin()) {
+                continue;
+            }
+
+            $typeName = $type->getName();
+
+            // 检查是否是 FormRequest 子类
+            if (class_exists($typeName) && is_subclass_of($typeName, \Bin\Validation\FormRequest::class)) {
+                // 创建 FormRequest 实例（从当前请求数据）
+                /** @var \Bin\Validation\FormRequest $formRequest */
+                $formRequest = new $typeName(
+                    $_GET,
+                    $_POST,
+                    $_SERVER,
+                    $_COOKIE
+                );
+
+                // 执行验证
+                $formRequest->validateResolved();
+
+                // 注入已验证的 FormRequest 实例
+                $params[$index] = $formRequest;
+            }
+        }
+
+        return $params;
     }
 
     /**
