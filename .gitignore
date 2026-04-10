@@ -32,3 +32,4 @@ composer.lock
 
 # Cache
 *.cache
+.gitnexus
