@@ -6,73 +6,66 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | 应用名称
+    | 默认 Session 驱动
     |--------------------------------------------------------------------------
+    |
+    | 支持：file / database / redis
+    |
     */
-    'name' => env('APP_NAME', 'First'),
+    'driver' => env('SESSION_DRIVER', 'file'),
 
     /*
     |--------------------------------------------------------------------------
-    | 运行环境
+    | Session 生命周期（秒）
     |--------------------------------------------------------------------------
     */
-    'env' => env('APP_ENV', 'production'),
+    'lifetime' => env('SESSION_LIFETIME', 7200),
 
     /*
     |--------------------------------------------------------------------------
-    | 调试模式
+    | Session 过期后是否自动销毁（关闭浏览器时）
     |--------------------------------------------------------------------------
     */
-    'debug' => (bool) env('APP_DEBUG', false),
+    'expire_on_close' => false,
 
     /*
     |--------------------------------------------------------------------------
-    | 应用 URL
+    | Session 文件存储路径
     |--------------------------------------------------------------------------
     */
-    'url' => env('APP_URL', 'http://localhost'),
+    'files' => storage_path('sessions'),
 
     /*
     |--------------------------------------------------------------------------
-    | 时区
+    | Session Cookie 配置
     |--------------------------------------------------------------------------
     */
-    'timezone' => env('APP_TIMEZONE', 'UTC'),
+    'cookie' => [
+        'name' => env('SESSION_COOKIE', 'first_session'),
+        'path' => '/',
+        'domain' => env('SESSION_DOMAIN', null),
+        'secure' => env('SESSION_SECURE_COOKIE', false),
+        'http_only' => true,
+        'same_site' => 'Lax',
+    ],
 
     /*
     |--------------------------------------------------------------------------
-    | 默认语言
+    | Database Session 配置
     |--------------------------------------------------------------------------
     */
-    'locale' => 'en',
+    'table' => 'sessions',
 
     /*
     |--------------------------------------------------------------------------
-    | 回退语言
+    | Redis Session 配置
     |--------------------------------------------------------------------------
     */
-    'fallback_locale' => 'en',
-
-    /*
-    |--------------------------------------------------------------------------
-    | 加密密钥和算法
-    |--------------------------------------------------------------------------
-    */
-    'key' => env('APP_KEY'),
-    'cipher' => 'AES-256-CBC',
-
-    /*
-    |--------------------------------------------------------------------------
-    | 服务提供者
-    |--------------------------------------------------------------------------
-    */
-    'providers' => [
-        \Bin\Providers\RoutingServiceProvider::class,
-        \Bin\Providers\RequestServiceProvider::class,
-        \Bin\Providers\ResponseServiceProvider::class,
-        \Bin\Providers\ViewServiceProvider::class,
-        \Bin\Providers\EventServiceProvider::class,
-        \Bin\Providers\DatabaseServiceProvider::class,
+    'redis' => [
+        'host' => env('REDIS_HOST', '127.0.0.1'),
+        'port' => env('REDIS_PORT', 6379),
+        'password' => env('REDIS_PASSWORD', null),
+        'database' => env('REDIS_SESSION_DB', 1),
     ],
 
 ];

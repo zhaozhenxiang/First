@@ -16,7 +16,7 @@ class SessionManager implements SessionInterface
     private string $oldFlashKey = '_flash_old';
 
     /** @var int Session 生命周期（秒） */
-    private int $lifetime = 120; // 2 小时
+    private int $lifetime = 7200;
 
     /** @var bool Session 是否已启动 */
     private bool $started = false;
@@ -32,6 +32,10 @@ class SessionManager implements SessionInterface
      */
     public function __construct()
     {
+        // 从 config 读取 lifetime
+        if (function_exists('config')) {
+            $this->lifetime = (int) config('session.lifetime', 7200);
+        }
         $this->configure();
     }
 
@@ -40,11 +44,13 @@ class SessionManager implements SessionInterface
      */
     private function configure(): void
     {
+        $cookieConfig = function_exists('config') ? config('session.cookie', []) : [];
+
         // 静默设置 Session 参数（如果 headers 已发送，忽略警告）
         $options = [
             'session.use_cookies' => '1',
             'session.use_only_cookies' => '1',
-            'session.cookie_httponly' => '1',
+            'session.cookie_httponly' => ($cookieConfig['http_only'] ?? true) ? '1' : '0',
             'session.use_strict_mode' => '1',
         ];
 
@@ -52,11 +58,12 @@ class SessionManager implements SessionInterface
             @ini_set($key, $value);
         }
 
-        // SameSite 需要单独设置
-        @ini_set('session.cookie_samesite', 'Lax');
+        // SameSite
+        @ini_set('session.cookie_samesite', $cookieConfig['same_site'] ?? 'Lax');
 
-        // HTTPS 时启用 secure 标志
-        if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
+        // Secure 标志
+        $secure = $cookieConfig['secure'] ?? false;
+        if ($secure || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on')) {
             @ini_set('session.cookie_secure', '1');
         }
     }

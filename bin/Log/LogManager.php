@@ -13,13 +13,19 @@ class LogManager
     private array $channels = [];
 
     /** @var string 默认通道 */
-    private string $defaultChannel = 'app';
+    private string $defaultChannel = '';
 
     /** @var self|null 单例实例 */
     private static ?self $instance = null;
 
     public function __construct()
     {
+        if ($this->defaultChannel === '' && function_exists('config')) {
+            $this->defaultChannel = config('logging.default') ?? 'app';
+        }
+        if ($this->defaultChannel === '') {
+            $this->defaultChannel = 'app';
+        }
     }
 
     /**
@@ -61,11 +67,12 @@ class LogManager
     }
 
     /**
-     * 清除所有日志通道
+     * 清除所有日志通道并重置默认通道
      */
     public function clearFor(): void
     {
         $this->channels = [];
+        $this->defaultChannel = 'app';
     }
 
     /**

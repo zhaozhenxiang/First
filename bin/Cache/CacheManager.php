@@ -18,7 +18,7 @@ class CacheManager
     /**
      * 默认存储名称
      */
-    protected string $defaultStore = 'file';
+    protected string $defaultStore = '';
 
     /**
      * 存储配置
@@ -31,6 +31,16 @@ class CacheManager
 
     public function __construct()
     {
+        // 自动从 config 加载（如果可用）
+        if ($this->config === [] && function_exists('config')) {
+            $this->config = config('cache.stores') ?? [];
+            if ($this->defaultStore === '') {
+                $this->defaultStore = config('cache.default') ?? 'file';
+            }
+        }
+        if ($this->defaultStore === '') {
+            $this->defaultStore = 'file';
+        }
     }
 
     /**
@@ -76,7 +86,11 @@ class CacheManager
      */
     protected function resolveStore(string $name): CacheRepository
     {
+        // 优先从 stores 子数组查找，兼容旧格式直接以 name 为 key
         $config = $this->config[$name] ?? [];
+        if ($config === [] && isset($this->config['stores'][$name])) {
+            $config = $this->config['stores'][$name];
+        }
 
         $driver = $config['driver'] ?? $name;
 

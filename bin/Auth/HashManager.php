@@ -23,6 +23,42 @@ class HashManager
         'cost' => 10,
     ];
 
+    /** @var bool 是否已从 config 加载 */
+    private static bool $configLoaded = false;
+
+    /**
+     * 从 config/hashing.php 加载配置
+     */
+    public static function loadFromConfig(): void
+    {
+        if (self::$configLoaded || !function_exists('config')) {
+            return;
+        }
+
+        self::$configLoaded = true;
+
+        $driver = config('hashing.driver', 'bcrypt');
+
+        if ($driver === 'bcrypt') {
+            self::$algorithm = PASSWORD_BCRYPT;
+            self::$options = ['cost' => (int) config('hashing.bcrypt.rounds', 10)];
+        } elseif ($driver === 'argon2i') {
+            self::$algorithm = PASSWORD_ARGON2I;
+            self::$options = [
+                'memory_cost' => (int) config('hashing.argon.memory', 65536),
+                'time_cost' => (int) config('hashing.argon.time', 4),
+                'threads' => (int) config('hashing.argon.threads', 1),
+            ];
+        } elseif ($driver === 'argon2id' && defined('PASSWORD_ARGON2ID')) {
+            self::$algorithm = PASSWORD_ARGON2ID;
+            self::$options = [
+                'memory_cost' => (int) config('hashing.argon.memory', 65536),
+                'time_cost' => (int) config('hashing.argon.time', 4),
+                'threads' => (int) config('hashing.argon.threads', 1),
+            ];
+        }
+    }
+
     /**
      * 设置默认算法
      */
@@ -44,6 +80,7 @@ class HashManager
      */
     public static function make(string $value, array $options = []): string
     {
+        self::loadFromConfig();
         $options = array_merge(self::$options, $options);
         return password_hash($value, self::$algorithm, $options);
     }
