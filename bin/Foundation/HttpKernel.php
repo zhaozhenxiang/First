@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Bin\Foundation;
 
 use Bin\App\App;
+use Bin\Middleware\Middleware;
+use Bin\Middleware\MiddlewareStack;
+use Bin\Middleware\Pipeline;
 use Bin\Request\Request;
 use Bin\Response\Response;
 use Bin\Route\RouteAction;
@@ -50,6 +53,12 @@ class HttpKernel
      */
     protected array $middlewareConfig = [];
 
+    /** @var Request|null 当前请求 */
+    protected ?Request $currentRequest = null;
+
+    /** @var Response|null 当前响应 */
+    protected ?Response $currentResponse = null;
+
     public function __construct(App $app)
     {
         $this->app = $app;
@@ -78,10 +87,29 @@ class HttpKernel
     {
         $this->bootstrap();
 
+        $this->currentRequest = Request::capture();
+
         // 通过路由系统分发请求
         $response = RouteAction::action();
 
-        return $response instanceof Response ? $response : new Response((string)$response);
+        $this->currentResponse = $response instanceof Response
+            ? $response
+            : new Response((string)$response);
+
+        return $this->currentResponse;
+    }
+
+    /**
+     * 在响应发送后调用 terminate 钩子
+     *
+     * 按逆序调用所有中间件的 terminate() 方法，
+     * 用于日志记录、资源清理等后置处理。
+     */
+    public function terminate(): void
+    {
+        if ($this->currentRequest !== null && $this->currentResponse !== null) {
+            RouteAction::terminate($this->currentRequest, $this->currentResponse);
+        }
     }
 
     /**
@@ -153,5 +181,74 @@ class HttpKernel
         } else {
             $this->bootstrappers[] = $bootstrapper;
         }
+    }
+
+    // ================================================================
+    // 中间件管理
+    // ================================================================
+
+    /**
+     * 追加全局中间件
+     */
+    public function pushGlobalMiddleware(string $middleware): static
+    {
+        MiddlewareStack::getInstance()->addGlobal($middleware);
+        return $this;
+    }
+
+    /**
+     * 前置全局中间件
+     */
+    public function prependGlobalMiddleware(string $middleware): static
+    {
+        $stack = MiddlewareStack::getInstance();
+        $stack->prependGlobal($middleware);
+        return $this;
+    }
+
+    /**
+     * 追加组中间件
+     */
+    public function pushMiddlewareToGroup(string $group, string $middleware): static
+    {
+        MiddlewareStack::getInstance()->addToGroup($group, $middleware);
+        return $this;
+    }
+
+    /**
+     * 前置组中间件
+     */
+    public function prependMiddlewareToGroup(string $group, string $middleware): static
+    {
+        MiddlewareStack::getInstance()->prependToGroup($group, $middleware);
+        return $this;
+    }
+
+    /**
+     * 注册中间件别名
+     */
+    public function middlewareAlias(string $name, string $class): static
+    {
+        MiddlewareStack::getInstance()->alias($name, $class);
+        return $this;
+    }
+
+    /**
+     * 设置中间件优先级
+     *
+     * @param array<string, int> $priority  别名/类名 => 优先级（值越大越先执行）
+     */
+    public function middlewarePriority(array $priority): static
+    {
+        MiddlewareStack::getInstance()->setPriority($priority);
+        return $this;
+    }
+
+    /**
+     * 获取 MiddlewareStack 实例
+     */
+    public function getMiddlewareStack(): MiddlewareStack
+    {
+        return MiddlewareStack::getInstance();
     }
 }

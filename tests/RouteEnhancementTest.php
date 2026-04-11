@@ -367,4 +367,122 @@ class RouteEnhancementTest extends TestCase
         $this->assertEquals(['auth'], $route->getMiddleware());
         $this->assertNotNull(RouteCollection::namedRoute('admin.dashboard'));
     }
+
+    // ================================================================
+    // Resource 在 group 内
+    // ================================================================
+
+    public function testResourceInGroupGetsPrefix(): void
+    {
+        RouteCollection::group(['prefix' => '/api', 'middleware' => ['api']], function () {
+            RouteCollection::resource('posts', 'PostController');
+        });
+
+        $allRoutes = RouteCollection::getRoutes();
+        $this->assertNotEmpty($allRoutes);
+
+        // 验证所有路由都有 /api 前缀
+        foreach ($allRoutes as $route) {
+            $this->assertStringStartsWith('/api/posts', $route->getPath());
+            $this->assertContains('api', $route->getMiddleware());
+        }
+    }
+
+    public function testApiResourceInGroupGetsPrefix(): void
+    {
+        RouteCollection::group(['prefix' => '/api/v1'], function () {
+            RouteCollection::apiResource('users', 'UserController');
+        });
+
+        $allRoutes = RouteCollection::getRoutes();
+        $this->assertNotEmpty($allRoutes);
+
+        foreach ($allRoutes as $route) {
+            $this->assertStringStartsWith('/api/v1/users', $route->getPath());
+        }
+    }
+
+    public function testResourceInGroupGetsNamespace(): void
+    {
+        RouteCollection::group(['namespace' => 'App\\Api'], function () {
+            RouteCollection::resource('posts', 'PostController');
+        });
+
+        $allRoutes = RouteCollection::getRoutes();
+        foreach ($allRoutes as $route) {
+            $action = $route->getAction();
+            $this->assertStringStartsWith('App\\Api\\', $action);
+        }
+    }
+
+    // ================================================================
+    // where 约束匹配
+    // ================================================================
+
+    public function testWhereConstraintOnDynamicRoute(): void
+    {
+        $route = new Route('GET', '/user/{id}', function () {});
+        $route->where('id', '[0-9]+');
+
+        $this->assertTrue($route->matches('/user/123'));
+        $this->assertFalse($route->matches('/user/abc'));
+    }
+
+    public function testGroupWhereInheritedToRoute(): void
+    {
+        RouteCollection::group(['where' => ['id' => '[0-9]+']], function () {
+            RouteCollection::get('/user/{id}', function () {});
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertCount(1, $routes);
+        $this->assertTrue($routes[0]->matches('/user/42'));
+        $this->assertFalse($routes[0]->matches('/user/abc'));
+    }
+
+    // ================================================================
+    // name 前缀
+    // ================================================================
+
+    public function testGroupNamePrefixAppliedToNamedRoutes(): void
+    {
+        RouteCollection::group(['name' => 'admin.'], function () {
+            RouteCollection::get('/dashboard', function () {})->name('dashboard');
+        });
+
+        $this->assertNotNull(RouteCollection::namedRoute('admin.dashboard'));
+    }
+
+    // ================================================================
+    // 嵌套组所有属性
+    // ================================================================
+
+    public function testNestedGroupFullStack(): void
+    {
+        RouteCollection::group([
+            'prefix' => '/api',
+            'name' => 'api.',
+            'namespace' => 'App\\Api',
+            'middleware' => ['api'],
+            'where' => ['id' => '[0-9]+'],
+        ], function () {
+            RouteCollection::group([
+                'prefix' => '/v1',
+                'name' => 'v1.',
+                'namespace' => 'V1',
+            ], function () {
+                RouteCollection::get('/users/{id}', 'UserController@show')->name('users.show');
+            });
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertCount(1, $routes);
+
+        $route = $routes[0];
+        $this->assertEquals('/api/v1/users/{id}', $route->getPath());
+        $this->assertEquals('App\\Api\\V1\\UserController@show', $route->getAction());
+        $this->assertEquals('api.v1.users.show', $route->getName());
+        $this->assertContains('api', $route->getMiddleware());
+        $this->assertEquals(['id' => '[0-9]+'], $route->getWheres());
+    }
 }

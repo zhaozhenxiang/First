@@ -21,6 +21,9 @@ class Route
     /** @var array<string> 使用的中间件组 */
     private array $middlewareGroups = [];
 
+    /** @var array<string, string> 参数正则约束 */
+    private array $wheres = [];
+
     public function __construct(
         private string $method,
         private string $path,
@@ -159,13 +162,20 @@ class Route
     }
 
     /**
-     * 设置路由名称
+     * 设置路由名称（触发命名注册，自动添加组前缀）
      */
     public function name(string $name): self
     {
-        $this->param['name'] = $name;
         RouteCollection::registerNamedRoute($name, $this);
         return $this;
+    }
+
+    /**
+     * 直接设置完整名称（由 registerNamedRoute 调用，不触发递归）
+     */
+    public function setRawName(string $name): void
+    {
+        $this->param['name'] = $name;
     }
 
     /**
@@ -179,14 +189,52 @@ class Route
 
     /**
      * 为指定参数添加正则约束
+     *
+     * 支持：
+     *   $route->where('id', '[0-9]+')
+     *   $route->where(['id' => '[0-9]+', 'slug' => '[a-z]+'])
      */
-    public function where(string $param, string $pattern): self
+    public function where(string|array $param, ?string $pattern = null): self
     {
-        if (!isset($this->param['where'])) {
-            $this->param['where'] = [];
+        if (is_array($param)) {
+            foreach ($param as $key => $value) {
+                $this->wheres[$key] = $value;
+                if (!isset($this->param['where'])) {
+                    $this->param['where'] = [];
+                }
+                $this->param['where'][$key] = $value;
+            }
+        } else {
+            $this->wheres[$param] = $pattern;
+            if (!isset($this->param['where'])) {
+                $this->param['where'] = [];
+            }
+            $this->param['where'][$param] = $pattern;
         }
-        $this->param['where'][$param] = $pattern;
         return $this;
+    }
+
+    /**
+     * 获取所有 where 约束
+     *
+     * @return array<string, string>
+     */
+    public function getWheres(): array
+    {
+        return $this->wheres;
+    }
+
+    /**
+     * 合并 where 约束（用于组属性继承）
+     */
+    public function mergeWheres(array $wheres): void
+    {
+        foreach ($wheres as $key => $pattern) {
+            if (!isset($this->wheres[$key])) {
+                $this->wheres[$key] = $pattern;
+            }
+        }
+        $this->param['where'] = array_merge($wheres, $this->param['where'] ?? []);
     }
 
     /**
@@ -292,8 +340,64 @@ class Route
             return true;
         }
 
-        // 正则匹配
+        // where 约束匹配（优先于旧 preg 模式）
+        if ($this->wheres !== []) {
+            return $this->matchWithConstraints($url);
+        }
+
+        // 旧正则匹配
         return $this->pregMatch($url);
+    }
+
+    /**
+     * 使用 where 约束匹配动态路由
+     *
+     * 将路径模式如 /user/{id} 编译为正则，每个参数使用 where 约束或默认 [^/]+
+     */
+    private function matchWithConstraints(string $url): bool
+    {
+        $pathPattern = $this->getPath();
+
+        // 编译路径为正则
+        $regex = preg_replace_callback(
+            '/\{(\w+)\}/',
+            function (array $matches): string {
+                $param = $matches[1];
+                $constraint = $this->wheres[$param] ?? '[^/]+';
+                return '(' . $constraint . ')';
+            },
+            $pathPattern
+        );
+
+        $regex = '#^' . $regex . '$#';
+
+        if (preg_match($regex, $url, $matches) > 0) {
+            // 将匹配的参数设置到 Request
+            $params = $this->extractParams($pathPattern, $matches);
+            if ($params !== []) {
+                App::getInstance()->make(Request::class)->setUrlParam($params);
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 从正则匹配结果中提取命名参数
+     *
+     * @return array<string, string>
+     */
+    private function extractParams(string $pathPattern, array $matches): array
+    {
+        preg_match_all('/\{(\w+)\}/', $pathPattern, $paramNames);
+        $params = [];
+        foreach ($paramNames[1] as $index => $name) {
+            if (isset($matches[$index + 1])) {
+                $params[$name] = $matches[$index + 1];
+            }
+        }
+        return $params;
     }
 
     /**

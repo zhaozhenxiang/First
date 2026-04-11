@@ -17,6 +17,10 @@ use Closure;
  *       ->send($request)
  *       ->through([MiddlewareA::class, MiddlewareB::class])
  *       ->then(fn($req) => 'controller result');
+ *
+ * terminate 支持：
+ *   $response = $pipeline->then(...);
+ *   $pipeline->terminate($request, $response);  // 按逆序调用 terminate
  */
 class Pipeline
 {
@@ -31,6 +35,9 @@ class Pipeline
 
     /** 中间件方法名 */
     protected string $method = 'handle';
+
+    /** @var Middleware[] 已解析的中间件实例（用于 terminate） */
+    protected array $resolvedInstances = [];
 
     /**
      * 设置被传递的对象
@@ -138,6 +145,7 @@ class Pipeline
     {
         // 已经是实例
         if ($pipe instanceof Middleware) {
+            $this->resolvedInstances[] = $pipe;
             return $pipe;
         }
 
@@ -146,15 +154,34 @@ class Pipeline
             if ($this->resolver !== null) {
                 $resolved = ($this->resolver)($pipe);
                 if ($resolved instanceof Middleware) {
+                    $this->resolvedInstances[] = $resolved;
                     return $resolved;
                 }
             }
 
-            return new $pipe();
+            $instance = new $pipe();
+            $this->resolvedInstances[] = $instance;
+            return $instance;
         }
 
         throw new \RuntimeException(
             sprintf('Invalid middleware type: %s', get_debug_type($pipe))
         );
+    }
+
+    /**
+     * 在响应发送后调用所有中间件的 terminate 方法
+     *
+     * 按管道的逆序调用，确保最内层中间件先 terminate。
+     *
+     * @param mixed $request  请求对象
+     * @param mixed $response 响应对象
+     */
+    public function terminate(mixed $request, mixed $response): void
+    {
+        // 逆序调用 terminate（最内层先执行）
+        foreach (array_reverse($this->resolvedInstances) as $middleware) {
+            $middleware->terminate($request, $response);
+        }
     }
 }

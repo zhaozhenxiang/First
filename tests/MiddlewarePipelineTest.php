@@ -1096,4 +1096,257 @@ class MiddlewarePipelineTest extends TestCase
 
         $this->assertEquals(['A', 'B'], $result);
     }
+
+    // ================================================================
+    // Pipeline terminate 生命周期
+    // ================================================================
+
+    public function testPipelineTerminateCalledInReverseOrder(): void
+    {
+        $log = [];
+
+        $mw1 = new class($log) extends Middleware {
+            public function __construct(public array &$log) {}
+            public function handle(mixed $request, \Closure $next): mixed
+            {
+                $this->log[] = 'mw1:handle';
+                return $next($request);
+            }
+            public function terminate(mixed $request, mixed $response): void
+            {
+                $this->log[] = 'mw1:terminate';
+            }
+        };
+
+        $mw2 = new class($log) extends Middleware {
+            public function __construct(public array &$log) {}
+            public function handle(mixed $request, \Closure $next): mixed
+            {
+                $this->log[] = 'mw2:handle';
+                return $next($request);
+            }
+            public function terminate(mixed $request, mixed $response): void
+            {
+                $this->log[] = 'mw2:terminate';
+            }
+        };
+
+        $pipeline = new Pipeline();
+        $pipeline->send('req')->through([$mw1, $mw2])->then(fn($r) => 'response');
+
+        $pipeline->terminate('req', 'response');
+
+        // terminate 按逆序：mw2 先，mw1 后
+        $this->assertEquals('mw2:terminate', $log[2]);
+        $this->assertEquals('mw1:terminate', $log[3]);
+    }
+
+    public function testPipelineTerminateWithNoMiddleware(): void
+    {
+        $pipeline = new Pipeline();
+        $pipeline->send('req')->through([])->then(fn($r) => 'ok');
+
+        // 不应抛异常
+        $pipeline->terminate('req', 'ok');
+        $this->assertTrue(true);
+    }
+
+    public function testPipelineTerminateWithDefaultNoOp(): void
+    {
+        $mw = new class extends Middleware {
+            // 使用默认 terminate()（空实现）
+        };
+
+        $pipeline = new Pipeline();
+        $pipeline->send('req')->through([$mw])->then(fn($r) => 'ok');
+
+        // 默认 terminate 不抛异常
+        $pipeline->terminate('req', 'ok');
+        $this->assertTrue(true);
+    }
+
+    // ================================================================
+    // MiddlewareStack prependGlobal / prependToGroup / setPriority
+    // ================================================================
+
+    public function testPrependGlobalMiddleware(): void
+    {
+        $stack = MiddlewareStack::loadFromConfig([]);
+        $stack->addGlobal('Second');
+        $stack->prependGlobal('First');
+
+        $this->assertEquals(['First', 'Second'], $stack->getGlobals());
+    }
+
+    public function testPrependGlobalNoDuplicate(): void
+    {
+        $stack = MiddlewareStack::loadFromConfig([]);
+        $stack->addGlobal('A');
+        $stack->prependGlobal('A'); // 不应重复
+
+        $this->assertEquals(['A'], $stack->getGlobals());
+    }
+
+    public function testPrependToGroup(): void
+    {
+        $stack = MiddlewareStack::getInstance();
+        $stack->addToGroup('web', 'Second');
+        $stack->prependToGroup('web', 'First');
+
+        $this->assertEquals(['First', 'Second'], $stack->getGroup('web'));
+    }
+
+    public function testPrependToGroupNoDuplicate(): void
+    {
+        $stack = MiddlewareStack::loadFromConfig([]);
+        $stack->addToGroup('web', 'A');
+        $stack->prependToGroup('web', 'A');
+
+        $this->assertEquals(['A'], $stack->getGroup('web'));
+    }
+
+    public function testSetPriority(): void
+    {
+        $stack = MiddlewareStack::getInstance();
+        $stack->setPriority(['high' => 100, 'low' => 1]);
+
+        $result = $stack->collectRouteMiddleware(['low', 'high'], [], []);
+
+        // high 优先级更高，应该在前面
+        $this->assertEquals('high', $result[0]);
+        $this->assertEquals('low', $result[1]);
+    }
+
+    // ================================================================
+    // 组名自动展开（'middleware' => ['web'] → 展开为组内所有中间件）
+    // ================================================================
+
+    public function testGroupNameAutoExpandedInRouteMiddleware(): void
+    {
+        $stack = MiddlewareStack::loadFromConfig([
+            'global' => [],
+            'groups' => [
+                'web' => ['CsrfMiddleware', 'SessionMiddleware'],
+            ],
+            'aliases' => [],
+            'priority' => [],
+        ]);
+
+        // 路由中间件列表中包含组名 'web'，应该自动展开
+        $result = $stack->collectRouteMiddleware(['web'], [], []);
+
+        $this->assertContains('CsrfMiddleware', $result);
+        $this->assertContains('SessionMiddleware', $result);
+    }
+
+    public function testGroupNameExpansionWithAdditionalMiddleware(): void
+    {
+        $stack = MiddlewareStack::loadFromConfig([
+            'global' => [],
+            'groups' => [
+                'web' => ['CSRF'],
+            ],
+            'aliases' => [],
+            'priority' => [],
+        ]);
+
+        // 组名 + 额外中间件
+        $result = $stack->collectRouteMiddleware(['web', 'CustomMiddleware'], [], []);
+
+        $this->assertContains('CSRF', $result);
+        $this->assertContains('CustomMiddleware', $result);
+    }
+
+    public function testGroupNameExpansionDeduplicatesWithExplicitGroups(): void
+    {
+        $stack = MiddlewareStack::loadFromConfig([
+            'global' => [],
+            'groups' => [
+                'web' => ['CSRF', 'Session'],
+            ],
+            'aliases' => [],
+            'priority' => [],
+        ]);
+
+        // 同时通过 routeMiddleware 和 groups 指定 'web'，不应重复
+        $result = $stack->collectRouteMiddleware(['web'], ['web'], []);
+
+        $csrfCount = count(array_filter($result, fn($m) => $m === 'CSRF'));
+        $this->assertEquals(1, $csrfCount, 'CSRF middleware should appear exactly once');
+    }
+
+    // ================================================================
+    // HttpKernel 中间件管理方法
+    // ================================================================
+
+    public function testHttpKernelPushGlobalMiddleware(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new \Bin\Foundation\HttpKernel($app);
+
+        $kernel->pushGlobalMiddleware('CustomGlobal');
+
+        $stack = $kernel->getMiddlewareStack();
+        $this->assertContains('CustomGlobal', $stack->getGlobals());
+    }
+
+    public function testHttpKernelPrependGlobalMiddleware(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new \Bin\Foundation\HttpKernel($app);
+
+        $kernel->pushGlobalMiddleware('Second');
+        $kernel->prependGlobalMiddleware('First');
+
+        $stack = $kernel->getMiddlewareStack();
+        $globals = $stack->getGlobals();
+        $this->assertEquals('First', $globals[0]);
+    }
+
+    public function testHttpKernelPushToGroup(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new \Bin\Foundation\HttpKernel($app);
+
+        $kernel->pushMiddlewareToGroup('api', 'RateLimiter');
+
+        $stack = $kernel->getMiddlewareStack();
+        $this->assertContains('RateLimiter', $stack->getGroup('api'));
+    }
+
+    public function testHttpKernelMiddlewareAlias(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new \Bin\Foundation\HttpKernel($app);
+
+        $kernel->middlewareAlias('custom', 'App\\Middleware\\CustomMiddleware');
+
+        $stack = $kernel->getMiddlewareStack();
+        $this->assertEquals('App\\Middleware\\CustomMiddleware', $stack->resolveAlias('custom'));
+    }
+
+    public function testHttpKernelMiddlewarePriority(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new \Bin\Foundation\HttpKernel($app);
+
+        $kernel->middlewarePriority(['important' => 100, 'normal' => 10]);
+
+        $kernel->pushGlobalMiddleware('normal');
+        $kernel->pushGlobalMiddleware('important');
+
+        $stack = $kernel->getMiddlewareStack();
+        $globals = $stack->getGlobals();
+        $this->assertEquals('important', $globals[0]);
+    }
+
+    public function testHttpKernelTerminate(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new \Bin\Foundation\HttpKernel($app);
+
+        // 没有请求时不抛异常
+        $kernel->terminate();
+        $this->assertTrue(true);
+    }
 }

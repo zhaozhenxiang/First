@@ -210,4 +210,145 @@ class RouteTest extends TestCase
         $this->assertTrue($route->withSuccess('/test'));
         $this->assertFalse($route->withSuccess('/other'));
     }
+
+    // === where 约束匹配 ===
+
+    public function testWhereConstraintMatchesNumeric(): void
+    {
+        $route = Route::get('/user/{id}', function () {});
+        $route->where('id', '[0-9]+');
+
+        $this->assertTrue($route->matches('/user/42'));
+        $this->assertFalse($route->matches('/user/abc'));
+    }
+
+    public function testWhereConstraintMultipleParams(): void
+    {
+        $route = Route::get('/post/{postId}/comment/{commentId}', function () {});
+        $route->where('postId', '[0-9]+');
+        $route->where('commentId', '[a-z]+');
+
+        $this->assertTrue($route->matches('/post/123/comment/abc'));
+        $this->assertFalse($route->matches('/post/abc/comment/xyz'));
+    }
+
+    public function testWhereArraySyntax(): void
+    {
+        $route = Route::get('/post/{postId}/comment/{commentId}', function () {});
+        $route->where(['postId' => '[0-9]+', 'commentId' => '[a-z]+']);
+
+        $this->assertTrue($route->matches('/post/1/comment/abc'));
+        $this->assertFalse($route->matches('/post/abc/comment/abc'));
+    }
+
+    public function testGetWhereConstraints(): void
+    {
+        $route = Route::get('/user/{id}', function () {});
+        $route->where('id', '[0-9]+');
+
+        $where = $route->getWheres();
+        $this->assertEquals(['id' => '[0-9]+'], $where);
+    }
+
+    // === 嵌套 group 属性合并 ===
+
+    public function testNestedGroupPrefixConcatenation(): void
+    {
+        Route::group(['prefix' => '/admin'], function () {
+            Route::group(['prefix' => '/settings'], function () {
+                Route::get('/general', function () { return 'ok'; });
+            });
+        });
+
+        $routes = Route::getRoutes();
+        $this->assertCount(1, $routes);
+        $this->assertEquals('/admin/settings/general', $routes[0]->getPath());
+    }
+
+    public function testNestedGroupNamePrefix(): void
+    {
+        Route::group(['name' => 'admin.'], function () {
+            Route::group(['name' => 'settings.'], function () {
+                Route::get('/general', function () {})->name('general');
+            });
+        });
+
+        $this->assertNotNull(Route::namedRoute('admin.settings.general'));
+    }
+
+    public function testNestedGroupMiddlewareAccumulation(): void
+    {
+        Route::group(['middleware' => ['auth']], function () {
+            Route::group(['middleware' => ['throttle']], function () {
+                Route::get('/panel', function () {});
+            });
+        });
+
+        $routes = Route::getRoutes();
+        $this->assertCount(1, $routes);
+        $mw = $routes[0]->getMiddleware();
+        $this->assertContains('auth', $mw);
+        $this->assertContains('throttle', $mw);
+    }
+
+    public function testGroupWhereConstraintsInherited(): void
+    {
+        Route::group(['where' => ['id' => '[0-9]+']], function () {
+            Route::get('/user/{id}', function () {});
+        });
+
+        $routes = Route::getRoutes();
+        $this->assertCount(1, $routes);
+        $where = $routes[0]->getWheres();
+        $this->assertEquals(['id' => '[0-9]+'], $where);
+    }
+
+    public function testNestedGroupDomainOverride(): void
+    {
+        Route::group(['domain' => '{team}.example.com'], function () {
+            Route::group(['domain' => 'www.example.com'], function () {
+                Route::get('/home', function () {});
+            });
+        });
+
+        $routes = Route::getRoutes();
+        $this->assertEquals('www.example.com', $routes[0]->getDomain());
+    }
+
+    public function testGroupNamespaceConcatenation(): void
+    {
+        Route::group(['namespace' => 'App\\Controllers'], function () {
+            Route::group(['namespace' => 'Admin'], function () {
+                Route::get('/dashboard', 'DashboardController@index');
+            });
+        });
+
+        $routes = Route::getRoutes();
+        $this->assertEquals('App\\Controllers\\Admin\\DashboardController@index', $routes[0]->getAction());
+    }
+
+    // === match 方法别名 ===
+
+    public function testMatchMethod(): void
+    {
+        Route::match(['GET', 'POST'], '/submit', function () {});
+
+        $routes = Route::getRoutes();
+        $methods = array_map(fn($r) => $r->getMethod(), $routes);
+        $this->assertContains('GET', $methods);
+        $this->assertContains('POST', $methods);
+    }
+
+    // === fallback 语义 ===
+
+    public function testFallbackNotInDynamicRoutes(): void
+    {
+        Route::fallback(function () { return 'fallback'; });
+
+        // fallback 不应出现在主路由数组中
+        $allRoutes = Route::getRoutes();
+        foreach ($allRoutes as $r) {
+            $this->assertNotEquals('{fallback}', $r->getPath());
+        }
+    }
 }

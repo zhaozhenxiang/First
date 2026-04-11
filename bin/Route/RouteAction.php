@@ -13,6 +13,9 @@ use Exception;
 
 class RouteAction
 {
+    /** @var Pipeline|null 最近一次执行使用的 Pipeline（用于 terminate） */
+    private static ?Pipeline $lastPipeline = null;
+
     private function __construct()
     {
     }
@@ -44,12 +47,30 @@ class RouteAction
         $resolved = MiddlewareNameResolver::resolveAll($middleware, $aliases);
 
         // 构建 Pipeline
-        return (new Pipeline())
+        $pipeline = (new Pipeline())
             ->send($request)
-            ->through(static::buildMiddlewareInstances($resolved))
-            ->then(function () use ($route): mixed {
-                return static::dispatch($route);
-            });
+            ->through(static::buildMiddlewareInstances($resolved));
+
+        // 保存引用用于 terminate
+        static::$lastPipeline = $pipeline;
+
+        return $pipeline->then(function () use ($route): mixed {
+            return static::dispatch($route);
+        });
+    }
+
+    /**
+     * 在响应发送后调用所有中间件的 terminate 方法
+     *
+     * @param mixed $request  请求对象
+     * @param mixed $response 响应对象
+     */
+    public static function terminate(mixed $request, mixed $response): void
+    {
+        if (static::$lastPipeline !== null) {
+            static::$lastPipeline->terminate($request, $response);
+            static::$lastPipeline = null;
+        }
     }
 
     /**

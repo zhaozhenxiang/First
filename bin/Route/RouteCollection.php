@@ -25,6 +25,21 @@ class RouteCollection
     /** @var ResourceRegistrar|null */
     private static ?ResourceRegistrar $registrar = null;
 
+    /**
+     * 路由组属性栈
+     *
+     * 嵌套 group 时，每层属性推入栈中。
+     * - prefix: 按顺序拼接（/admin + /settings → /admin/settings）
+     * - name: 按顺序拼接（admin. + settings. → admin.settings.）
+     * - namespace: 按顺序拼接（App\Controllers + Admin → App\Controllers\Admin）
+     * - domain: 最后定义的覆盖前面的
+     * - where: 数组合并（外层约束可被内层覆盖）
+     * - middleware: 累积（所有层级合并）
+     *
+     * @var array<int, array{prefix:string, name:string, namespace:string, domain:string, where:array<string,string>, middleware:array<string>, middleware_group:string|null}>
+     */
+    private static array $groupStack = [];
+
     private function __construct()
     {
     }
@@ -38,14 +53,14 @@ class RouteCollection
         $path = getUrl();
         $method = strtoupper(getMethod());
 
-        return self::match($method, $path);
+        return self::resolve($method, $path);
     }
 
     /**
-     * 匹配路由（优化版：静态路由 O(1)，动态路由遍历）
+     * 解析匹配路由（优化版：静态路由 O(1)，动态路由遍历）
      * @throws \Exception
      */
-    private static function match(string $method, string $path): Route
+    private static function resolve(string $method, string $path): Route
     {
         // 静态路由直接索引查找 O(1)
         $key = $method . ':' . $path;
@@ -76,10 +91,53 @@ class RouteCollection
         return str_contains($path, '{');
     }
 
+    /**
+     * 注册路由（组感知：创建时立即应用组栈属性）
+     *
+     * 当路由在 group 内创建时，自动应用合并后的组属性：
+     * prefix → 修改 path，namespace → 修改 action，domain/middleware/where → 设置到 Route
+     */
     public static function action(string $method, string $path, mixed $action): Route
     {
         $method = strtoupper($method);
+
+        // 获取当前组栈的合并属性
+        $groupAttrs = self::$groupStack !== [] ? end(self::$groupStack) : null;
+
+        // 应用前缀
+        if ($groupAttrs !== null && $groupAttrs['prefix'] !== '') {
+            $path = '/' . trim($groupAttrs['prefix'], '/') . '/' . trim($path, '/');
+            $path = '/' . trim($path, '/');
+        }
+
+        // 应用命名空间前缀
+        if ($groupAttrs !== null && $groupAttrs['namespace'] !== '') {
+            if (is_string($action) && !str_contains($action, '\\') && str_contains($action, '@')) {
+                $action = $groupAttrs['namespace'] . '\\' . $action;
+            }
+        }
+
         $route = new Route($method, $path, $action);
+
+        // 应用域名约束
+        if ($groupAttrs !== null && $groupAttrs['domain'] !== '') {
+            $route->setDomain($groupAttrs['domain']);
+        }
+
+        // 应用 where 约束
+        if ($groupAttrs !== null && $groupAttrs['where'] !== []) {
+            $route->mergeWheres($groupAttrs['where']);
+        }
+
+        // 应用中间件
+        if ($groupAttrs !== null && $groupAttrs['middleware'] !== []) {
+            $route->middleware($groupAttrs['middleware']);
+        }
+
+        // 应用中间件组
+        if ($groupAttrs !== null && $groupAttrs['middleware_group'] !== null) {
+            $route->middlewareGroup($groupAttrs['middleware_group']);
+        }
 
         // 根据路由类型分类存储
         if (self::isDynamicRoute($path)) {
@@ -95,15 +153,33 @@ class RouteCollection
     }
 
     /**
-     * 注册命名路由
+     * 注册命名路由（自动应用组 name 前缀）
      */
     public static function registerNamedRoute(string $name, Route $route): void
     {
-        self::$namedRoutes[$name] = $route;
+        // 应用组 name 前缀
+        $prefix = self::currentGroupNamePrefix();
+        $fullName = $prefix . $name;
+
+        // 更新路由存储的名称
+        $route->setRawName($fullName);
+
+        self::$namedRoutes[$fullName] = $route;
     }
 
     /**
-     * 处理 middle
+     * 获取当前组栈的 name 前缀
+     */
+    public static function currentGroupNamePrefix(): string
+    {
+        if (self::$groupStack === []) {
+            return '';
+        }
+        return end(self::$groupStack)['name'] ?? '';
+    }
+
+    /**
+     * 处理 middle（兼容旧 API）
      */
     public static function middle(array $param, \Closure $callback): void
     {
@@ -194,13 +270,21 @@ class RouteCollection
     }
 
     /**
+     * 匹配多种 HTTP 方法（Laravel 风格别名）
+     */
+    public static function match(array $methods, string $path, mixed $action): void
+    {
+        static::matchMethods($methods, $path, $action);
+    }
+
+    /**
      * 匹配多种 HTTP 方法
      */
     public static function matchMethods(array $methods, string $path, mixed $action): void
     {
         foreach ($methods as $method) {
             $method = strtoupper($method);
-            if (in_array($method, self::$methods, true)) {
+            if (in_array(strtolower($method), self::$methods, true)) {
                 self::action($method, $path, $action);
             }
         }
@@ -217,74 +301,103 @@ class RouteCollection
     }
 
     /**
-     * 路由分组
+     * 路由分组（Laravel 风格组属性栈）
      *
      * 支持属性：
-     *   - prefix: 路径前缀
-     *   - middleware: 中间件列表
-     *   - middleware_group: 中间件组名
-     *   - namespace: 控制器命名空间前缀
-     *   - domain: 子域名约束
+     *   - prefix: 路径前缀（拼接）
+     *   - name: 路由名前缀（拼接，如 'admin.'）
+     *   - middleware: 中间件列表（累积）
+     *   - middleware_group: 中间件组名（累积）
+     *   - namespace: 控制器命名空间前缀（拼接）
+     *   - domain: 子域名约束（覆盖，最后定义的生效）
+     *   - where: 参数正则约束（合并）
      */
     public static function group(array $attributes, \Closure $callback): void
     {
-        $prefix = $attributes['prefix'] ?? '';
-        $middleware = $attributes['middleware'] ?? [];
-        $middlewareGroup = $attributes['middleware_group'] ?? null;
-        $namespace = $attributes['namespace'] ?? '';
-        $domain = $attributes['domain'] ?? '';
+        // 计算当前组属性（合并父组栈）
+        $merged = static::mergeGroupAttributes($attributes);
 
-        // 记录当前路由数量
-        $startIndex = count(self::$route);
+        // 推入栈（路由创建时自动应用）
+        self::$groupStack[] = $merged;
 
-        // 执行回调（只调用一次！）
+        // 执行回调（路由在 action() 中自动获得组属性）
         $callback();
 
-        // 为组内新增的路由应用属性
-        $routeCount = count(self::$route);
-        for ($i = $startIndex; $i < $routeCount; $i++) {
-            $route = self::$route[$i];
+        // 弹出栈
+        array_pop(self::$groupStack);
+    }
 
-            // 应用前缀：需要更新静态/动态路由索引
-            if ($prefix !== '') {
-                $newPath = '/' . trim($prefix, '/') . '/' . trim($route->getPath(), '/');
-                $newPath = '/' . trim($newPath, '/');
+    /**
+     * 合并组属性（与父栈合并）
+     *
+     * 合并规则：
+     * - prefix: 父 + 子（用 / 拼接）
+     * - name: 父 + 子（直接拼接）
+     * - namespace: 父 + 子（用 \ 拼接）
+     * - domain: 子覆盖父（非空则覆盖）
+     * - where: 数组合并（子覆盖同名 key）
+     * - middleware: 数组合并（累积）
+     * - middleware_group: 子覆盖父
+     */
+    private static function mergeGroupAttributes(array $new): array
+    {
+        // 默认值
+        $merged = [
+            'prefix' => $new['prefix'] ?? '',
+            'name' => $new['name'] ?? '',
+            'namespace' => $new['namespace'] ?? '',
+            'domain' => $new['domain'] ?? '',
+            'where' => $new['where'] ?? [],
+            'middleware' => isset($new['middleware'])
+                ? (is_array($new['middleware']) ? $new['middleware'] : [$new['middleware']])
+                : [],
+            'middleware_group' => $new['middleware_group'] ?? null,
+        ];
 
-                // 更新静态路由索引
-                $oldKey = $route->getMethod() . ':' . $route->getPath();
-                if (isset(self::$staticRoutes[$oldKey])) {
-                    unset(self::$staticRoutes[$oldKey]);
-                    self::$staticRoutes[$route->getMethod() . ':' . $newPath] = $route;
+        // 与父栈合并
+        if (self::$groupStack !== []) {
+            $parent = end(self::$groupStack);
+
+            // prefix: 拼接
+            $parentPrefix = $parent['prefix'] ?? '';
+            if ($parentPrefix !== '') {
+                $merged['prefix'] = '/' . trim($parentPrefix, '/') . '/' . trim($merged['prefix'], '/');
+                $merged['prefix'] = '/' . trim($merged['prefix'], '/');
+            }
+
+            // name: 拼接
+            $parentName = $parent['name'] ?? '';
+            $merged['name'] = $parentName . $merged['name'];
+
+            // namespace: 拼接
+            $parentNs = $parent['namespace'] ?? '';
+            if ($parentNs !== '') {
+                if ($merged['namespace'] !== '') {
+                    $merged['namespace'] = $parentNs . '\\' . $merged['namespace'];
+                } else {
+                    $merged['namespace'] = $parentNs;
                 }
-
-                // 更新路由路径
-                $route->updatePath($newPath);
             }
 
-            // 应用命名空间前缀
-            if ($namespace !== '') {
-                $action = $route->getAction();
-                if (is_string($action) && !str_contains($action, '\\') && str_contains($action, '@')) {
-                    $route->setAction($namespace . '\\' . $action);
-                }
+            // domain: 子非空则覆盖，否则继承父
+            if ($merged['domain'] === '') {
+                $merged['domain'] = $parent['domain'] ?? '';
             }
 
-            // 应用域名约束
-            if ($domain !== '') {
-                $route->setDomain($domain);
-            }
+            // where: 合并（子优先）
+            $merged['where'] = array_merge($parent['where'] ?? [], $merged['where']);
 
-            // 应用中间件
-            if ($middleware !== []) {
-                $middleware = is_array($middleware) ? $middleware : [$middleware];
-                $route->middleware($middleware);
-            }
+            // middleware: 累积
+            $parentMw = $parent['middleware'] ?? [];
+            $merged['middleware'] = array_values(array_unique(array_merge($parentMw, $merged['middleware'])));
 
-            // 应用中间件组
-            if ($middlewareGroup !== null) {
-                $route->middlewareGroup($middlewareGroup);
+            // middleware_group: 子覆盖父
+            if ($merged['middleware_group'] === null) {
+                $merged['middleware_group'] = $parent['middleware_group'] ?? null;
             }
         }
+
+        return $merged;
     }
 
     /**
@@ -309,6 +422,7 @@ class RouteCollection
         self::$dynamicRoutes = [];
         self::$namedRoutes = [];
         self::$fallbackRoute = null;
+        self::$groupStack = [];
     }
 
     /**
@@ -360,10 +474,13 @@ class RouteCollection
 
     /**
      * 注册兜底路由（无匹配时触发）
+     *
+     * 兜底路由不添加到主路由数组或动态路由索引中，
+     * 仅在静态路由和动态路由都无法匹配时作为最终回退。
      */
     public static function fallback(mixed $action): Route
     {
-        $route = new Route('GET', '{fallback}', $action);
+        $route = new Route('GET', '/', $action);
         self::$fallbackRoute = $route;
         return $route;
     }

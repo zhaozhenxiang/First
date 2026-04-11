@@ -112,6 +112,18 @@ class MiddlewareStack
     }
 
     /**
+     * 前置全局中间件
+     */
+    public function prependGlobal(string $middleware): static
+    {
+        if (!in_array($middleware, $this->globals, true)) {
+            array_unshift($this->globals, $middleware);
+        }
+
+        return $this;
+    }
+
+    /**
      * 添加到指定组
      */
     public function addToGroup(string $group, string $middleware): static
@@ -122,6 +134,22 @@ class MiddlewareStack
 
         if (!in_array($middleware, $this->groups[$group], true)) {
             $this->groups[$group][] = $middleware;
+        }
+
+        return $this;
+    }
+
+    /**
+     * 前置到指定组
+     */
+    public function prependToGroup(string $group, string $middleware): static
+    {
+        if (!isset($this->groups[$group])) {
+            $this->groups[$group] = [];
+        }
+
+        if (!in_array($middleware, $this->groups[$group], true)) {
+            array_unshift($this->groups[$group], $middleware);
         }
 
         return $this;
@@ -141,6 +169,7 @@ class MiddlewareStack
      * 收集路由所需的全部中间件
      *
      * 合并：全局 + 组 + 路由指定 - 排除
+     * 路由中间件中的组名会自动展开（如 'web' 展开为该组的所有中间件）。
      *
      * @param  array<string>  $routeMiddleware  路由指定的中间件
      * @param  array<string>  $groups           路由使用的组
@@ -159,8 +188,15 @@ class MiddlewareStack
             $middleware = array_merge($middleware, $this->getGroup($group));
         }
 
-        // 合并路由指定中间件
-        $middleware = array_merge($middleware, $routeMiddleware);
+        // 合并路由指定中间件（自动展开组名）
+        foreach ($routeMiddleware as $m) {
+            if (isset($this->groups[$m])) {
+                // 路由中间件中使用了组名，展开为组的所有中间件
+                $middleware = array_merge($middleware, $this->getGroup($m));
+            } else {
+                $middleware[] = $m;
+            }
+        }
 
         // 排除
         if ($excluded !== []) {
@@ -200,6 +236,17 @@ class MiddlewareStack
         });
 
         return $middleware;
+    }
+
+    /**
+     * 设置优先级映射
+     *
+     * @param array<string, int> $priority
+     */
+    public function setPriority(array $priority): static
+    {
+        $this->priority = $priority;
+        return $this;
     }
 
     /**
