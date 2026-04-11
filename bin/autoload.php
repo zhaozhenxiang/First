@@ -40,13 +40,5 @@ require_once BASE_PATH . '/bin/Func/helpers.php';
 // 加载 .env 环境变量
 \Bin\Config\EnvLoader::load(BASE_PATH . '/.env');
 
-// 加载中间件配置
-$middlewareConfig = file_exists(BASE_PATH . '/config/middleware.php')
-    ? require BASE_PATH . '/config/middleware.php'
-    : [];
-\Bin\Middleware\MiddlewareStack::loadFromConfig($middlewareConfig);
-
-// 加载路由（仅在 Web 请求时需要）
-if (PHP_SAPI !== 'cli' && file_exists(APP_PATH . '/routes.php')) {
-    require_once APP_PATH . '/routes.php';
-}
+// 注意：中间件配置和路由定义已移至 HttpKernel 管理
+// 通过 Kernel 生命周期加载，不再在 autoload 阶段初始化

@@ -15,6 +15,9 @@ use Bin\Route\RouteCollection;
 
 /**
  * 应用程序入口和 IoC 容器门面
+ *
+ * 职责：生命周期协调 — 管理容器、服务提供者、引导流程
+ * 不负责：具体的 DI 绑定逻辑（交给 Container）、具体的 Provider 管理（交给 ProviderRepository）
  */
 class App implements ContainerInterface
 {
@@ -22,6 +25,11 @@ class App implements ContainerInterface
      * 全局应用实例
      */
     private static ?self $instance = null;
+
+    /**
+     * 应用根路径
+     */
+    private ?string $basePath = null;
 
     /**
      * 底层容器实例
@@ -95,13 +103,121 @@ class App implements ContainerInterface
     private bool $booted = false;
 
     /**
+     * 是否已通过 bootstrapper 引导
+     */
+    private bool $hasBeenBootstrapped = false;
+
+    /**
+     * 已执行的引导器列表
+     * @var array<class-string, bool>
+     */
+    private array $bootstrapped = [];
+
+    /**
      * 构造函数
      */
-    private function __construct()
+    private function __construct(?string $basePath = null)
     {
+        $this->basePath = $basePath;
         $this->container = new Container();
         $this->providerRepository = new ProviderRepository($this);
         $this->registerCoreServices();
+    }
+
+    /**
+     * 获取应用根路径
+     */
+    public function basePath(): string
+    {
+        if ($this->basePath === null) {
+            $this->basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__, 2);
+        }
+
+        return $this->basePath;
+    }
+
+    /**
+     * 获取 bootstrap 目录路径
+     */
+    public function bootstrapPath(string $path = ''): string
+    {
+        return $this->basePath() . '/bootstrap' . ($path !== '' ? '/' . $path : '');
+    }
+
+    /**
+     * 获取 config 目录路径
+     */
+    public function configPath(string $path = ''): string
+    {
+        return $this->basePath() . '/config' . ($path !== '' ? '/' . $path : '');
+    }
+
+    /**
+     * 获取 database 目录路径
+     */
+    public function databasePath(string $path = ''): string
+    {
+        return $this->basePath() . '/database' . ($path !== '' ? '/' . $path : '');
+    }
+
+    /**
+     * 获取 storage 目录路径
+     */
+    public function storagePath(string $path = ''): string
+    {
+        return $this->basePath() . '/storage' . ($path !== '' ? '/' . $path : '');
+    }
+
+    /**
+     * 获取 public 目录路径
+     */
+    public function publicPath(string $path = ''): string
+    {
+        return $this->basePath() . '/public' . ($path !== '' ? '/' . $path : '');
+    }
+
+    /**
+     * 通过引导器列表引导应用
+     *
+     * @param array<class-string> $bootstrappers
+     */
+    public function bootstrapWith(array $bootstrappers): void
+    {
+        $this->hasBeenBootstrapped = true;
+
+        foreach ($bootstrappers as $bootstrapper) {
+            if (!isset($this->bootstrapped[$bootstrapper])) {
+                $instance = new $bootstrapper();
+                $instance->bootstrap($this);
+                $this->bootstrapped[$bootstrapper] = true;
+            }
+        }
+    }
+
+    /**
+     * 检查是否已通过某个引导器引导
+     */
+    public function hasBeenBootstrappedBy(string $bootstrapper): bool
+    {
+        return isset($this->bootstrapped[$bootstrapper]);
+    }
+
+    /**
+     * 检查是否已通过引导器引导
+     */
+    public function hasBeenBootstrapped(): bool
+    {
+        return $this->hasBeenBootstrapped;
+    }
+
+    /**
+     * 获取已执行的引导器列表
+     *
+     * @return array<class-string, bool>
+     */
+    public function getBootstrapped(): array
+    {
+        return $this->bootstrapped;
     }
 
     /**

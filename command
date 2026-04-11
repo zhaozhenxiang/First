@@ -5,8 +5,12 @@ declare(strict_types=1);
 
 /**
  * CLI 命令行入口
+ *
+ * 职责：加载应用 → 获取 Console 内核 → 处理命令
  */
 
-require __DIR__ . '/bin/autoload.php';
+$app = require __DIR__ . '/bootstrap/app.php';
 
-exit(Bin\Console\Kernel::handle());
+$kernel = new \Bin\Foundation\ConsoleKernel($app);
+
+exit($kernel->handle());
