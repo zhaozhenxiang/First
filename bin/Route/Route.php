@@ -24,6 +24,9 @@ class Route
     /** @var array<string, string> 参数正则约束 */
     private array $wheres = [];
 
+    /** @var array<string, mixed>|null 匹配的参数（延迟设置到 Request） */
+    private ?array $matchedParams = null;
+
     public function __construct(
         private string $method,
         private string $path,
@@ -372,11 +375,7 @@ class Route
         $regex = '#^' . $regex . '$#';
 
         if (preg_match($regex, $url, $matches) > 0) {
-            // 将匹配的参数设置到 Request
-            $params = $this->extractParams($pathPattern, $matches);
-            if ($params !== []) {
-                App::getInstance()->make(Request::class)->setUrlParam($params);
-            }
+            $this->matchedParams = $this->extractParams($pathPattern, $matches);
             return true;
         }
 
@@ -430,7 +429,7 @@ class Route
         // 匹配参数
         $fullPattern = '/^' . implode('\\/', $patterns) . '$/';
         if (preg_match($fullPattern, $url, $matches) > 0) {
-            App::getInstance()->make(Request::class)->setUrlParam(explode('/', $matches[0]));
+            $this->matchedParams = explode('/', $matches[0]);
             return true;
         }
 
@@ -439,10 +438,21 @@ class Route
 
     /**
      * 判断 url 是否满足正则（向后兼容）
+     *
+     * 匹配成功后将参数设置到 Request
      */
     public function withSuccess(string $url): bool
     {
-        return $this->matches($url);
+        $this->matchedParams = null;
+
+        if ($this->matches($url)) {
+            if ($this->matchedParams !== null && $this->matchedParams !== []) {
+                App::getInstance()->make(Request::class)->setUrlParam($this->matchedParams);
+            }
+            return true;
+        }
+
+        return false;
     }
 
     /**

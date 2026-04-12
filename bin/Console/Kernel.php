@@ -125,10 +125,7 @@ class Kernel
     protected static function ensureBootstrapped(): void
     {
         if (self::$consoleKernel !== null) {
-            // 通过反射调用 protected bootstrap()
-            $ref = new \ReflectionMethod(self::$consoleKernel, 'bootstrap');
-            $ref->setAccessible(true);
-            $ref->invoke(self::$consoleKernel);
+            self::$consoleKernel->bootstrap();
         }
     }
 

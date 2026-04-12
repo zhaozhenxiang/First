@@ -32,7 +32,7 @@ class DatabaseQueue implements QueueInterface
         $payload = $this->createPayload($job);
         $now = time();
 
-        $sql = "INSERT INTO {$this->table} (queue, payload, attempts, reserved_at, available_at, created_at)
+        $sql = "INSERT INTO `{$this->table}` (queue, payload, attempts, reserved_at, available_at, created_at)
                 VALUES (:queue, :payload, 0, NULL, :available, :created)";
 
         $stmt = $this->pdo->prepare($sql);
@@ -50,7 +50,7 @@ class DatabaseQueue implements QueueInterface
     {
         $now = time();
 
-        $sql = "INSERT INTO {$this->table} (queue, payload, attempts, reserved_at, available_at, created_at)
+        $sql = "INSERT INTO `{$this->table}` (queue, payload, attempts, reserved_at, available_at, created_at)
                 VALUES (:queue, :payload, 0, NULL, :available, :created)";
 
         $stmt = $this->pdo->prepare($sql);
@@ -70,7 +70,7 @@ class DatabaseQueue implements QueueInterface
         $availableAt = time() + $delay;
         $now = time();
 
-        $sql = "INSERT INTO {$this->table} (queue, payload, attempts, reserved_at, available_at, created_at)
+        $sql = "INSERT INTO `{$this->table}` (queue, payload, attempts, reserved_at, available_at, created_at)
                 VALUES (:queue, :payload, 0, NULL, :available, :created)";
 
         $stmt = $this->pdo->prepare($sql);
@@ -92,7 +92,7 @@ class DatabaseQueue implements QueueInterface
         $this->pdo->beginTransaction();
 
         try {
-            $sql = "SELECT * FROM {$this->table}
+            $sql = "SELECT * FROM `{$this->table}`
                     WHERE queue = :queue
                       AND reserved_at IS NULL
                       AND available_at <= :now
@@ -109,7 +109,7 @@ class DatabaseQueue implements QueueInterface
             }
 
             // 标记保留
-            $updateSql = "UPDATE {$this->table}
+            $updateSql = "UPDATE `{$this->table}`
                           SET reserved_at = :reserved, attempts = attempts + 1
                           WHERE id = :id";
 
@@ -136,7 +136,7 @@ class DatabaseQueue implements QueueInterface
             return false;
         }
 
-        $sql = "DELETE FROM {$this->table} WHERE id = :id";
+        $sql = "DELETE FROM `{$this->table}` WHERE id = :id";
         $stmt = $this->pdo->prepare($sql);
 
         return $stmt->execute([':id' => $id]);
@@ -152,7 +152,7 @@ class DatabaseQueue implements QueueInterface
 
         $availableAt = time() + $delay;
 
-        $sql = "UPDATE {$this->table}
+        $sql = "UPDATE `{$this->table}`
                 SET reserved_at = NULL, available_at = :available
                 WHERE id = :id";
 
@@ -163,7 +163,7 @@ class DatabaseQueue implements QueueInterface
 
     public function size(string $queue = 'default'): int
     {
-        $sql = "SELECT COUNT(*) FROM {$this->table}
+        $sql = "SELECT COUNT(*) FROM `{$this->table}`
                 WHERE queue = :queue AND reserved_at IS NULL AND available_at <= :now";
 
         $stmt = $this->pdo->prepare($sql);
@@ -177,7 +177,7 @@ class DatabaseQueue implements QueueInterface
      */
     public function logFailedJob(string $connection, string $queue, Job $job, \Throwable $exception): bool
     {
-        $sql = "INSERT INTO {$this->failedTable} (connection, queue, payload, exception, failed_at)
+        $sql = "INSERT INTO `{$this->failedTable}` (connection, queue, payload, exception, failed_at)
                 VALUES (:connection, :queue, :payload, :exception, :failed_at)";
 
         $stmt = $this->pdo->prepare($sql);
@@ -197,7 +197,7 @@ class DatabaseQueue implements QueueInterface
      */
     public function getFailedJobs(): array
     {
-        $sql = "SELECT * FROM {$this->failedTable} ORDER BY id DESC";
+        $sql = "SELECT * FROM `{$this->failedTable}` ORDER BY id DESC";
         $stmt = $this->pdo->query($sql);
 
         return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
@@ -208,7 +208,7 @@ class DatabaseQueue implements QueueInterface
      */
     public function retryFailedJob(int $id): bool
     {
-        $sql = "SELECT * FROM {$this->failedTable} WHERE id = :id";
+        $sql = "SELECT * FROM `{$this->failedTable}` WHERE id = :id";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':id' => $id]);
 
@@ -221,7 +221,7 @@ class DatabaseQueue implements QueueInterface
         $this->pushRaw($record['payload'], $record['queue']);
 
         // 删除失败记录
-        $deleteSql = "DELETE FROM {$this->failedTable} WHERE id = :id";
+        $deleteSql = "DELETE FROM `{$this->failedTable}` WHERE id = :id";
         $deleteStmt = $this->pdo->prepare($deleteSql);
         $deleteStmt->execute([':id' => $id]);
 
@@ -250,7 +250,7 @@ class DatabaseQueue implements QueueInterface
             return null;
         }
 
-        $job = @unserialize($data['job']);
+        $job = @unserialize($data['job'], ['allowed_classes' => true]);
         if (!$job instanceof Job) {
             return null;
         }
@@ -280,7 +280,7 @@ class DatabaseQueue implements QueueInterface
      */
     public function setTable(string $table): static
     {
-        $this->table = $table;
+        $this->table = $this->sanitizeIdentifier($table);
         return $this;
     }
 
@@ -289,7 +289,15 @@ class DatabaseQueue implements QueueInterface
      */
     public function setFailedTable(string $table): static
     {
-        $this->failedTable = $table;
+        $this->failedTable = $this->sanitizeIdentifier($table);
         return $this;
+    }
+
+    /**
+     * 净化 SQL 标识符（表名/列名）
+     */
+    protected function sanitizeIdentifier(string $identifier): string
+    {
+        return str_replace('`', '', $identifier);
     }
 }

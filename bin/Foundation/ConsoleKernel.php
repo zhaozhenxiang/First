@@ -53,7 +53,7 @@ class ConsoleKernel
     /**
      * 引导应用
      */
-    protected function bootstrap(): void
+    public function bootstrap(): void
     {
         if ($this->bootstrapped) {
             return;

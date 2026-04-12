@@ -179,7 +179,7 @@ class ExceptionHandler
     protected function renderValidationRedirect(ValidationException $e): Response
     {
         $errors = $e->getErrors();
-        $referer = $_SERVER['HTTP_REFERER'] ?? '/';
+        $referer = $this->sanitizeRedirectUrl($_SERVER['HTTP_REFERER'] ?? '/');
 
         // 闪存错误到 session
         if (function_exists('session_manager')) {
@@ -197,11 +197,30 @@ class ExceptionHandler
             }
         }
 
-        // 直接返回重定向响应（不经过 setStatus 的 View 渲染）
+        // 通过 Response 对象发送重定向
         $response = new Response('');
-        header("Location: {$referer}", true, 302);
+        if (!headers_sent()) {
+            http_response_code(302);
+            header("Location: {$referer}", true, 302);
+        }
 
         return $response;
+    }
+
+    /**
+     * 净化重定向 URL，防止响应拆分攻击
+     */
+    protected function sanitizeRedirectUrl(string $url): string
+    {
+        // 移除 CRLF 字符防止 header 注入
+        $url = str_replace(["\r", "\n", "\t"], '', $url);
+
+        // 确保是相对路径或合法 HTTP(S) URL
+        if (!str_starts_with($url, '/') && !preg_match('#^https?://#i', $url)) {
+            return '/';
+        }
+
+        return $url;
     }
 
     /**

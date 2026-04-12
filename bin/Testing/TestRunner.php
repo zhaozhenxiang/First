@@ -223,7 +223,6 @@ class TestRunner
 
         // 注入计时信息到 TestResult
         $ref = new \ReflectionProperty($result, 'startTime');
-        $ref->setAccessible(true);
         $ref->setValue($result, $startTime);
         $result->stop();
 

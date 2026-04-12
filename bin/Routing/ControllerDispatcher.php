@@ -37,7 +37,7 @@ class ControllerDispatcher
         $instance = $app->make($controller);
         $parameters = $this->resolveMethodParameters($controller, $method, $route);
 
-        $result = \Bin\Container\Container::getInstance()->call([$instance, $method], $parameters);
+        $result = $app->getContainer()->call([$instance, $method], $parameters);
 
         return $result instanceof Response ? $result : new Response($result);
     }
@@ -52,7 +52,7 @@ class ControllerDispatcher
         $app = App::getInstance();
         $parameters = $this->resolveClosureParameters($closure, $route);
 
-        $result = \Bin\Container\Container::getInstance()->call($closure, $parameters);
+        $result = $app->getContainer()->call($closure, $parameters);
 
         return $result instanceof Response ? $result : new Response($result);
     }

@@ -40,13 +40,17 @@ class SmtpTransport implements TransportInterface
     public function send(Mailable $mailable): array
     {
         $this->connect();
-        $this->sendGreeting();
-        $this->startTls();
-        $this->authenticate();
-        $this->sendMailFrom($mailable);
-        $this->sendRcptTo($mailable);
-        $this->sendData($mailable);
-        $this->disconnect();
+
+        try {
+            $this->sendGreeting();
+            $this->startTls();
+            $this->authenticate();
+            $this->sendMailFrom($mailable);
+            $this->sendRcptTo($mailable);
+            $this->sendData($mailable);
+        } finally {
+            $this->disconnect();
+        }
 
         $id = uniqid('msg_', true);
         $this->sentIds[] = $id;
@@ -126,7 +130,7 @@ class SmtpTransport implements TransportInterface
      */
     protected function sendMailFrom(Mailable $mailable): void
     {
-        $from = $mailable->getFromAddress();
+        $from = $this->sanitizeAddress($mailable->getFromAddress());
         $this->sendCommand("MAIL FROM:<{$from}>", 250);
     }
 
@@ -146,6 +150,7 @@ class SmtpTransport implements TransportInterface
         }
 
         foreach ($recipients as $address) {
+            $address = $this->sanitizeAddress($address);
             $this->sendCommand("RCPT TO:<{$address}>", [250, 251]);
         }
     }
@@ -190,22 +195,22 @@ class SmtpTransport implements TransportInterface
 
         $to = $mailable->getTo();
         if ($to !== []) {
-            $headers[] = 'To: ' . implode(', ', $to);
+            $headers[] = 'To: ' . implode(', ', array_map($this->sanitizeAddress(...), $to));
         }
 
         $cc = $mailable->getCc();
         if ($cc !== []) {
-            $headers[] = 'Cc: ' . implode(', ', $cc);
+            $headers[] = 'Cc: ' . implode(', ', array_map($this->sanitizeAddress(...), $cc));
         }
 
         $bcc = $mailable->getBcc();
         if ($bcc !== []) {
-            $headers[] = 'Bcc: ' . implode(', ', $bcc);
+            $headers[] = 'Bcc: ' . implode(', ', array_map($this->sanitizeAddress(...), $bcc));
         }
 
         $replyTo = $mailable->getReplyTo();
         if ($replyTo !== []) {
-            $headers[] = 'Reply-To: ' . implode(', ', $replyTo);
+            $headers[] = 'Reply-To: ' . implode(', ', array_map($this->sanitizeAddress(...), $replyTo));
         }
 
         $body = $mailable->getHtmlContent() ?: $mailable->getTextContent();
@@ -248,6 +253,14 @@ class SmtpTransport implements TransportInterface
             return "\"{$name}\" <{$address}>";
         }
         return $address;
+    }
+
+    /**
+     * 净化邮件地址，防止 CRLF 注入
+     */
+    protected function sanitizeAddress(string $address): string
+    {
+        return str_replace(["\r", "\n", "\t"], '', $address);
     }
 
     /**

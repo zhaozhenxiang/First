@@ -315,40 +315,7 @@ class PendingRequest
      */
     protected function execute(string $method, string $url, array $headers, string $body): HttpResponse
     {
-        $ch = curl_init();
-
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_CUSTOMREQUEST => $method,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HEADER => true,
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_CONNECTTIMEOUT => $this->connectTimeout,
-            CURLOPT_FOLLOWLOCATION => $this->followRedirects,
-            CURLOPT_MAXREDIRS => $this->maxRedirects,
-            CURLOPT_SSL_VERIFYPEER => $this->verifySsl,
-            CURLOPT_SSL_VERIFYHOST => $this->verifySsl ? 2 : 0,
-        ]);
-
-        // 设置 headers
-        if ($headers !== []) {
-            $curlHeaders = [];
-            foreach ($headers as $key => $value) {
-                $curlHeaders[] = "{$key}: {$value}";
-            }
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $curlHeaders);
-        }
-
-        // 设置 body
-        if ($body !== '' && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-        }
-
-        // 设置 cookies
-        if ($this->cookies !== []) {
-            $cookieStr = http_build_query($this->cookies, '', '; ');
-            curl_setopt($ch, CURLOPT_COOKIE, $cookieStr);
-        }
+        $ch = $this->createConfiguredCurlHandle($method, $url, $headers, $body);
 
         // 用户自定义 curl 选项
         if ($this->options !== []) {
@@ -378,10 +345,18 @@ class PendingRequest
         $headers = $this->headers;
         $body = $this->buildBody($options['data'] ?? null, $headers);
 
+        return $this->createConfiguredCurlHandle($method, $fullUrl, $headers, $body);
+    }
+
+    /**
+     * 创建已配置的 curl handle（共用配置逻辑）
+     */
+    protected function createConfiguredCurlHandle(string $method, string $url, array $headers, string $body): CurlHandle
+    {
         $ch = curl_init();
 
         curl_setopt_array($ch, [
-            CURLOPT_URL => $fullUrl,
+            CURLOPT_URL => $url,
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => true,

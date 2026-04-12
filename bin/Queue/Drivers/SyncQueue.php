@@ -70,7 +70,7 @@ class SyncQueue implements QueueInterface
             return null;
         }
 
-        $job = @unserialize($data['job']);
+        $job = @unserialize($data['job'], ['allowed_classes' => true]);
         return $job instanceof Job ? $job : null;
     }
 }
