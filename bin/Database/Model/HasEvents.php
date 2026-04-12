@@ -11,9 +11,9 @@ use Bin\Events\EventDispatcher;
 trait HasEvents
 {
     /**
-     * 触发模型事件
+     * 触发模型事件（公开接口）
      */
-    protected function fireModelEvent(string $event): mixed
+    public function fireModelEvent(string $event): mixed
     {
         return ModelEventDispatcher::dispatchForModel(static::class, $event, $this);
     }

@@ -10,11 +10,37 @@ namespace Bin\Database\Model;
 trait HasSerialization
 {
     /**
-     * 转为数组
+     * 转为数组（包含已加载的关系和 append 属性）
      */
     public function toArray(): array
     {
+        // 1. 处理模型属性
+        $array = $this->attributesToArray();
+
+        // 2. 追加计算属性
+        foreach ($this->appends as $key) {
+            $array[$key] = $this->getAttribute($key);
+        }
+
+        // 3. 序列化已加载的关系
+        $array = array_merge($array, $this->relationsToArray());
+
+        return $array;
+    }
+
+    /**
+     * 属性转数组（应用 hidden/visible 过滤和 cast）
+     */
+    public function attributesToArray(): array
+    {
         $array = $this->attributes;
+
+        // 应用类型转换
+        foreach ($array as $key => $value) {
+            if ($this->hasCast($key)) {
+                $array[$key] = $this->castAttribute($key, $value);
+            }
+        }
 
         // 隐藏属性
         if (!empty($this->hidden)) {
@@ -26,12 +52,31 @@ trait HasSerialization
             $array = array_intersect_key($array, array_flip($this->visible));
         }
 
-        // 追加计算属性
-        foreach ($this->appends as $key) {
-            $array[$key] = $this->getAttribute($key);
+        return $array;
+    }
+
+    /**
+     * 关系转数组
+     */
+    public function relationsToArray(): array
+    {
+        $result = [];
+
+        $relations = property_exists($this, 'relations') ? $this->relations : [];
+
+        foreach ($relations as $key => $value) {
+            if ($value instanceof self) {
+                $result[$key] = $value->toArray();
+            } elseif ($value instanceof \Bin\Database\Collection) {
+                $result[$key] = $value->map(fn($item) => $item instanceof self ? $item->toArray() : $item)->toArray();
+            } elseif (is_array($value)) {
+                $result[$key] = array_map(fn($item) => $item instanceof self ? $item->toArray() : $item, $value);
+            } elseif ($value !== null) {
+                $result[$key] = $value;
+            }
         }
 
-        return $array;
+        return $result;
     }
 
     /**
@@ -81,5 +126,13 @@ trait HasSerialization
     public function __toString(): string
     {
         return $this->toJson();
+    }
+
+    /**
+     * 仅获取属性数组（不含关系，向后兼容）
+     */
+    public function attributesOnly(): array
+    {
+        return $this->attributesToArray();
     }
 }

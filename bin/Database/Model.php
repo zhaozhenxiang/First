@@ -9,6 +9,7 @@ use Bin\Database\Model\HasEvents;
 use Bin\Database\Model\HasRelationships;
 use Bin\Database\Model\HasTimestamps;
 use Bin\Database\Model\HasSerialization;
+use Bin\Database\Model\HasStrictMode;
 use Bin\Database\ConnectionManager;
 use Bin\Model\Model as BaseModel;
 use PDO;
@@ -24,11 +25,17 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     use HasRelationships;
     use HasTimestamps;
     use HasSerialization;
+    use HasStrictMode;
 
     /**
      * 数据库连接
      */
     protected static ?PDO $connection = null;
+
+    /**
+     * 模型级连接名（用于多连接场景）
+     */
+    protected ?string $connectionName = null;
 
     /**
      * 表名
@@ -80,6 +87,29 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
         // 调用 trait 的 boot 方法
         static::bootTraits();
+    }
+
+    /**
+     * 初始化模型实例（每次 new 都调用）
+     * 调用 trait 的 initialize 方法
+     */
+    public function initialize(): void
+    {
+        $this->initializeTraits();
+    }
+
+    /**
+     * 引导所有 traits 的 initialize 方法
+     */
+    protected function initializeTraits(): void
+    {
+        foreach (class_uses(static::class) as $trait) {
+            $method = 'initialize' . static::getClassBasename($trait);
+
+            if (method_exists($this, $method)) {
+                $this->$method();
+            }
+        }
     }
 
     /**
@@ -183,6 +213,11 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         $classScopes = static::$globalScopes[static::class] ?? [];
         foreach ($classScopes as $identifier => $callback) {
             $query->withGlobalScope($identifier, $callback);
+        }
+
+        // 应用模型级默认 eager load
+        if (!empty($model->getWith())) {
+            $query->with($model->getWith());
         }
 
         return $query;
@@ -454,6 +489,8 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function __construct(array $attributes = [])
     {
+        $this->initialize();
+
         $this->fill($attributes);
     }
 

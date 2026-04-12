@@ -18,6 +18,49 @@ trait HasRelationships
     protected array $relations = [];
 
     /**
+     * 获取关系值（供 getAttribute 调用）
+     *
+     * 如果关系已加载则直接返回，否则检查是否存在关系方法并动态加载
+     */
+    public function getRelationValue(string $key): mixed
+    {
+        // 如果关系已加载，直接返回
+        if ($this->relationLoaded($key)) {
+            return $this->relations[$key];
+        }
+
+        // 检查是否存在关系定义方法
+        if (method_exists($this, $key)) {
+            // 严格模式下报告懒加载违规
+            if (method_exists($this, 'handleLazyLoadingViolation')) {
+                $this->handleLazyLoadingViolation($key);
+            }
+
+            return $this->getRelationshipFromMethod($key);
+        }
+
+        return null;
+    }
+
+    /**
+     * 从方法加载关系
+     */
+    protected function getRelationshipFromMethod(string $method): mixed
+    {
+        $relation = $this->$method();
+
+        if (!$relation instanceof Relations\Relation) {
+            return null;
+        }
+
+        $results = $relation->getResults();
+
+        $this->setRelation($method, $results);
+
+        return $results;
+    }
+
+    /**
      * 设置关系
      */
     public function setRelation(string $relation, mixed $value): self
@@ -44,6 +87,24 @@ trait HasRelationships
     }
 
     /**
+     * 获取多态类名（考虑 morphMap 别名）
+     */
+    public function getMorphClass(): string
+    {
+        $morphMap = static::$morphMap[static::class] ?? [];
+
+        $className = static::class;
+
+        foreach ($morphMap as $alias => $class) {
+            if ($class === $className) {
+                return $alias;
+            }
+        }
+
+        return $className;
+    }
+
+    /**
      * 设置多个关系
      */
     public function setRelations(array $relations): self
@@ -62,21 +123,13 @@ trait HasRelationships
     }
 
     /**
-     * 转为数组（包含关系）
+     * 转为数组（包含关系）— 向后兼容，现在直接委托 toArray()
+     *
+     * @deprecated toArray() 现在已包含已加载的关系，可直接使用 toArray()
      */
     public function toArrayWithRelations(): array
     {
-        $array = $this->toArray();
-
-        foreach ($this->relations as $key => $value) {
-            if ($value instanceof Model) {
-                $array[$key] = $value->toArray();
-            } elseif (is_array($value)) {
-                $array[$key] = array_map(fn($item) => $item instanceof Model ? $item->toArray() : $item, $value);
-            }
-        }
-
-        return $array;
+        return $this->toArray();
     }
 
     /**
@@ -321,11 +374,13 @@ trait HasRelationships
     }
 
     /**
-     * 获取外键名
+     * 获取外键名（snake_case + _id 后缀）
      */
     protected function getForeignKey(): string
     {
-        return strtolower(substr(strrchr(get_class($this), '\\'), 1)) . '_id';
+        $className = substr(strrchr(get_class($this), '\\'), 1);
+
+        return strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . '_id';
     }
 
     /**
@@ -339,13 +394,13 @@ trait HasRelationships
     }
 
     /**
-     * 获取中间表名
+     * 获取中间表名（按字母排序的 snake_case 拼接）
      */
     protected function joiningTable(string $related): string
     {
         $segments = [
-            strtolower(substr(strrchr(get_class($this), '\\'), 1)),
-            strtolower(substr(strrchr($related, '\\'), 1)),
+            strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', substr(strrchr(get_class($this), '\\'), 1))),
+            strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', substr(strrchr($related, '\\'), 1))),
         ];
 
         sort($segments);
@@ -398,24 +453,49 @@ trait HasRelationships
     }
 
     /**
-     * 动态加载关系
+     * 动态加载关系（支持点号嵌套）
      */
-    public function load(string $relation): self
+    public function load(string|array $relations): self
     {
-        $this->relations[$relation] = $this->$relation();
+        $relations = is_array($relations) ? $relations : func_get_args();
+
+        foreach ($relations as $relation) {
+            if (str_contains($relation, '.')) {
+                $this->loadNested($relation);
+            } else {
+                $this->getRelationValue($relation);
+            }
+        }
 
         return $this;
     }
 
     /**
-     * 加载多个关系
+     * 加载嵌套关系（如 posts.comments）
+     */
+    protected function loadNested(string $relation): void
+    {
+        $segments = explode('.', $relation);
+        $first = array_shift($segments);
+
+        $this->getRelationValue($first);
+
+        $nested = implode('.', $segments);
+
+        if ($nested !== '' && $this->relations[$first] !== null) {
+            if ($this->relations[$first] instanceof self) {
+                $this->relations[$first]->load($nested);
+            } elseif ($this->relations[$first] instanceof Collection) {
+                $this->relations[$first]->each(fn($item) => $item->load($nested));
+            }
+        }
+    }
+
+    /**
+     * 加载多个关系（别名，保持向后兼容）
      */
     public function loadMultiple(array $relations): self
     {
-        foreach ($relations as $relation) {
-            $this->load($relation);
-        }
-
-        return $this;
+        return $this->load($relations);
     }
 }

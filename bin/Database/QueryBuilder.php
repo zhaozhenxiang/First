@@ -1744,6 +1744,9 @@ class QueryBuilder
 
         $model->exists = true;
 
+        // 触发 retrieved 事件
+        $model->fireModelEvent('retrieved');
+
         return $model;
     }
 

@@ -10,6 +10,11 @@ use InvalidArgumentException;
 trait HasAttributes
 {
     /**
+     * 是否临时禁止 mass assignment 保护
+     */
+    protected static bool $unguarded = false;
+
+    /**
      * 主键
      */
     protected string $primaryKey = 'id';
@@ -75,6 +80,21 @@ trait HasAttributes
     protected array $appends = [];
 
     /**
+     * 每页显示数量（分页默认值）
+     */
+    protected int $perPage = 15;
+
+    /**
+     * 默认 eager load 的关系
+     */
+    protected array $with = [];
+
+    /**
+     * 默认加载的关系计数
+     */
+    protected array $withCount = [];
+
+    /**
      * 是否存在
      */
     public bool $exists = false;
@@ -89,8 +109,12 @@ trait HasAttributes
      */
     public function fill(array $attributes): self
     {
-        foreach ($this->fillableFromArray($attributes) as $key => $value) {
-            $this->setAttribute($key, $value);
+        foreach ($attributes as $key => $value) {
+            if ($this->isFillable($key)) {
+                $this->setAttribute($key, $value);
+            } elseif ($this->isGuarded($key) && method_exists($this, 'handleDiscardedAttribute')) {
+                $this->handleDiscardedAttribute($key);
+            }
         }
 
         return $this;
@@ -146,6 +170,21 @@ trait HasAttributes
         }
 
         if (!$this->hasAttribute($key)) {
+            // 检查关系方法 — 动态加载关系
+            if (method_exists($this, 'getRelationValue') && method_exists($this, $key)) {
+                return $this->getRelationValue($key);
+            }
+
+            // 如果关系已加载但方法不存在（通过 setRelation 手动设置）
+            if (method_exists($this, 'relationLoaded') && $this->relationLoaded($key)) {
+                return $this->getRelation($key);
+            }
+
+            // 严格模式下访问不存在的属性时报告
+            if (method_exists($this, 'handleMissingAttributeViolation')) {
+                $this->handleMissingAttributeViolation($key);
+            }
+
             return null;
         }
 
@@ -213,14 +252,98 @@ trait HasAttributes
             return $this;
         }
 
-        // 检查是否可赋值
-        if ($this->isGuarded($key)) {
-            throw new InvalidArgumentException("Property [{$key}] is guarded");
-        }
-
         $this->attributes[$key] = $value;
 
         return $this;
+    }
+
+    /**
+     * 强制批量赋值（绕过 fillable/guarded 检查）
+     */
+    public function forceFill(array $attributes): self
+    {
+        foreach ($attributes as $key => $value) {
+            $this->setAttribute($key, $value);
+        }
+
+        return $this;
+    }
+
+    /**
+     * 检查属性是否可批量赋值
+     */
+    public function isFillable(string $key): bool
+    {
+        // 如果在 unguard 状态，所有属性都可赋值
+        if (static::$unguarded) {
+            return true;
+        }
+
+        // 如果属性在 fillable 中
+        if (in_array($key, $this->fillable, true)) {
+            return true;
+        }
+
+        // 如果 fillable 非空但属性不在其中，不可赋值
+        if (!empty($this->fillable)) {
+            return false;
+        }
+
+        // fillable 为空时，检查是否在 guarded 中
+        return !$this->isGuarded($key);
+    }
+
+    /**
+     * 检查属性是否被保护
+     */
+    public function isGuarded(string $key): bool
+    {
+        // guarded 包含 '*' 时，所有属性被保护
+        if (in_array('*', $this->guarded, true)) {
+            return true;
+        }
+
+        return in_array($key, $this->guarded, true);
+    }
+
+    /**
+     * 检查模型是否完全被保护（fillable 为空且 guarded 包含 '*'）
+     */
+    public function totallyGuarded(): bool
+    {
+        return empty($this->fillable) && in_array('*', $this->guarded, true);
+    }
+
+    /**
+     * 临时禁止 mass assignment 保护
+     */
+    public static function unguard(bool $state = true): void
+    {
+        static::$unguarded = $state;
+    }
+
+    /**
+     * 重新启用 mass assignment 保护
+     */
+    public static function reguard(): void
+    {
+        static::$unguarded = false;
+    }
+
+    /**
+     * 在回调中临时禁止 mass assignment 保护
+     */
+    public static function unguarded(callable $callback): mixed
+    {
+        $previousState = static::$unguarded;
+
+        static::$unguarded = true;
+
+        try {
+            return $callback();
+        } finally {
+            static::$unguarded = $previousState;
+        }
     }
 
     /**
@@ -229,14 +352,6 @@ trait HasAttributes
     public function hasAttribute(string $key): bool
     {
         return array_key_exists($key, $this->attributes);
-    }
-
-    /**
-     * 检查属性是否被保护
-     */
-    protected function isGuarded(string $key): bool
-    {
-        return in_array($key, $this->guarded, true);
     }
 
     /**
@@ -417,5 +532,63 @@ trait HasAttributes
     public function offsetUnset(mixed $offset): void
     {
         unset($this->attributes[$offset]);
+    }
+
+    /**
+     * 获取每页数量
+     */
+    public function getPerPage(): int
+    {
+        return $this->perPage;
+    }
+
+    /**
+     * 设置每页数量
+     */
+    public function setPerPage(int $perPage): self
+    {
+        $this->perPage = $perPage;
+        return $this;
+    }
+
+    /**
+     * 获取默认 eager load 关系
+     */
+    public function getWith(): array
+    {
+        return $this->with;
+    }
+
+    /**
+     * 设置默认 eager load 关系
+     */
+    public function setWith(array $with): self
+    {
+        $this->with = $with;
+        return $this;
+    }
+
+    /**
+     * 获取默认关系计数
+     */
+    public function getWithCount(): array
+    {
+        return $this->withCount;
+    }
+
+    /**
+     * 获取主键类型
+     */
+    public function getKeyType(): string
+    {
+        return $this->keyType;
+    }
+
+    /**
+     * 获取自增设置
+     */
+    public function getIncrementing(): bool
+    {
+        return $this->incrementing;
     }
 }

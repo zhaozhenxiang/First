@@ -15,7 +15,7 @@ class HasMany extends HasOneOrMany
     /**
      * 获取结果
      */
-    public function getResults(): array
+    public function getResults(): mixed
     {
         return $this->query->get();
     }
