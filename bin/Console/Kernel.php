@@ -29,6 +29,9 @@ class Kernel
     /** @var string 应用命名空间 */
     private static string $appNamespace = 'App\\Console\\';
 
+    /** @var \Bin\Foundation\ConsoleKernel|null Console Kernel 实例（用于 bootstrapping） */
+    private static ?\Bin\Foundation\ConsoleKernel $consoleKernel = null;
+
     /**
      * 注册命令
      */
@@ -38,18 +41,15 @@ class Kernel
             self::$factories[$name] = $command;
         } elseif ($command instanceof Command) {
             self::$commands[$name] = $command;
-        } else {
-            // 如果是类名，优先通过容器构建
-            if (class_exists($command)) {
+        } elseif (is_string($command)) {
+            // 类名 → 延迟工厂，首次使用时通过容器解析
+            self::$factories[$name] = function () use ($command) {
                 try {
-                    self::$commands[$name] = \Bin\App\App::getInstance()->make($command);
+                    return \Bin\App\App::getInstance()->make($command);
                 } catch (\Throwable) {
-                    self::$commands[$name] = new $command();
+                    return new $command();
                 }
-            } else {
-                // 存储类名，延迟通过容器实例化
-                self::$factories[$name] = fn () => \Bin\App\App::getInstance()->make($command);
-            }
+            };
         }
     }
 
@@ -61,6 +61,20 @@ class Kernel
         foreach ($commands as $name => $command) {
             self::register($name, $command);
         }
+    }
+
+    /**
+     * 注册闭包命令（Artisan 风格）
+     *
+     * 用法: Kernel::command('greet {name}', function (string $name) { ... });
+     */
+    public static function command(string $signature, Closure $callback, string $description = ''): void
+    {
+        $command = new ClosureCommand($signature, $callback, $description);
+        $command->parseSignature();
+        $name = $command->getName();
+
+        self::$commands[$name] = $command;
     }
 
     /**
@@ -87,6 +101,35 @@ class Kernel
     public static function setAppNamespace(string $namespace): void
     {
         self::$appNamespace = $namespace;
+    }
+
+    /**
+     * 设置 Console Kernel 实例（由 ConsoleKernel::handle 调用）
+     */
+    public static function setConsoleKernel(\Bin\Foundation\ConsoleKernel $kernel): void
+    {
+        self::$consoleKernel = $kernel;
+    }
+
+    /**
+     * 获取 Console Kernel 实例
+     */
+    public static function getConsoleKernel(): ?\Bin\Foundation\ConsoleKernel
+    {
+        return self::$consoleKernel;
+    }
+
+    /**
+     * 确保应用已引导
+     */
+    protected static function ensureBootstrapped(): void
+    {
+        if (self::$consoleKernel !== null) {
+            // 通过反射调用 protected bootstrap()
+            $ref = new \ReflectionMethod(self::$consoleKernel, 'bootstrap');
+            $ref->setAccessible(true);
+            $ref->invoke(self::$consoleKernel);
+        }
     }
 
     /**
@@ -226,14 +269,21 @@ class Kernel
      */
     public static function call(string $command, array $arguments = []): int
     {
+        self::ensureBootstrapped();
+
         return self::callSilent($command, $arguments);
     }
 
     /**
      * 静默调用命令（不输出）
+     *
+     * @param string $command 命令名称
+     * @param array $arguments 参数：位置参数（['value1', 'value2']）或命名参数（['--key' => 'value']）
      */
     public static function callSilent(string $command, array $arguments = []): int
     {
+        self::ensureBootstrapped();
+
         // 临时捕获输出
         ob_start();
 
@@ -241,8 +291,21 @@ class Kernel
             $instance = self::getCommand($command);
             $instance->parseSignature();
 
-            // 构造输入
-            $argv = ['script', $command, ...$arguments];
+            // 构造 argv：支持位置参数和关联参数
+            $argv = ['script', $command];
+            foreach ($arguments as $key => $value) {
+                if (is_int($key)) {
+                    // 位置参数
+                    $argv[] = $value;
+                } elseif (str_starts_with($key, '--')) {
+                    // 命名选项
+                    $optName = substr($key, 2);
+                    $argv[] = "--{$optName}={$value}";
+                } else {
+                    // 选项简写
+                    $argv[] = "--{$key}={$value}";
+                }
+            }
             $input = new Input($argv);
 
             // 构造输出

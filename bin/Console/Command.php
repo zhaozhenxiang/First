@@ -109,36 +109,107 @@ abstract class Command
 
     /**
      * 解析签名定义
+     *
+     * 支持：
+     *   参数: {name} {name?} {name=*} {name : description}
+     *   选项: {--option} {--option=*} {--option=default} {--O|option} {--option : description}
      */
     private function parseSignatureDefinition(string $definition): void
     {
-        // 先匹配选项 {--option} 或 {--option=*}
-        preg_match_all('/\{--(\w+)(\*)?\}/', $definition, $optionMatches, PREG_SET_ORDER);
+        // 匹配所有 {...} 块
+        preg_match_all('/\{([^}]+)\}/', $definition, $matches);
 
-        foreach ($optionMatches as $match) {
-            $name = $match[1];
-            $isArray = isset($match[2]);
+        foreach ($matches[1] as $token) {
+            $token = trim($token);
 
-            $this->options[$name] = [
-                'type' => $isArray ? 'array' : 'bool',
-                'required' => false,
-            ];
+            if (str_starts_with($token, '--')) {
+                $this->parseOptionToken(substr($token, 2));
+            } else {
+                $this->parseArgumentToken($token);
+            }
+        }
+    }
+
+    /**
+     * 解析选项 token
+     */
+    private function parseOptionToken(string $token): void
+    {
+        // 提取描述（: 后面的部分）
+        $description = '';
+        if (str_contains($token, ' : ')) {
+            [$token, $description] = explode(' : ', $token, 2);
         }
 
-        // 移除选项后匹配参数
-        $definitionWithoutOptions = preg_replace('/\{--\w+(\*)?\}/', '', $definition);
-        preg_match_all('/\{(\w+)(\?)?(=\*)?\}/', $definitionWithoutOptions, $argMatches, PREG_SET_ORDER);
-
-        foreach ($argMatches as $match) {
-            $name = $match[1];
-            $isRequired = !isset($match[2]);
-            $isArray = isset($match[3]);
-
-            $this->arguments[$name] = [
-                'required' => $isRequired,
-                'array' => $isArray,
-            ];
+        // 短选项 {--O|option}
+        $short = null;
+        if (preg_match('/^(\w)\|(\w+)/', $token, $m)) {
+            $short = $m[1];
+            $name = $m[2];
+            $token = substr($token, strlen("{$m[1]}|{$m[2]}"));
+        } else {
+            // 普通选项
+            $parts = preg_split('/[=*]/', $token, 2);
+            $name = $parts[0];
+            $token = substr($token, strlen($name));
         }
+
+        $isArray = str_contains($token, '*');
+        $default = null;
+
+        // 检查默认值 {--option=default}
+        if (!$isArray && str_starts_with($token, '=')) {
+            $default = substr($token, 1);
+            if ($default === '') {
+                $default = null;
+            }
+        }
+
+        $this->options[$name] = [
+            'type' => $isArray ? 'array' : ($default !== null ? 'string' : 'bool'),
+            'required' => false,
+            'default' => $default,
+            'description' => trim($description),
+        ];
+
+        if ($short !== null) {
+            $this->options[$short] = &$this->options[$name];
+        }
+    }
+
+    /**
+     * 解析参数 token
+     */
+    private function parseArgumentToken(string $token): void
+    {
+        // 提取描述
+        $description = '';
+        if (str_contains($token, ' : ')) {
+            [$token, $description] = explode(' : ', $token, 2);
+        }
+
+        $isArray = str_contains($token, '=*');
+        $isRequired = !str_contains($token, '?');
+        $default = null;
+
+        // {name?} → 可选，无默认值
+        // {name=default} → 可选，有默认值
+        if (!$isRequired) {
+            $token = str_replace('?', '', $token);
+        }
+
+        if (str_contains($token, '=') && !$isArray) {
+            [$name, $default] = explode('=', $token, 2);
+        } else {
+            $name = str_replace('=*', '', $token);
+        }
+
+        $this->arguments[$name] = [
+            'required' => $isRequired && $default === null,
+            'array' => $isArray,
+            'default' => $default,
+            'description' => trim($description),
+        ];
     }
 
     /**
@@ -357,6 +428,14 @@ abstract class Command
     public function getOutput(): Output
     {
         return $this->output;
+    }
+
+    /**
+     * 从容器中解析服务
+     */
+    public function laravel(string $abstract): mixed
+    {
+        return \Bin\App\App::getInstance()->make($abstract);
     }
 
     /**

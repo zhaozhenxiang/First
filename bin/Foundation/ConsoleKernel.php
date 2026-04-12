@@ -14,6 +14,7 @@ use Bin\Console\Kernel as ConsoleKernelBase;
  * 职责：
  *   1. 运行 CLI 所需的引导器（不含路由加载）
  *   2. 委托给 Console\Kernel 进行命令发现和分发
+ *   3. 提供程序化调用入口（确保 bootstrapping）
  */
 class ConsoleKernel
 {
@@ -39,6 +40,11 @@ class ConsoleKernel
         \Bin\Foundation\Bootstrap\BootProviders::class,
     ];
 
+    /**
+     * 是否已引导
+     */
+    protected bool $bootstrapped = false;
+
     public function __construct(App $app)
     {
         $this->app = $app;
@@ -49,19 +55,45 @@ class ConsoleKernel
      */
     protected function bootstrap(): void
     {
+        if ($this->bootstrapped) {
+            return;
+        }
+
         if (!$this->app->hasBeenBootstrapped()) {
             $this->app->bootstrapWith($this->bootstrappers);
         }
+
+        $this->bootstrapped = true;
     }
 
     /**
-     * 处理 CLI 请求
+     * 处理 CLI 请求（主入口）
      */
     public function handle(): int
     {
         $this->bootstrap();
 
+        ConsoleKernelBase::setConsoleKernel($this);
+
         return ConsoleKernelBase::handle();
+    }
+
+    /**
+     * 程序化调用命令（经过 bootstrapping）
+     */
+    public function call(string $command, array $arguments = []): int
+    {
+        $this->bootstrap();
+
+        return ConsoleKernelBase::call($command, $arguments);
+    }
+
+    /**
+     * 获取应用实例
+     */
+    public function getApp(): App
+    {
+        return $this->app;
     }
 
     /**
@@ -82,5 +114,21 @@ class ConsoleKernel
     public function setBootstrappers(array $bootstrappers): void
     {
         $this->bootstrappers = $bootstrappers;
+    }
+
+    /**
+     * 前置引导器
+     */
+    public function prependBootstrapper(string $bootstrapper): void
+    {
+        array_unshift($this->bootstrappers, $bootstrapper);
+    }
+
+    /**
+     * 后置引导器
+     */
+    public function appendBootstrapper(string $bootstrapper): void
+    {
+        $this->bootstrappers[] = $bootstrapper;
     }
 }
