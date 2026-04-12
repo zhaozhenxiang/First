@@ -25,16 +25,12 @@ if (!function_exists('getMethod')) {
 if (!function_exists('abort')) {
     /**
      * 中止请求并返回错误码
+     *
+     * 抛出 HttpException，由 ExceptionHandler 统一渲染。
      */
     function abort(int $code, string $message = ''): never
     {
-        http_response_code($code);
-        if ($message !== '') {
-            echo $message;
-        } else {
-            echo $code;
-        }
-        exit;
+        throw new \Bin\Exception\HttpException($code, $message ?: "Error {$code}");
     }
 }
 

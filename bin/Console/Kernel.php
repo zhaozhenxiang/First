@@ -39,12 +39,16 @@ class Kernel
         } elseif ($command instanceof Command) {
             self::$commands[$name] = $command;
         } else {
-            // 如果是类名，尝试实例化
+            // 如果是类名，优先通过容器构建
             if (class_exists($command)) {
-                self::$commands[$name] = new $command();
+                try {
+                    self::$commands[$name] = \Bin\App\App::getInstance()->make($command);
+                } catch (\Throwable) {
+                    self::$commands[$name] = new $command();
+                }
             } else {
-                // 存储类名，延迟实例化
-                self::$factories[$name] = fn() => new $command();
+                // 存储类名，延迟通过容器实例化
+                self::$factories[$name] = fn () => \Bin\App\App::getInstance()->make($command);
             }
         }
     }
@@ -114,7 +118,12 @@ class Kernel
                     $reflection = new ReflectionClass($className);
 
                     if ($reflection->isSubclassOf(Command::class) && !$reflection->isAbstract()) {
-                        $instance = $reflection->newInstance();
+                        // 优先通过容器构建，支持构造函数注入
+                        try {
+                            $instance = \Bin\App\App::getInstance()->make($className);
+                        } catch (\Throwable) {
+                            $instance = $reflection->newInstance();
+                        }
                         $instance->parseSignature();
 
                         $name = $instance->getName();

@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Bin\Middleware;
 
 use Bin\Auth\AuthManager;
+use Bin\Exception\AuthenticationException;
 
 /**
  * 认证中间件
  *
- * 确保用户已登录才能访问受保护的路由
+ * 确保用户已登录才能访问受保护的路由。
+ * 未认证时抛出 AuthenticationException，由 ExceptionHandler 统一渲染。
  */
 class AuthMiddleware extends Middleware
 {
@@ -18,40 +20,19 @@ class AuthMiddleware extends Middleware
      */
     public function handle(mixed $request, \Closure $next): mixed
     {
-        // 检查用户是否已认证
         if (!AuthManager::check()) {
-            return $this->unauthenticated($request);
+            throw new AuthenticationException();
         }
 
         return $next($request);
-    }
-
-    /**
-     * 未认证响应
-     */
-    protected function unauthenticated(mixed $request): mixed
-    {
-        if (is_ajax()) {
-            header('Content-Type: application/json');
-            http_response_code(401);
-            echo json_encode([
-                'error' => 'Unauthenticated',
-                'message' => 'You must be logged in to access this resource.',
-            ]);
-            exit;
-        }
-
-        $redirectUrl = $this->options[0] ?? '/login';
-        header("Location: {$redirectUrl}");
-        http_response_code(302);
-        exit;
     }
 }
 
 /**
  * 访客中间件
  *
- * 确保用户未登录才能访问（如登录、注册页面）
+ * 确保用户未登录才能访问（如登录、注册页面）。
+ * 已认证时重定向。
  */
 class GuestMiddleware extends Middleware
 {
@@ -62,9 +43,7 @@ class GuestMiddleware extends Middleware
     {
         if (AuthManager::check()) {
             $redirectUrl = $this->options[0] ?? '/';
-            header("Location: {$redirectUrl}");
-            http_response_code(302);
-            exit;
+            return redirect($redirectUrl);
         }
 
         return $next($request);

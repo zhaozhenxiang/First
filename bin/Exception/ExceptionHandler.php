@@ -159,6 +159,11 @@ class ExceptionHandler
             return $this->renderJson($e, $status);
         }
 
+        // Web 请求的 ValidationException：重定向回上一页并闪存错误
+        if ($e instanceof ValidationException && !$this->isAjax()) {
+            return $this->renderValidationRedirect($e);
+        }
+
         // 如果调试模式开启，显示详细错误页
         if ($this->debug) {
             return $this->renderDebugPage($e, $status);
@@ -166,6 +171,37 @@ class ExceptionHandler
 
         // 否则显示通用错误页
         return $this->renderErrorPage($status);
+    }
+
+    /**
+     * 渲染验证失败重定向
+     */
+    protected function renderValidationRedirect(ValidationException $e): Response
+    {
+        $errors = $e->getErrors();
+        $referer = $_SERVER['HTTP_REFERER'] ?? '/';
+
+        // 闪存错误到 session
+        if (function_exists('session_manager')) {
+            try {
+                $manager = session_manager();
+                if ($manager !== null && method_exists($manager, 'flash')) {
+                    $manager->flash('_errors', $errors);
+                    // 闪存旧输入
+                    if (isset($_POST)) {
+                        $manager->flash('_old_input', $_POST);
+                    }
+                }
+            } catch (\Throwable) {
+                // session 不可用时静默降级
+            }
+        }
+
+        // 直接返回重定向响应（不经过 setStatus 的 View 渲染）
+        $response = new Response('');
+        header("Location: {$referer}", true, 302);
+
+        return $response;
     }
 
     /**
@@ -179,6 +215,19 @@ class ExceptionHandler
                 'status' => $status,
             ],
         ];
+
+        // ValidationException 附加 errors 字段
+        if ($e instanceof ValidationException) {
+            $data['error']['errors'] = $e->getErrors();
+        }
+
+        // RateLimitExceededException 附加 retry_after
+        if ($e instanceof RateLimitExceededException) {
+            $headers = $e->getHeaders();
+            if (isset($headers['Retry-After'])) {
+                $data['error']['retry_after'] = $headers['Retry-After'];
+            }
+        }
 
         if ($this->debug) {
             $data['error']['exception'] = get_class($e);
@@ -332,6 +381,14 @@ HTML;
             return 422;
         }
 
+        if ($e instanceof MethodNotAllowedHttpException) {
+            return 405;
+        }
+
+        if ($e instanceof RateLimitExceededException) {
+            return 429;
+        }
+
         if ($e instanceof HttpException) {
             return $e->getStatusCode();
         }
@@ -345,10 +402,13 @@ HTML;
     protected function getGenericMessage(int $status): string
     {
         return match ($status) {
+            400 => 'Bad Request',
             401 => 'Unauthorized',
             403 => 'Forbidden',
             404 => 'Not Found',
+            405 => 'Method Not Allowed',
             422 => 'Unprocessable Entity',
+            429 => 'Too Many Requests',
             500 => 'Internal Server Error',
             503 => 'Service Unavailable',
             default => 'An error occurred',

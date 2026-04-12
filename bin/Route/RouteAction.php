@@ -4,20 +4,41 @@ declare(strict_types=1);
 
 namespace Bin\Route;
 
+use Bin\App\App;
 use Bin\Middleware\MiddlewareNameResolver;
 use Bin\Middleware\MiddlewareStack;
 use Bin\Middleware\Pipeline;
-use Bin\Reflection\Reflection;
-use Bin\Response\Response;
-use Exception;
+use Bin\Routing\ControllerDispatcher;
 
 class RouteAction
 {
     /** @var Pipeline|null 最近一次执行使用的 Pipeline（用于 terminate） */
     private static ?Pipeline $lastPipeline = null;
 
+    /** @var ControllerDispatcher|null 控制器调度器 */
+    private static ?ControllerDispatcher $dispatcher = null;
+
     private function __construct()
     {
+    }
+
+    /**
+     * 获取控制器调度器
+     */
+    public static function getDispatcher(): ControllerDispatcher
+    {
+        if (static::$dispatcher === null) {
+            static::$dispatcher = new ControllerDispatcher();
+        }
+        return static::$dispatcher;
+    }
+
+    /**
+     * 设置控制器调度器（测试用）
+     */
+    public static function setDispatcher(ControllerDispatcher $dispatcher): void
+    {
+        static::$dispatcher = $dispatcher;
     }
 
     /**
@@ -47,8 +68,8 @@ class RouteAction
         $resolved = MiddlewareNameResolver::resolveAll($middleware, $aliases);
 
         // 构建 Pipeline
-        $pipeline = (new Pipeline())
-            ->send($request)
+        $pipeline = new Pipeline();
+        $pipeline->send($request)
             ->through(static::buildMiddlewareInstances($resolved));
 
         // 保存引用用于 terminate
@@ -75,19 +96,38 @@ class RouteAction
 
     /**
      * 分发到路由的 action
-     * @throws \Exception
+     *
+     * 通过 ControllerDispatcher 统一调度，支持：
+     * - 闭包 action：容器注入参数
+     * - Controller@method 字符串：容器实例化 + 方法注入
      */
     private static function dispatch(Route $route): mixed
     {
         $action = $route->getAction();
+        $dispatcher = static::getDispatcher();
 
-        $result = match (true) {
-            is_callable($action) => static::doCallback($action),
-            is_string($action) => static::doClassMethod($action, $route),
-            default => abort(404)
+        return match (true) {
+            is_callable($action) => $dispatcher->dispatchClosure($action, $route),
+            is_string($action) => static::dispatchController($action, $route, $dispatcher),
+            default => abort(404),
         };
+    }
 
-        return $result instanceof Response ? $result : new Response($result);
+    /**
+     * 调度控制器方法
+     */
+    private static function dispatchController(string $action, Route $route, ControllerDispatcher $dispatcher): mixed
+    {
+        [$class, $method] = explode('@', $action);
+
+        // 检查是否已经有完整命名空间
+        if (!str_contains($class, '\\')) {
+            $fullClass = '\App\Controllers\\' . $class;
+        } else {
+            $fullClass = $class;
+        }
+
+        return $dispatcher->dispatch($fullClass, $method, $route);
     }
 
     /**
@@ -119,15 +159,22 @@ class RouteAction
     /**
      * 构建中间件实例数组
      *
+     * 优先通过容器构建以支持构造函数依赖注入。
+     * 如果容器无法构建，回退到直接实例化。
+     *
      * @param  array<array{0: class-string, 1: array}>  $resolved
-     * @return array
      */
     private static function buildMiddlewareInstances(array $resolved): array
     {
+        $container = App::getInstance();
         $instances = [];
 
         foreach ($resolved as [$class, $parameters]) {
-            $instance = new $class();
+            try {
+                $instance = $container->make($class);
+            } catch (\Throwable) {
+                $instance = new $class();
+            }
             if ($parameters !== []) {
                 $instance->setOptions($parameters);
             }
@@ -135,126 +182,5 @@ class RouteAction
         }
 
         return $instances;
-    }
-
-    /**
-     * 执行闭包回调
-     */
-    private static function doCallback(callable $action): mixed
-    {
-        $params = app(Reflection::class)->getCallBackParam($action);
-
-        // 模型绑定：检测参数类型提示
-        $params = static::resolveModelBindings($action, $params);
-
-        return call_user_func_array($action, $params);
-    }
-
-    /**
-     * 执行控制器方法
-     * @throws \Exception
-     */
-    private static function doClassMethod(string $action, ?Route $route = null): Response
-    {
-        [$class, $method] = explode('@', $action);
-
-        // 检查是否已经有完整命名空间
-        if (!str_contains($class, '\\')) {
-            $fullClass = '\App\Controllers\\' . $class;
-        } else {
-            $fullClass = $class;
-        }
-
-        $params = app(Reflection::class)->getClassMethodParamInject($fullClass, $method);
-
-        // 检测 FormRequest 参数并自动解析验证
-        $params = static::resolveFormRequests($fullClass, $method, $params);
-
-        $instance = new $fullClass();
-
-        return new Response(call_user_func_array([$instance, $method], $params));
-    }
-
-    /**
-     * 检测并解析 FormRequest 参数
-     *
-     * 通过 Reflection 检查控制器方法的参数类型，
-     * 如果参数是 FormRequest 子类，自动创建实例并执行验证。
-     */
-    private static function resolveFormRequests(string $class, string $method, array $params): array
-    {
-        if (!class_exists($class) || !method_exists($class, $method)) {
-            return $params;
-        }
-
-        $reflection = new \ReflectionMethod($class, $method);
-
-        foreach ($reflection->getParameters() as $index => $param) {
-            $type = $param->getType();
-            if ($type === null || $type->isBuiltin()) {
-                continue;
-            }
-
-            $typeName = $type->getName();
-
-            // 检查是否是 FormRequest 子类
-            if (class_exists($typeName) && is_subclass_of($typeName, \Bin\Validation\FormRequest::class)) {
-                // 创建 FormRequest 实例（从当前请求数据）
-                /** @var \Bin\Validation\FormRequest $formRequest */
-                $formRequest = new $typeName(
-                    $_GET,
-                    $_POST,
-                    $_SERVER,
-                    $_COOKIE
-                );
-
-                // 执行验证
-                $formRequest->validateResolved();
-
-                // 注入已验证的 FormRequest 实例
-                $params[$index] = $formRequest;
-            }
-        }
-
-        return $params;
-    }
-
-    /**
-     * 解析模型绑定参数
-     */
-    private static function resolveModelBindings(callable $action, array $params): array
-    {
-        $reflection = new \ReflectionFunction($action instanceof \Closure ? $action : \Closure::fromCallable($action));
-        $request = \Bin\Request\Request::capture();
-        $urlParams = $request->getUrlParam() ?? [];
-
-        foreach ($reflection->getParameters() as $index => $param) {
-            $type = $param->getType();
-            if ($type === null || $type->isBuiltin()) {
-                continue;
-            }
-
-            $typeName = $type->getName();
-            $paramName = $param->getName();
-
-            // 检查是否有显式绑定
-            if (RouteBinding::hasBinding($paramName)) {
-                $value = $urlParams[$paramName] ?? ($params[$index] ?? null);
-                if ($value !== null) {
-                    $params[$index] = RouteBinding::resolve($paramName, $value);
-                }
-                continue;
-            }
-
-            // 隐式绑定：类型是模型类
-            if (class_exists($typeName) && is_subclass_of($typeName, \Bin\Database\Model::class)) {
-                $value = $urlParams[$paramName] ?? ($params[$index] ?? null);
-                if ($value !== null && !($value instanceof $typeName)) {
-                    $params[$index] = RouteBinding::resolveForClass($typeName, $value);
-                }
-            }
-        }
-
-        return $params;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Route;
 
 use Bin\App\App;
+use Bin\Exception\NotFoundHttpException;
 use Bin\Request\Request;
 use Exception;
 
@@ -80,7 +81,7 @@ class RouteCollection
             return self::$fallbackRoute;
         }
 
-        throw new \Exception('ROUTE NO MATCH', 404);
+        throw new NotFoundHttpException('Route not found');
     }
 
     /**
@@ -211,11 +212,11 @@ class RouteCollection
     public static function __callStatic(string $method, array $param): void
     {
         if (!in_array(strtolower($method), self::$methods, true)) {
-            throw new Exception("REQUEST METHOD NOT MATCH: {$method}", 405);
+            throw new \Bin\Exception\MethodNotAllowedHttpException("Method not allowed: {$method}");
         }
 
         if (!isset($param[0]) || !isset($param[1])) {
-            throw new Exception('Route requires path and action', 400);
+            throw new \Bin\Exception\HttpException(400, 'Route requires path and action');
         }
 
         self::action($method, $param[0], $param[1]);
@@ -406,7 +407,7 @@ class RouteCollection
     public static function url(string $name, array $params = []): string
     {
         if (!isset(self::$namedRoutes[$name])) {
-            throw new Exception("Named route '{$name}' not found", 404);
+            throw new NotFoundHttpException("Named route '{$name}' not found");
         }
 
         return self::$namedRoutes[$name]->url($params);

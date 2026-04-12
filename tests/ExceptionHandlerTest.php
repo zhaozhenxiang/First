@@ -229,4 +229,136 @@ class ExceptionHandlerTest extends TestCase
 
         $this->assertInstanceOf(Response::class, $response);
     }
+
+    // ================================================================
+    // 异常驱动流程 — 各模块 throw → ExceptionHandler render
+    // ================================================================
+
+    public function testAbortThrowsHttpException(): void
+    {
+        try {
+            abort(403, 'Forbidden');
+            $this->fail('Expected HttpException was not thrown');
+        } catch (\Bin\Exception\HttpException $e) {
+            $this->assertEquals(403, $e->getStatusCode());
+            $this->assertEquals('Forbidden', $e->getMessage());
+        }
+    }
+
+    public function testAbortDefaultMessage(): void
+    {
+        try {
+            abort(500);
+        } catch (\Bin\Exception\HttpException $e) {
+            $this->assertEquals(500, $e->getStatusCode());
+            $this->assertEquals('Error 500', $e->getMessage());
+        }
+    }
+
+    public function testAbortCustomMessage(): void
+    {
+        try {
+            abort(403, 'Go away');
+        } catch (\Bin\Exception\HttpException $e) {
+            $this->assertEquals(403, $e->getStatusCode());
+            $this->assertEquals('Go away', $e->getMessage());
+        }
+    }
+
+    public function testRateLimitExceededExceptionRendered(): void
+    {
+        $e = new \Bin\Exception\RateLimitExceededException(
+            'Too many requests',
+            null,
+            ['Retry-After' => '60']
+        );
+
+        $response = $this->handler->render($e);
+
+        $this->assertInstanceOf(Response::class, $response);
+        // debug 模式下返回包含异常信息的 HTML
+        $this->assertStringContainsString('429', $response->getContent());
+        $this->assertEquals('60', $e->getHeaders()['Retry-After']);
+    }
+
+    public function testMethodNotAllowedHttpExceptionRendered(): void
+    {
+        $e = new \Bin\Exception\MethodNotAllowedHttpException(
+            'Method Not Allowed',
+            ['GET', 'POST']
+        );
+
+        $response = $this->handler->render($e);
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals(['Allow' => 'GET, POST'], $e->getHeaders());
+    }
+
+    public function testRouteNotFoundThrowsNotFoundHttpException(): void
+    {
+        \Bin\Route\RouteCollection::clear();
+
+        try {
+            \Bin\Route\RouteCollection::getRoute();
+            $this->fail('Expected NotFoundHttpException was not thrown');
+        } catch (\Bin\Exception\NotFoundHttpException $e) {
+            $this->assertEquals(404, $e->getStatusCode());
+        }
+    }
+
+    public function testExceptionHandlerHandlesAllHttpCodes(): void
+    {
+        $codes = [401, 403, 404, 405, 422, 429, 500];
+        foreach ($codes as $code) {
+            $e = new \Bin\Exception\HttpException($code, "Error {$code}");
+            $response = $this->handler->render($e);
+            $this->assertInstanceOf(Response::class, $response, "Failed for HTTP {$code}");
+        }
+    }
+
+    public function testValidationExceptionWebRedirect(): void
+    {
+        // 非 AJAX 的 ValidationException → 重定向响应
+        $handler = new ExceptionHandler(false);
+        $e = new ValidationException(['name' => 'Name is required']);
+
+        $response = $handler->render($e);
+
+        $this->assertInstanceOf(Response::class, $response);
+    }
+
+    public function testGenericMessageMapping(): void
+    {
+        // 通过反射测试 getGenericMessage — 间接通过 render
+        $handler = new ExceptionHandler(false);
+        $e = new \Bin\Exception\HttpException(400, '');
+        $response = $handler->render($e);
+        $this->assertInstanceOf(Response::class, $response);
+
+        $e = new \Bin\Exception\HttpException(503, '');
+        $response = $handler->render($e);
+        $this->assertInstanceOf(Response::class, $response);
+    }
+
+    public function testDontReportIncludesAuthenticationAndValidation(): void
+    {
+        $reported = [];
+
+        $this->handler->reportable(\Throwable::class, function (\Throwable $e) use (&$reported) {
+            $reported[] = get_class($e);
+        });
+
+        $this->handler->report(new AuthenticationException());
+        $this->handler->report(new ValidationException([]));
+        $this->handler->report(new NotFoundHttpException());
+
+        // 这些异常不应被报告
+        $this->assertNotContains(AuthenticationException::class, $reported);
+        $this->assertNotContains(ValidationException::class, $reported);
+        $this->assertNotContains(NotFoundHttpException::class, $reported);
+
+        // 其他异常应该报告
+        $this->handler->report(new \RuntimeException('test'));
+        $this->assertContains('RuntimeException', $reported);
+    }
 }

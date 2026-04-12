@@ -91,34 +91,18 @@ abstract class FormRequest extends Request
 
     /**
      * 验证失败处理
+     *
+     * 抛出 ValidationException，由 ExceptionHandler 统一渲染。
      */
     protected function failedValidation(ValidationManager $validator): never
     {
         $errors = $validator->getErrors();
         $errorArray = $errors instanceof MessageBag ? $errors->all() : [];
 
-        if ($this->expectsJson()) {
-            header('Content-Type: application/json', true, 422);
-            echo json_encode([
-                'message' => 'The given data was invalid.',
-                'errors' => $errorArray,
-            ], JSON_THROW_ON_ERROR);
-            exit;
-        }
-
-        // Web 请求：闪存旧输入 + 错误，重定向回上一页
-        $this->flash();
-
-        if (function_exists('session')) {
-            $session = session();
-            if ($session !== null && method_exists($session, 'flash')) {
-                $session->flash('_errors', $errorArray);
-            }
-        }
-
-        $referer = $this->header('REFERER') ?? '/';
-        header("Location: {$referer}", true, 302);
-        exit;
+        throw new \Bin\Exception\ValidationException(
+            $errorArray,
+            'The given data was invalid.'
+        );
     }
 
     public function getValidator(): ?ValidationManager
