@@ -12,12 +12,16 @@ class ValidationException extends \Exception
     /** @var array<string, string> */
     private array $errors;
 
+    /** @var string 错误袋名称 */
+    private string $errorBag;
+
     /**
      * @param array<string, string> $errors
      */
-    public function __construct(array $errors, string $message = 'Validation failed')
+    public function __construct(array $errors, string $message = 'Validation failed', string $errorBag = 'default')
     {
         $this->errors = $errors;
+        $this->errorBag = $errorBag;
         parent::__construct($message, 422);
     }
 
@@ -36,5 +40,13 @@ class ValidationException extends \Exception
     public function getFirstError(): string
     {
         return array_values($this->errors)[0] ?? 'Validation failed';
+    }
+
+    /**
+     * 获取错误袋名称
+     */
+    public function getErrorBag(): string
+    {
+        return $this->errorBag;
     }
 }
