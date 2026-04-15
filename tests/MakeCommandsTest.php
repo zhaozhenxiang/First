@@ -352,18 +352,34 @@ class MakeCommandsTest extends TestCase
 
     public function testValidateNameSnakeCaseFails(): void
     {
-        $cmd = new \Bin\Console\Commands\MakeControllerCommand();
-        $caught = false;
+        $cmd = $this->makeCommand(\Bin\Console\Commands\MakeControllerCommand::class, 'PostController');
+
         try {
-            // snake_case 应该 exit(1)，我们捕获输出
-            ob_start();
             $this->invoke($cmd, 'validateName', ['post_controller']);
-            ob_end_clean();
-        } catch (\Throwable) {
-            ob_end_clean();
-            $caught = true;
+            $this->fail('Expected invalid controller name to throw');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Invalid name', $e->getMessage());
         }
-        $this->assertTrue($caught || true); // validateName 调用 exit，在测试中会被 throw
+    }
+
+    public function testValidateMigrationNameSnakeCasePasses(): void
+    {
+        $cmd = $this->makeCommand(\Bin\Console\Commands\MakeMigrationCommand::class, 'create_posts_table');
+
+        $this->invoke($cmd, 'validateName', ['create_posts_table']);
+        $this->assertTrue(true);
+    }
+
+    public function testValidateMigrationNamePascalCaseFails(): void
+    {
+        $cmd = $this->makeCommand(\Bin\Console\Commands\MakeMigrationCommand::class, 'create_posts_table');
+
+        try {
+            $this->invoke($cmd, 'validateName', ['CreatePostsTable']);
+            $this->fail('Expected invalid migration name to throw');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Invalid migration name', $e->getMessage());
+        }
     }
 
     // ================================================================
@@ -449,6 +465,33 @@ class MakeCommandsTest extends TestCase
         $argProp = $baseRef->getProperty('argumentValues');
         $argProp->setAccessible(true);
         $argProp->setValue($cmd, ['name' => 'TestMiddleware']);
+        $optProp = $baseRef->getProperty('optionValues');
+        $optProp->setAccessible(true);
+        $optProp->setValue($cmd, []);
+
+        ob_start();
+        $result = $cmd->execute();
+        ob_end_clean();
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testExecuteInvalidNameReturnsFailureCode(): void
+    {
+        $cmd = new class ($this->tmpDir) extends \Bin\Console\Commands\MakeMiddlewareCommand {
+            private string $tmp;
+            public function __construct(string $tmp) { $this->tmp = $tmp; }
+            protected function getBaseDirectory(): string { return $this->tmp . '/app/Middleware'; }
+        };
+        $cmd->parseSignature();
+
+        $baseRef = new \ReflectionClass(\Bin\Console\Command::class);
+        $outputProp = $baseRef->getProperty('output');
+        $outputProp->setAccessible(true);
+        $outputProp->setValue($cmd, new \Bin\Console\Output());
+        $argProp = $baseRef->getProperty('argumentValues');
+        $argProp->setAccessible(true);
+        $argProp->setValue($cmd, ['name' => 'bad_name']);
         $optProp = $baseRef->getProperty('optionValues');
         $optProp->setAccessible(true);
         $optProp->setValue($cmd, []);

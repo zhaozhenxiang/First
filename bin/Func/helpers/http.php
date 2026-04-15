@@ -40,9 +40,7 @@ if (!function_exists('response')) {
      */
     function response(mixed $data = '', int $status = 200): \Bin\Response\Response
     {
-        $response = new \Bin\Response\Response($data);
-        $response->setStatus($status);
-        return $response;
+        return new \Bin\Response\Response($data, $status);
     }
 }
 
@@ -50,11 +48,11 @@ if (!function_exists('redirect')) {
     /**
      * 重定向到指定 URL
      */
-    function redirect(string $url, int $status = 302): never
+    function redirect(string $url, int $status = 302): \Bin\Response\Response
     {
-        http_response_code($status);
-        header("Location: {$url}");
-        exit;
+        return new \Bin\Response\Response('', $status, [
+            'Location' => $url,
+        ]);
     }
 }
 
@@ -62,10 +60,10 @@ if (!function_exists('back')) {
     /**
      * 返回上一页
      */
-    function back(): never
+    function back(): \Bin\Response\Response
     {
         $referer = $_SERVER['HTTP_REFERER'] ?? '/';
-        redirect($referer);
+        return redirect($referer);
     }
 }
 

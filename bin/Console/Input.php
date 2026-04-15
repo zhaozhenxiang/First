@@ -21,7 +21,7 @@ class Input
     private array $options = [];
 
     /** @var string 命令名称 */
-    private string $commandName;
+    private string $commandName = '';
 
     /** @var resource|null STDIN 资源 */
     private $stdin;
@@ -29,7 +29,7 @@ class Input
     /**
      * 构造函数
      */
-    public function __construct(array $argv = null)
+    public function __construct(?array $argv = null)
     {
         $this->argv = $argv ?? $_SERVER['argv'];
         $this->stdin = fopen('php://stdin', 'r');

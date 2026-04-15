@@ -29,6 +29,8 @@ class TestCommand
 
     protected ?string $filter = null;
 
+    protected ?string $singleTestFile = null;
+
     public function __construct(array $argv)
     {
         $this->testPath = basePath('/tests');
@@ -64,9 +66,7 @@ class TestCommand
         } elseif (str_starts_with($arg, '-')) {
             // 未知选项，忽略
         } elseif (is_file($arg)) {
-            // 运行指定文件
-            $this->runTestFile($arg);
-            exit(0);
+            $this->singleTestFile = $arg;
         } else {
             // 可能是目录
             if (is_dir($arg)) {
@@ -78,7 +78,7 @@ class TestCommand
     /**
      * 运行测试文件
      */
-    protected function runTestFile(string $file): void
+    protected function runTestFile(string $file): int
     {
         require_once $file;
 
@@ -86,14 +86,14 @@ class TestCommand
 
         if (!class_exists($className)) {
             echo "Error: Could not find class {$className}\n";
-            exit(1);
+            return 1;
         }
 
         $instance = new $className();
 
         if (!($instance instanceof \Bin\Testing\TestCase)) {
             echo "Error: Class {$className} does not extend TestCase\n";
-            exit(1);
+            return 1;
         }
 
         $methods = $instance->getTestMethods();
@@ -131,7 +131,7 @@ class TestCommand
         echo "\n";
         echo "Passed: {$passed}, Failed: {$failed}\n";
 
-        exit($failed > 0 ? 1 : 0);
+        return $failed > 0 ? 1 : 0;
     }
 
     /**
@@ -161,6 +161,10 @@ class TestCommand
      */
     public function run(): int
     {
+        if ($this->singleTestFile !== null) {
+            return $this->runTestFile($this->singleTestFile);
+        }
+
         echo "Testing Framework\n";
         echo "==================\n\n";
 
@@ -188,6 +192,7 @@ class TestCommand
     }
 }
 
-// 运行测试
-$command = new TestCommand($argv);
-exit($command->run());
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    $command = new TestCommand($argv);
+    exit($command->run());
+}

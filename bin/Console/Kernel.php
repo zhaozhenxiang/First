@@ -280,6 +280,7 @@ class Kernel
     public static function callSilent(string $command, array $arguments = []): int
     {
         self::ensureBootstrapped();
+        self::discover();
 
         // 临时捕获输出
         ob_start();
@@ -355,10 +356,15 @@ class Kernel
      */
     private static function showHelp(Input $input, Output $output): int
     {
-        $commandName = $input->getArgument(1);
+        $commandName = $input->getArgument(0);
 
-        if ($commandName !== null && self::hasCommand($commandName)) {
-            return self::showCommandHelp($commandName, $output);
+        if ($commandName !== null) {
+            if (self::hasCommand($commandName)) {
+                return self::showCommandHelp($commandName, $output);
+            }
+
+            $output->error("Command not found: {$commandName}");
+            return 1;
         }
 
         $output->title('Available Commands');

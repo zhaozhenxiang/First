@@ -11,3 +11,7 @@
  */
 
 require_once __DIR__ . '/bin/Testing/TestCommand.php';
+
+$command = new TestCommand($argv);
+
+exit($command->run());

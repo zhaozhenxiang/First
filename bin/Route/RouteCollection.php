@@ -492,8 +492,9 @@ class RouteCollection
     public static function redirect(string $path, string $destination, int $status = 302): Route
     {
         return self::action('GET', $path, function () use ($destination, $status) {
-            header("Location: {$destination}", true, $status);
-            exit;
+            return new \Bin\Response\Response('', $status, [
+                'Location' => $destination,
+            ]);
         });
     }
 

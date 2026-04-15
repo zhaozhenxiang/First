@@ -211,6 +211,26 @@ class ConsoleTest extends TestCase
         $this->assertEquals(0, $exitCode);
     }
 
+    public function testProgrammaticListCommandCallReturnsSuccess(): void
+    {
+        $app = require basePath('bootstrap/app.php');
+        $kernel = $app->getConsoleKernel();
+
+        $exitCode = $kernel->call('list');
+
+        $this->assertEquals(0, $exitCode);
+    }
+
+    public function testProgrammaticHelpCommandCallReturnsSuccess(): void
+    {
+        $app = require basePath('bootstrap/app.php');
+        $kernel = $app->getConsoleKernel();
+
+        $exitCode = $kernel->call('help', ['test']);
+
+        $this->assertEquals(0, $exitCode);
+    }
+
     public function testProgressBar(): void
     {
         $progress = $this->output->progressStart(100);

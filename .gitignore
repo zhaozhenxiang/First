@@ -33,3 +33,4 @@ composer.lock
 # Cache
 *.cache
 .gitnexus
+graphify-out

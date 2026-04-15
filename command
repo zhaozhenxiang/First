@@ -11,6 +11,6 @@ declare(strict_types=1);
 
 $app = require __DIR__ . '/bootstrap/app.php';
 
-$kernel = new \Bin\Foundation\ConsoleKernel($app);
+$kernel = $app->getConsoleKernel();
 
 exit($kernel->handle());

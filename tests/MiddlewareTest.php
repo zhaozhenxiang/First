@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\Request\Request;
+use Bin\Response\Response;
 use Bin\Testing\TestCase;
 use Bin\Middleware\Middleware;
 
@@ -95,6 +97,24 @@ class MiddlewareTest extends TestCase
         $field = \Bin\Middleware\CsrfMiddleware::field();
         $this->assertStringContainsString('_csrf_token', $field);
         $this->assertStringContainsString('hidden', $field);
+    }
+
+    public function testCsrfMiddlewareReturnsResponseOnInvalidToken(): void
+    {
+        $_SESSION = ['_csrf_token' => 'expected-token'];
+
+        $middleware = new \Bin\Middleware\CsrfMiddleware();
+        $request = new Request(
+            query: [],
+            post: ['_csrf_token' => 'wrong-token'],
+            server: ['REQUEST_METHOD' => 'POST']
+        );
+
+        $result = $middleware->handle($request, fn($req) => 'ok');
+
+        $this->assertInstanceOf(Response::class, $result);
+        $this->assertEquals(403, $result->getStatusCode());
+        $this->assertEquals('CSRF token validation failed', $result->getContent());
     }
 
     // === RateLimiter 核心逻辑 ===

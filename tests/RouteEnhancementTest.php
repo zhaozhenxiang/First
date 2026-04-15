@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\Testing\TestCase;
+use Bin\Response\Response;
 use Bin\Route\Route;
 use Bin\Route\RouteCollection;
 use Bin\Route\RouteBinding;
@@ -213,6 +214,11 @@ class RouteEnhancementTest extends TestCase
         $this->assertInstanceOf(Route::class, $route);
         $this->assertEquals('GET', $route->getMethod());
         $this->assertEquals('/old', $route->getPath());
+
+        $response = ($route->getAction())();
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals(302, $response->getStatusCode());
+        $this->assertEquals('/new', $response->getHeader('Location'));
     }
 
     public function testPermanentRedirectRoute(): void
@@ -220,6 +226,11 @@ class RouteEnhancementTest extends TestCase
         $route = RouteCollection::permanentRedirect('/old', '/new');
 
         $this->assertInstanceOf(Route::class, $route);
+
+        $response = ($route->getAction())();
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals(301, $response->getStatusCode());
+        $this->assertEquals('/new', $response->getHeader('Location'));
     }
 
     public function testViewRoute(): void

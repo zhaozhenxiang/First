@@ -72,4 +72,33 @@ class ResponseTest extends TestCase
         $decoded = json_decode($response->getContent(), true);
         $this->assertEquals($data, $decoded);
     }
+
+    public function testResponseStoresStatusCode(): void
+    {
+        $response = new Response('created', 201);
+
+        $this->assertEquals(201, $response->getStatusCode());
+        $this->assertEquals('created', $response->getContent());
+    }
+
+    public function testResponseStoresHeaders(): void
+    {
+        $response = new Response('body', 202, [
+            'Content-Type' => 'application/json',
+            'X-Test' => 'ok',
+        ]);
+
+        $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+        $this->assertEquals('ok', $response->getHeader('X-Test'));
+        $this->assertArrayHasKey('Content-Type', $response->getHeaders());
+    }
+
+    public function testRedirectHelperReturnsResponse(): void
+    {
+        $response = redirect('/target');
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals(302, $response->getStatusCode());
+        $this->assertEquals('/target', $response->getHeader('Location'));
+    }
 }

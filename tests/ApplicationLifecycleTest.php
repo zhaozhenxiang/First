@@ -14,6 +14,7 @@ use Bin\Foundation\Bootstrap\SetRequestContext;
 use Bin\Foundation\Bootstrap\RegisterProviders;
 use Bin\Foundation\Bootstrap\BootProviders;
 use Bin\Foundation\Contracts\Bootstrapper;
+use Bin\Response\Response;
 use Bin\Testing\TestCase;
 
 /**
@@ -66,6 +67,28 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertTrue(str_ends_with($app->configPath('app.php'), '/config/app.php'));
         $this->assertTrue(str_ends_with($app->bootstrapPath('app.php'), '/bootstrap/app.php'));
         $this->assertTrue(str_ends_with($app->storagePath('logs'), '/storage/logs'));
+    }
+
+    public function testAppExposesHttpKernel(): void
+    {
+        $app = App::getInstance();
+
+        $kernel = $app->getHttpKernel();
+
+        $this->assertInstanceOf(HttpKernel::class, $kernel);
+        $this->assertSame($app, $kernel->getApp());
+        $this->assertSame($kernel, $app->getHttpKernel());
+    }
+
+    public function testAppExposesConsoleKernel(): void
+    {
+        $app = App::getInstance();
+
+        $kernel = $app->getConsoleKernel();
+
+        $this->assertInstanceOf(ConsoleKernel::class, $kernel);
+        $this->assertSame($app, $kernel->getApp());
+        $this->assertSame($kernel, $app->getConsoleKernel());
     }
 
     // ─── Bootstrapper 接口 ──────────────────────────────────────
@@ -326,6 +349,64 @@ class ApplicationLifecycleTest extends TestCase
 
         $bootstrapper->bootstrap($app);
         $this->assertTrue(true);
+    }
+
+    public function testHandleExceptionsSendsRenderedResponse(): void
+    {
+        $app = App::getInstance();
+        $handler = new class extends \Bin\Exception\ExceptionHandler {
+            public bool $reported = false;
+
+            public function __construct()
+            {
+                parent::__construct(false);
+            }
+
+            public function report(\Throwable $e): void
+            {
+                $this->reported = true;
+            }
+
+            public function render(\Throwable $e): ?Response
+            {
+                return new Response('handled-response', 500);
+            }
+        };
+
+        $app->instance(\Bin\Exception\ExceptionHandler::class, $handler);
+
+        $bootstrapper = new HandleExceptions();
+        $bootstrapper->bootstrap($app);
+
+        $registered = set_exception_handler(static function (): void {});
+        restore_exception_handler();
+
+        $this->assertTrue(is_callable($registered));
+
+        ob_start();
+        $registered(new \RuntimeException('boom'));
+        $output = ob_get_clean();
+
+        $this->assertTrue($handler->reported);
+        $this->assertEquals('handled-response', $output);
+    }
+
+    public function testHandleExceptionsFallbackSendsResponse(): void
+    {
+        $app = App::getInstance();
+        $bootstrapper = new HandleExceptions();
+        $bootstrapper->bootstrap($app);
+
+        $registered = set_exception_handler(static function (): void {});
+        restore_exception_handler();
+
+        $this->assertTrue(is_callable($registered));
+
+        ob_start();
+        $registered(new \RuntimeException('fallback boom'));
+        $output = ob_get_clean();
+
+        $this->assertEquals('Internal Server Error', $output);
     }
 
     public function testSetRequestContextBootstrap(): void

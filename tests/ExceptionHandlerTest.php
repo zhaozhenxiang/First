@@ -319,12 +319,17 @@ class ExceptionHandlerTest extends TestCase
     public function testValidationExceptionWebRedirect(): void
     {
         // 非 AJAX 的 ValidationException → 重定向响应
+        $_SERVER['HTTP_REFERER'] = '/previous';
+        $_POST = ['name' => 'bad'];
+
         $handler = new ExceptionHandler(false);
         $e = new ValidationException(['name' => 'Name is required']);
 
         $response = $handler->render($e);
 
         $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals(302, $response->getStatusCode());
+        $this->assertEquals('/previous', $response->getHeader('Location'));
     }
 
     public function testGenericMessageMapping(): void

@@ -9,15 +9,23 @@ use Bin\View\View;
 
 class Response
 {
-    private $originContent;
+    private mixed $originContent = '';
+
+    private int $statusCode = 200;
+
+    /** @var array<string, string> */
+    private array $headers = [];
 
     /**
      * @param $response
      * @throws \Exception
      * @todo 之后要把该函数的实现改成工厂模式
      */
-    public function __construct($response = null)
+    public function __construct($response = null, int $statusCode = 200, array $headers = [])
     {
+        $this->statusCode = $statusCode;
+        $this->headers = $headers;
+
         //根据response类型来获取数据
         if (is_string($response)) {
             $this->originContent = $response;
@@ -30,6 +38,10 @@ class Response
         //todo 处理编译view的问题
         if ($response instanceof View) {
             $this->originContent = (new Compiler($response))->render();
+        }
+
+        if ($response === null) {
+            $this->originContent = '';
         }
         //todo 处理active record
     }
@@ -64,10 +76,53 @@ class Response
     }
 
     /**
+     * 获取状态码
+     */
+    public function getStatusCode(): int
+    {
+        return $this->statusCode;
+    }
+
+    /**
+     * 获取全部响应头
+     *
+     * @return array<string, string>
+     */
+    public function getHeaders(): array
+    {
+        return $this->headers;
+    }
+
+    /**
+     * 获取单个响应头
+     */
+    public function getHeader(string $name): ?string
+    {
+        return $this->headers[$name] ?? null;
+    }
+
+    /**
+     * 设置响应头
+     */
+    public function setHeader(string $name, string $value): self
+    {
+        $this->headers[$name] = $value;
+
+        return $this;
+    }
+
+    /**
      * 发送响应内容到输出缓冲区
      */
     public function send(): void
     {
+        if (!headers_sent()) {
+            http_response_code($this->statusCode);
+            foreach ($this->headers as $name => $value) {
+                header("{$name}: {$value}", true);
+            }
+        }
+
         echo $this->getContent();
     }
 
@@ -77,7 +132,7 @@ class Response
      * @param  string  $content
      * @return self
      */
-    public function setStatus(int $httpStatus, string $content): self
+    public function setStatus(int $httpStatus, mixed $content = null): self
     {
         $status = [
             // Informational 1xx
@@ -128,9 +183,7 @@ class Response
             505 => 'HTTP Version Not Supported',
             509 => 'Bandwidth Limit Exceeded',
         ];
-        if (array_key_exists($httpStatus, $status)) {
-            header('HTTP/1.1 ' . $httpStatus . ' ' . $status[$httpStatus]);
-        }
+        $this->statusCode = $httpStatus;
 
         if (null == $content) {
             $this->originContent = (string)View::make($httpStatus);

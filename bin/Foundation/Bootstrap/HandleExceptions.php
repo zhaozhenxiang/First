@@ -42,17 +42,15 @@ class HandleExceptions implements BootstrapperContract
             // 委托给 ExceptionHandler
             if ($app->bound(\Bin\Exception\ExceptionHandler::class)) {
                 $app->make(\Bin\Exception\ExceptionHandler::class)->report($e);
-                $app->make(\Bin\Exception\ExceptionHandler::class)->render($e);
+                $response = $app->make(\Bin\Exception\ExceptionHandler::class)->render($e);
+                if ($response !== null) {
+                    $response->send();
+                }
                 return;
             }
 
             // 降级：直接输出
-            if (PHP_SAPI === 'cli') {
-                fwrite(STDERR, "Error: {$e->getMessage()} in {$e->getFile()}:{$e->getLine()}\n");
-            } else {
-                http_response_code(500);
-                echo "Internal Server Error";
-            }
+            (new \Bin\Response\Response('Internal Server Error', 500))->send();
         });
     }
 }

@@ -13,7 +13,7 @@ define('START_TIME', time());
 
 $app = require __DIR__ . '/../bootstrap/app.php';
 
-$kernel = new \Bin\Foundation\HttpKernel($app);
+$kernel = $app->getHttpKernel();
 
 $response = $kernel->handle();
 

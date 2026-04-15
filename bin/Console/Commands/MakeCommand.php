@@ -46,7 +46,11 @@ abstract class MakeCommand extends Command
             return 1;
         }
 
-        $this->validateName($name);
+        try {
+            $this->validateName($name);
+        } catch (\RuntimeException) {
+            return 1;
+        }
 
         $targetPath = $this->getTargetPath($name);
 
@@ -87,8 +91,9 @@ abstract class MakeCommand extends Command
         $parts = explode('/', $name);
         foreach ($parts as $part) {
             if (!preg_match('/^[A-Z][a-zA-Z0-9]*$/', $part)) {
-                $this->error("Invalid name '{$part}'. Use PascalCase (e.g. PostController).");
-                exit(1);
+                $message = "Invalid name '{$part}'. Use PascalCase (e.g. PostController).";
+                $this->error($message);
+                throw new \RuntimeException($message);
             }
         }
     }

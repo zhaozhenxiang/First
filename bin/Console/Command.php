@@ -415,6 +415,22 @@ abstract class Command
     }
 
     /**
+     * 输出标题
+     */
+    public function title(string $title): void
+    {
+        $this->output->title($title);
+    }
+
+    /**
+     * 输出分节标题
+     */
+    public function section(string $title): void
+    {
+        $this->output->section($title);
+    }
+
+    /**
      * 获取输入实例
      */
     public function getInput(): Input

@@ -26,29 +26,27 @@ use Bin\Database\Schema\Schema;
 
 class MigrateCommand
 {
-    protected Migrator $migrator;
+    protected ?Migrator $migrator = null;
 
-    protected MigrationCreator $creator;
+    protected ?MigrationCreator $creator = null;
 
     protected string $migrationsPath;
 
     public function __construct()
     {
         $this->migrationsPath = basePath('/database/migrations');
-        $this->migrator = new Migrator($this->migrationsPath);
-        $this->creator = new MigrationCreator($this->migrationsPath);
     }
 
     /**
      * 运行命令
      */
-    public function run(array $argv): void
+    public function run(array $argv): int
     {
         $command = $argv[1] ?? 'help';
 
-        match ($command) {
+        return match ($command) {
             'migrate' => $this->migrate(),
-            'rollback' => $this->rollback($argv[2] ?? null),
+            'rollback' => $this->rollback($argv[2] ?? null, $argv[3] ?? null),
             'reset' => $this->reset(),
             'refresh' => $this->refresh(),
             'fresh' => $this->fresh(),
@@ -62,72 +60,76 @@ class MigrateCommand
     /**
      * 运行待执行的迁移
      */
-    protected function migrate(): void
+    protected function migrate(): int
     {
         echo "Running migrations...\n\n";
 
         try {
-            $this->migrator->run();
+            $this->getMigrator()->run();
+            return 0;
         } catch (\Exception $e) {
             echo "Error: {$e->getMessage()}\n";
-            exit(1);
+            return 1;
         }
     }
 
     /**
      * 回滚迁移
      */
-    protected function rollback(?string $option): void
+    protected function rollback(?string $option, ?string $value = null): int
     {
         echo "Rolling back migrations...\n\n";
 
         try {
-            if ($option === 'step' && isset($argv[3])) {
-                $steps = (int) $argv[3];
-                $this->migrator->rollback($steps);
+            if ($option === 'step' && $value !== null) {
+                $steps = (int) $value;
+                $this->getMigrator()->rollback($steps);
             } else {
-                $this->migrator->rollback();
+                $this->getMigrator()->rollback();
             }
+            return 0;
         } catch (\Exception $e) {
             echo "Error: {$e->getMessage()}\n";
-            exit(1);
+            return 1;
         }
     }
 
     /**
      * 回滚所有迁移
      */
-    protected function reset(): void
+    protected function reset(): int
     {
         echo "Resetting migrations...\n\n";
 
         try {
-            $this->migrator->reset();
+            $this->getMigrator()->reset();
+            return 0;
         } catch (\Exception $e) {
             echo "Error: {$e->getMessage()}\n";
-            exit(1);
+            return 1;
         }
     }
 
     /**
      * 回滚并重新运行
      */
-    protected function refresh(): void
+    protected function refresh(): int
     {
         echo "Refreshing migrations...\n\n";
 
         try {
-            $this->migrator->refresh();
+            $this->getMigrator()->refresh();
+            return 0;
         } catch (\Exception $e) {
             echo "Error: {$e->getMessage()}\n";
-            exit(1);
+            return 1;
         }
     }
 
     /**
      * 删除所有表并重新运行
      */
-    protected function fresh(): void
+    protected function fresh(): int
     {
         echo "Dropping all tables...\n\n";
 
@@ -147,65 +149,69 @@ class MigrateCommand
 
             echo "\nRunning migrations...\n\n";
 
-            $this->migrator->run();
+            $this->getMigrator()->run();
+            return 0;
         } catch (\Exception $e) {
             Schema::enableForeignKeyConstraints();
             echo "Error: {$e->getMessage()}\n";
-            exit(1);
+            return 1;
         }
     }
 
     /**
      * 查看迁移状态
      */
-    protected function status(): void
+    protected function status(): int
     {
         echo "Migration status:\n\n";
 
-        $files = $this->migrator->getMigrationFiles();
+        $files = $this->getMigrator()->getMigrationFiles();
 
-        $ran = $this->migrator->getRanMigrations();
+        $ran = $this->getMigrator()->getRanMigrations();
 
         foreach ($files as $file) {
             $basename = basename($file, '.php');
             $status = in_array($basename, $ran, true) ? '✓' : '✗';
             echo "  {$status} {$basename}\n";
         }
+
+        return 0;
     }
 
     /**
      * 创建迁移文件
      */
-    protected function make(?string $name, ?string $table): void
+    protected function make(?string $name, ?string $table): int
     {
         if ($name === null) {
             echo "Error: Migration name is required.\n";
             echo "Usage: php migrate make:create_migration_name [table]\n";
-            exit(1);
+            return 1;
         }
 
         try {
-            $path = $this->creator->create($name, $table);
+            $path = $this->getCreator()->create($name, $table);
             echo "Created migration: {$path}\n";
+            return 0;
         } catch (\Exception $e) {
             echo "Error: {$e->getMessage()}\n";
-            exit(1);
+            return 1;
         }
     }
 
     /**
      * 未知命令
      */
-    protected function unknownCommand(string $command): void
+    protected function unknownCommand(string $command): int
     {
         echo "Unknown command: {$command}\n\n";
-        $this->help();
+        return $this->help(1);
     }
 
     /**
      * 显示帮助
      */
-    protected function help(): void
+    protected function help(int $exitCode = 0): int
     {
         echo <<<HELP
 Migration Command Tool
@@ -231,8 +237,21 @@ Examples:
   php migrate make:create_posts posts     # Create migration for table
 
 HELP;
+
+        return $exitCode;
+    }
+
+    protected function getMigrator(): Migrator
+    {
+        return $this->migrator ??= new Migrator($this->migrationsPath);
+    }
+
+    protected function getCreator(): MigrationCreator
+    {
+        return $this->creator ??= new MigrationCreator($this->migrationsPath);
     }
 }
 
-// 运行命令
-(new MigrateCommand())->run($argv);
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    exit((new MigrateCommand())->run($argv));
+}

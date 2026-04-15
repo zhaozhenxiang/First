@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Exception;
 
 use Exception;
+use Bin\Response\Response;
 use Throwable;
 
 /**
@@ -33,7 +34,10 @@ class Handler
         // 检查是否有自定义处理器
         $type = get_class($e);
         if (isset(self::$handlers[$type])) {
-            call_user_func(self::$handlers[$type], $e);
+            $result = call_user_func(self::$handlers[$type], $e);
+            if ($result instanceof Response) {
+                $result->send();
+            }
             return;
         }
 
@@ -45,15 +49,11 @@ class Handler
             ob_end_clean();
         }
 
-        // 设置 HTTP 状态码
-        http_response_code($code);
+        $response = self::isDebug()
+            ? self::renderDebugResponse($e)
+            : self::renderProductionResponse($code);
 
-        // 根据环境决定显示详细错误
-        if (self::isDebug()) {
-            self::renderDebug($e);
-        } else {
-            self::renderProduction($code);
-        }
+        $response->send();
 
         // 记录错误日志
         self::log($e);
@@ -139,11 +139,11 @@ class Handler
     /**
      * 渲染调试页面
      */
-    private static function renderDebug(Throwable $e): void
+    private static function renderDebugResponse(Throwable $e): Response
     {
         $trace = self::formatTrace($e->getTrace());
 
-        echo "<!DOCTYPE html>
+        $content = "<!DOCTYPE html>
 <html>
 <head>
     <title>Error - {$e->getMessage()}</title>
@@ -192,6 +192,10 @@ class Handler
     </div>
 </body>
 </html>";
+
+        return new Response($content, self::getStatusCode($e), [
+            'Content-Type' => 'text/html',
+        ]);
     }
 
     /**
@@ -222,7 +226,7 @@ class Handler
     /**
      * 渲染生产环境错误页面
      */
-    private static function renderProduction(int $code): void
+    private static function renderProductionResponse(int $code): Response
     {
         $messages = [
             400 => 'Bad Request',
@@ -236,7 +240,7 @@ class Handler
 
         $message = $messages[$code] ?? 'Error';
 
-        echo "<!DOCTYPE html>
+        $content = "<!DOCTYPE html>
 <html>
 <head>
     <title>{$code} - {$message}</title>
@@ -255,6 +259,10 @@ class Handler
     </div>
 </body>
 </html>";
+
+        return new Response($content, $code, [
+            'Content-Type' => 'text/html',
+        ]);
     }
 
     /**

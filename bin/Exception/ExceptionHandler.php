@@ -197,14 +197,7 @@ class ExceptionHandler
             }
         }
 
-        // 通过 Response 对象发送重定向
-        $response = new Response('');
-        if (!headers_sent()) {
-            http_response_code(302);
-            header("Location: {$referer}", true, 302);
-        }
-
-        return $response;
+        return new Response('', 302, ['Location' => $referer]);
     }
 
     /**

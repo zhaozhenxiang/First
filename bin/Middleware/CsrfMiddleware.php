@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Middleware;
 
 use Bin\Request\Request;
+use Bin\Response\Response;
 
 /**
  * CSRF 防护中间件
@@ -37,8 +38,7 @@ class CsrfMiddleware extends Middleware
         }
 
         if (!self::validateToken($token)) {
-            http_response_code(403);
-            return 'CSRF token validation failed';
+            return new Response('CSRF token validation failed', 403);
         }
 
         return $next($request);

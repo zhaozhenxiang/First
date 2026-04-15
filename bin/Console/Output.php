@@ -354,7 +354,7 @@ class Output
     /**
      * 输出列表
      */
-    public function list(array $items, string $title = null): void
+    public function list(array $items, ?string $title = null): void
     {
         if ($title !== null) {
             $this->section($title);

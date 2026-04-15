@@ -100,6 +100,14 @@ class HttpKernel
     }
 
     /**
+     * 获取应用实例
+     */
+    public function getApp(): App
+    {
+        return $this->app;
+    }
+
+    /**
      * 在响应发送后调用 terminate 钩子
      *
      * 按逆序调用所有中间件的 terminate() 方法，

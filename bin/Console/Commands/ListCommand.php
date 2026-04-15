@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Console\Commands;
 
 use Bin\Console\Command;
+use Bin\Console\Kernel;
 
 /**
  * List 命令 - 列出所有可用命令

@@ -32,6 +32,16 @@ class App implements ContainerInterface
     private ?string $basePath = null;
 
     /**
+     * HTTP 内核实例
+     */
+    private ?\Bin\Foundation\HttpKernel $httpKernel = null;
+
+    /**
+     * Console 内核实例
+     */
+    private ?\Bin\Foundation\ConsoleKernel $consoleKernel = null;
+
+    /**
      * 底层容器实例
      */
     private Container $container;
@@ -324,6 +334,22 @@ class App implements ContainerInterface
     public function getProviderRepository(): ?ProviderRepository
     {
         return $this->providerRepository;
+    }
+
+    /**
+     * 获取 HTTP 内核
+     */
+    public function getHttpKernel(): \Bin\Foundation\HttpKernel
+    {
+        return $this->httpKernel ??= new \Bin\Foundation\HttpKernel($this);
+    }
+
+    /**
+     * 获取 Console 内核
+     */
+    public function getConsoleKernel(): \Bin\Foundation\ConsoleKernel
+    {
+        return $this->consoleKernel ??= new \Bin\Foundation\ConsoleKernel($this);
     }
 
     /**

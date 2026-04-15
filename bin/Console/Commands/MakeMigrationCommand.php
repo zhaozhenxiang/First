@@ -62,8 +62,9 @@ class MakeMigrationCommand extends MakeCommand
     protected function validateName(string $name): void
     {
         if (!preg_match('/^[a-z][a-z0-9_]*$/', $name)) {
-            $this->error("Invalid migration name '{$name}'. Use snake_case (e.g. create_posts_table).");
-            exit(1);
+            $message = "Invalid migration name '{$name}'. Use snake_case (e.g. create_posts_table).";
+            $this->error($message);
+            throw new \RuntimeException($message);
         }
     }
 }
