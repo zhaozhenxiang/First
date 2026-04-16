@@ -59,9 +59,7 @@ class ConsoleKernel
             return;
         }
 
-        if (!$this->app->hasBeenBootstrapped()) {
-            $this->app->bootstrapWith($this->bootstrappers);
-        }
+        $this->app->bootstrapWith($this->bootstrappers);
 
         $this->bootstrapped = true;
     }

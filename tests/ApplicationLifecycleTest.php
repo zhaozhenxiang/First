@@ -10,6 +10,8 @@ use Bin\Foundation\HttpKernel;
 use Bin\Foundation\Bootstrap\LoadEnvironmentVariables;
 use Bin\Foundation\Bootstrap\LoadConfiguration;
 use Bin\Foundation\Bootstrap\HandleExceptions;
+use Bin\Foundation\Bootstrap\LoadMiddlewareConfiguration;
+use Bin\Foundation\Bootstrap\LoadRoutes;
 use Bin\Foundation\Bootstrap\SetRequestContext;
 use Bin\Foundation\Bootstrap\RegisterProviders;
 use Bin\Foundation\Bootstrap\BootProviders;
@@ -171,6 +173,17 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertContains(BootProviders::class, $bootstrappers);
     }
 
+    public function testHttpKernelIncludesHttpOnlyBootstrappers(): void
+    {
+        $app = App::getInstance();
+        $kernel = new HttpKernel($app);
+
+        $bootstrappers = $kernel->getBootstrappers();
+
+        $this->assertContains(LoadMiddlewareConfiguration::class, $bootstrappers);
+        $this->assertContains(LoadRoutes::class, $bootstrappers);
+    }
+
     public function testHttpKernelBootstrapperOrder(): void
     {
         $app = App::getInstance();
@@ -305,6 +318,23 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertTrue($app->hasBeenBootstrapped());
         $this->assertTrue($app->isBooted());
         $this->assertCount(6, $app->getBootstrapped());
+    }
+
+    public function testHttpBootstrapRunsHttpOnlyStagesAfterConsoleBootstrap(): void
+    {
+        $app = App::getInstance();
+        $console = new ConsoleKernel($app);
+        $http = new HttpKernel($app);
+
+        $console->bootstrap();
+        $this->assertFalse($app->hasBeenBootstrappedBy(SetRequestContext::class));
+
+        $reflection = new \ReflectionMethod(HttpKernel::class, 'bootstrap');
+        $reflection->invoke($http);
+
+        $this->assertTrue($app->hasBeenBootstrappedBy(SetRequestContext::class));
+        $this->assertTrue($app->hasBeenBootstrappedBy(LoadMiddlewareConfiguration::class));
+        $this->assertTrue($app->hasBeenBootstrappedBy(LoadRoutes::class));
     }
 
     public function testBootstrapWithPartialPipeline(): void

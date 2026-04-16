@@ -45,6 +45,8 @@ class HttpKernel
         \Bin\Foundation\Bootstrap\SetRequestContext::class,
         \Bin\Foundation\Bootstrap\RegisterProviders::class,
         \Bin\Foundation\Bootstrap\BootProviders::class,
+        \Bin\Foundation\Bootstrap\LoadMiddlewareConfiguration::class,
+        \Bin\Foundation\Bootstrap\LoadRoutes::class,
     ];
 
     /**
@@ -69,15 +71,7 @@ class HttpKernel
      */
     protected function bootstrap(): void
     {
-        if (!$this->app->hasBeenBootstrapped()) {
-            $this->app->bootstrapWith($this->bootstrappers);
-        }
-
-        // 加载中间件配置
-        $this->loadMiddleware();
-
-        // 加载路由定义
-        $this->loadRoutes();
+        $this->app->bootstrapWith($this->bootstrappers);
     }
 
     /**
