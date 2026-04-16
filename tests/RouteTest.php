@@ -259,6 +259,24 @@ class RouteTest extends TestCase
         $this->assertFalse($route->matches('/post/abc/comment/abc'));
     }
 
+    public function testOptionalWhereConstraintMatchesWithoutOptionalSegment(): void
+    {
+        $route = Route::get('/reports/{year}/{month?}', function () {});
+        $route->where(['year' => '[0-9]{4}', 'month' => '[0-9]{2}']);
+
+        $this->assertTrue($route->matches('/reports/2026'));
+        $this->assertEquals(['year' => '2026'], $this->getMatchedParams($route));
+    }
+
+    public function testOptionalWhereConstraintMatchesWithOptionalSegment(): void
+    {
+        $route = Route::get('/reports/{year}/{month?}', function () {});
+        $route->where(['year' => '[0-9]{4}', 'month' => '[0-9]{2}']);
+
+        $this->assertTrue($route->matches('/reports/2026/04'));
+        $this->assertEquals(['year' => '2026', 'month' => '04'], $this->getMatchedParams($route));
+    }
+
     public function testGetWhereConstraints(): void
     {
         $route = Route::get('/user/{id}', function () {});
@@ -368,5 +386,14 @@ class RouteTest extends TestCase
         foreach ($allRoutes as $r) {
             $this->assertNotEquals('{fallback}', $r->getPath());
         }
+    }
+
+    private function getMatchedParams(RouteObj $route): ?array
+    {
+        $reflection = new \ReflectionClass($route);
+        $property = $reflection->getProperty('matchedParams');
+        $property->setAccessible(true);
+
+        return $property->getValue($route);
     }
 }

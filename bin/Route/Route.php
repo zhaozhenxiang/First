@@ -360,21 +360,30 @@ class Route
     private function matchWithConstraints(string $url): bool
     {
         $pathPattern = $this->getPath();
+        $segments = explode('/', trim($pathPattern, '/'));
+        $regex = '';
 
-        // 编译路径为正则
-        $regex = preg_replace_callback(
-            '/\{(\w+)\}/',
-            function (array $matches): string {
+        foreach ($segments as $segment) {
+            if (preg_match('/^\{(\w+)(\?)?\}$/', $segment, $matches) === 1) {
                 $param = $matches[1];
+                $optional = ($matches[2] ?? '') === '?';
                 $constraint = $this->wheres[$param] ?? '[^/]+';
-                return '(' . $constraint . ')';
-            },
-            $pathPattern
-        );
 
-        $regex = '#^' . $regex . '$#';
+                if ($optional) {
+                    $regex .= '(?:/(' . $constraint . '))?';
+                } else {
+                    $regex .= '/(' . $constraint . ')';
+                }
 
-        if (preg_match($regex, $url, $matches) > 0) {
+                continue;
+            }
+
+            $regex .= '/' . preg_quote($segment, '#');
+        }
+
+        $regex = '#^' . ($regex === '' ? '/' : $regex) . '$#';
+
+        if (preg_match($regex, $url, $matches, PREG_UNMATCHED_AS_NULL) > 0) {
             $this->matchedParams = $this->extractParams($pathPattern, $matches);
             return true;
         }
@@ -389,10 +398,10 @@ class Route
      */
     private function extractParams(string $pathPattern, array $matches): array
     {
-        preg_match_all('/\{(\w+)\}/', $pathPattern, $paramNames);
+        preg_match_all('/\{(\w+)\??\}/', $pathPattern, $paramNames);
         $params = [];
         foreach ($paramNames[1] as $index => $name) {
-            if (isset($matches[$index + 1])) {
+            if (array_key_exists($index + 1, $matches) && $matches[$index + 1] !== null) {
                 $params[$name] = $matches[$index + 1];
             }
         }
