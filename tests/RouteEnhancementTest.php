@@ -368,6 +368,14 @@ class RouteEnhancementTest extends TestCase
         $this->assertSame(42, $result->id);
     }
 
+    public function testImplicitModelBindingCoercesZeroPaddedNumericStringForTypedFindOrFail(): void
+    {
+        $result = RouteBinding::resolveForClass(TypedFindOrFailBoundModel::class, '042');
+
+        $this->assertInstanceOf(TypedFindOrFailBoundModel::class, $result);
+        $this->assertSame(42, $result->id);
+    }
+
     public function testImplicitModelBindingDoesNotSaturateOversizedNumericString(): void
     {
         $this->assertThrows(\TypeError::class, function () {

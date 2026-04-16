@@ -121,11 +121,17 @@ class RouteBinding
             return $value;
         }
 
-        if ($type->getName() === 'int' && is_string($value)) {
-            $normalized = filter_var($value, FILTER_VALIDATE_INT);
+        if ($type->getName() === 'int' && is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            $negative = str_starts_with($value, '-');
+            $digits = ltrim($negative ? substr($value, 1) : $value, '0');
+            $digits = $digits === '' ? '0' : $digits;
+            $bound = $negative ? ltrim((string) PHP_INT_MIN, '-') : (string) PHP_INT_MAX;
 
-            if ($normalized !== false) {
-                return $normalized;
+            if (
+                strlen($digits) < strlen($bound)
+                || (strlen($digits) === strlen($bound) && strcmp($digits, $bound) <= 0)
+            ) {
+                return (int) $value;
             }
         }
 
