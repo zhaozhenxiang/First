@@ -479,7 +479,7 @@ class Route
                 $optional = str_ends_with($raw, '?');
                 $name = rtrim($raw, '?');
 
-                if (array_key_exists($name, $params)) {
+                if (array_key_exists($name, $params) && $params[$name] !== null) {
                     return (string) $params[$name];
                 }
 

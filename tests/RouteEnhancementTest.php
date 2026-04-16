@@ -317,6 +317,15 @@ class RouteEnhancementTest extends TestCase
         });
     }
 
+    public function testNamedRouteUrlThrowsWhenRequiredParameterIsNull(): void
+    {
+        RouteCollection::get('/posts/{post}', fn () => 'ok')->name('posts.show');
+
+        $this->assertThrows(\Bin\Exception\UrlGenerationException::class, function () {
+            RouteCollection::url('posts.show', ['post' => null]);
+        });
+    }
+
     public function testNamedRouteUrlOmitsOptionalParameterWhenMissing(): void
     {
         RouteCollection::get('/reports/{year}/{month?}', fn () => 'ok')->name('reports.show');
