@@ -16,6 +16,9 @@ class ResponseServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->singleton(\Bin\Response\ResponseFactory::class, \Bin\Response\ResponseFactory::class);
+        $this->alias(\Bin\Response\ResponseFactory::class, 'response.factory');
+
         $this->bind('response', Response::class);
         $this->alias(Response::class, 'response');
     }
@@ -25,6 +28,6 @@ class ResponseServiceProvider extends ServiceProvider
      */
     public function provides(): array
     {
-        return ['response', Response::class];
+        return ['response', Response::class, 'response.factory', \Bin\Response\ResponseFactory::class];
     }
 }

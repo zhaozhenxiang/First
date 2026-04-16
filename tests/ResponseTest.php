@@ -101,4 +101,12 @@ class ResponseTest extends TestCase
         $this->assertEquals(302, $response->getStatusCode());
         $this->assertEquals('/target', $response->getHeader('Location'));
     }
+
+    public function testResponseHelperAddsJsonHeaderForArrays(): void
+    {
+        $response = response(['ok' => true], 201);
+
+        $this->assertEquals(201, $response->getStatusCode());
+        $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+    }
 }

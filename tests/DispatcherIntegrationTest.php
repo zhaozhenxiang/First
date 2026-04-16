@@ -316,6 +316,26 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertEquals('direct', $result->getContent());
     }
 
+    public function testDispatcherUsesResponseFactoryForArrayResults(): void
+    {
+        $controller = new class {
+            public function index(): array
+            {
+                return ['status' => 'ok'];
+            }
+        };
+
+        $className = get_class($controller);
+        \Bin\Container\Container::getInstance()->instance($className, $controller);
+
+        $route = new \Bin\Route\Route('GET', '/array', $className . '@index');
+        $result = $this->dispatcher->dispatch($className, 'index', $route);
+
+        $this->assertInstanceOf(Response::class, $result);
+        $this->assertEquals('application/json', $result->getHeader('Content-Type'));
+        $this->assertEquals(['status' => 'ok'], json_decode($result->getContent(), true));
+    }
+
     // ================================================================
     // 方法参数默认值
     // ================================================================

@@ -26,6 +26,11 @@ use Bin\Validation\FormRequest;
  */
 class ControllerDispatcher
 {
+    private function responseFactory(): \Bin\Response\ResponseFactory
+    {
+        return App::getInstance()->make(\Bin\Response\ResponseFactory::class);
+    }
+
     /**
      * 调度控制器方法
      *
@@ -39,7 +44,7 @@ class ControllerDispatcher
 
         $result = $app->getContainer()->call([$instance, $method], $parameters);
 
-        return $result instanceof Response ? $result : new Response($result);
+        return $this->responseFactory()->make($result);
     }
 
     /**
@@ -54,7 +59,7 @@ class ControllerDispatcher
 
         $result = $app->getContainer()->call($closure, $parameters);
 
-        return $result instanceof Response ? $result : new Response($result);
+        return $this->responseFactory()->make($result);
     }
 
     /**

@@ -79,9 +79,8 @@ class HttpKernel
         // 通过路由系统分发请求
         $response = RouteAction::dispatch($this->currentRequest);
 
-        $this->currentResponse = $response instanceof Response
-            ? $response
-            : new Response((string) $response);
+        $factory = $this->app->make(\Bin\Response\ResponseFactory::class);
+        $this->currentResponse = $factory->make($response);
 
         return $this->currentResponse;
     }

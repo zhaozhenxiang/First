@@ -213,7 +213,9 @@ class ExceptionHandler
             }
         }
 
-        return new Response('', 302, ['Location' => $referer]);
+        $factory = \Bin\App\App::getInstance()->make(\Bin\Response\ResponseFactory::class);
+
+        return $factory->redirect($referer, 302);
     }
 
     /**
@@ -264,7 +266,9 @@ class ExceptionHandler
             $data['error']['trace'] = $e->getTraceAsString();
         }
 
-        return new Response($data, $status);
+        $factory = \Bin\App\App::getInstance()->make(\Bin\Response\ResponseFactory::class);
+
+        return $factory->json($data, $status);
     }
 
     /**

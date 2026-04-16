@@ -40,6 +40,13 @@ if (!function_exists('response')) {
      */
     function response(mixed $data = '', int $status = 200): \Bin\Response\Response
     {
+        $app = \Bin\App\App::getInstance();
+
+        try {
+            return $app->make(\Bin\Response\ResponseFactory::class)->make($data, $status);
+        } catch (\Throwable) {
+        }
+
         return new \Bin\Response\Response($data, $status);
     }
 }
@@ -50,9 +57,14 @@ if (!function_exists('redirect')) {
      */
     function redirect(string $url, int $status = 302): \Bin\Response\Response
     {
-        return new \Bin\Response\Response('', $status, [
-            'Location' => $url,
-        ]);
+        $app = \Bin\App\App::getInstance();
+
+        try {
+            return $app->make(\Bin\Response\ResponseFactory::class)->redirect($url, $status);
+        } catch (\Throwable) {
+        }
+
+        return new \Bin\Response\Response('', $status, ['Location' => $url]);
     }
 }
 
