@@ -333,6 +333,33 @@ class RouteEnhancementTest extends TestCase
         });
     }
 
+    public function testModelBindingFindOrFailMissingRecordThrowsNotFoundHttpException(): void
+    {
+        RouteBinding::model('user', MissingFindOrFailBoundModel::class);
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function () {
+            RouteBinding::resolve('user', '404');
+        });
+    }
+
+    public function testModelBindingFindOrFailUnexpectedFailureBubbles(): void
+    {
+        RouteBinding::model('user', ExplodingFindOrFailBoundModel::class);
+
+        $this->assertThrows(\RuntimeException::class, function () {
+            RouteBinding::resolve('user', 'boom');
+        });
+    }
+
+    public function testModelBindingFindOrFailUnrelatedInvalidArgumentBubbles(): void
+    {
+        RouteBinding::model('user', InvalidFindOrFailBoundModel::class);
+
+        $this->assertThrows(\InvalidArgumentException::class, function () {
+            RouteBinding::resolve('user', 'bad');
+        });
+    }
+
     // ================================================================
     // Route 新增方法
     // ================================================================
@@ -528,5 +555,29 @@ class MissingBoundModel
     public static function find(string $id): ?self
     {
         return null;
+    }
+}
+
+class MissingFindOrFailBoundModel
+{
+    public static function findOrFail(string $id): self
+    {
+        throw new \InvalidArgumentException("No query results for model [{$id}]");
+    }
+}
+
+class ExplodingFindOrFailBoundModel
+{
+    public static function findOrFail(string $id): self
+    {
+        throw new \RuntimeException("Unexpected failure for [{$id}]");
+    }
+}
+
+class InvalidFindOrFailBoundModel
+{
+    public static function findOrFail(string $id): self
+    {
+        throw new \InvalidArgumentException("Unexpected invalid input for [{$id}]");
     }
 }

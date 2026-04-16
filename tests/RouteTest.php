@@ -136,6 +136,12 @@ class RouteTest extends TestCase
         $this->assertEquals('/user/5', $route->url(['id' => 5]));
     }
 
+    public function testRouteUrlPreservesValueThatLooksLikeOptionalPlaceholder(): void
+    {
+        $route = Route::get('/prefix/{slug}/{optional?}', function () {});
+        $this->assertEquals('/prefix/{optional?}', $route->url(['slug' => '{optional?}']));
+    }
+
     public function testRouteGetAction(): void
     {
         $action = function () { return 'test'; };

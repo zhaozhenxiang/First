@@ -78,24 +78,26 @@ class RouteBinding
      */
     protected static function resolveFromClass(string $class, mixed $value): mixed
     {
-        try {
-            if (method_exists($class, 'findOrFail')) {
+        if (method_exists($class, 'findOrFail')) {
+            try {
                 return $class::findOrFail($value);
-            }
-
-            if (method_exists($class, 'find')) {
-                $result = $class::find($value);
-
-                if ($result === null) {
-                    throw new \Bin\Exception\NotFoundHttpException("{$class} with ID {$value} not found");
+            } catch (\InvalidArgumentException $e) {
+                if (str_starts_with($e->getMessage(), 'No query results for model [')) {
+                    throw new \Bin\Exception\NotFoundHttpException($e->getMessage(), $e);
                 }
 
-                return $result;
+                throw $e;
             }
-        } catch (\Bin\Exception\NotFoundHttpException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            throw new \Bin\Exception\NotFoundHttpException($e->getMessage(), $e);
+        }
+
+        if (method_exists($class, 'find')) {
+            $result = $class::find($value);
+
+            if ($result === null) {
+                throw new \Bin\Exception\NotFoundHttpException("{$class} with ID {$value} not found");
+            }
+
+            return $result;
         }
 
         return new $class();

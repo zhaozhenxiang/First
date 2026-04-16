@@ -460,33 +460,60 @@ class Route
      */
     public function url(array $params = []): string
     {
-        $url = $this->getPath();
-        preg_match_all('/\{([^}]+)\}/', $url, $matches);
-
+        $segments = explode('/', trim($this->getPath(), '/'));
         $missing = [];
+        $resolvedSegments = [];
 
-        foreach ($matches[1] as $raw) {
-            $optional = str_ends_with($raw, '?');
-            $name = rtrim($raw, '?');
-
-            if (array_key_exists($name, $params)) {
-                $url = str_replace('{' . $raw . '}', (string) $params[$name], $url);
+        foreach ($segments as $segment) {
+            if ($segment === '') {
                 continue;
             }
 
-            if ($optional) {
-                $url = str_replace('/{' . $raw . '}', '', $url);
-                $url = str_replace('{' . $raw . '}', '', $url);
+            preg_match_all('/\{([^}]+)\}/', $segment, $matches);
+
+            if ($matches[1] === []) {
+                $resolvedSegments[] = $segment;
                 continue;
             }
 
-            $missing[] = $name;
+            $resolvedSegment = $segment;
+            $skipSegment = false;
+
+            foreach ($matches[1] as $raw) {
+                $optional = str_ends_with($raw, '?');
+                $name = rtrim($raw, '?');
+
+                if (array_key_exists($name, $params)) {
+                    $resolvedSegment = str_replace('{' . $raw . '}', (string) $params[$name], $resolvedSegment);
+                    continue;
+                }
+
+                if ($optional) {
+                    if ($segment === '{' . $raw . '}') {
+                        $skipSegment = true;
+                        break;
+                    }
+
+                    $resolvedSegment = str_replace('{' . $raw . '}', '', $resolvedSegment);
+                    continue;
+                }
+
+                $missing[] = $name;
+            }
+
+            if (!$skipSegment && $resolvedSegment !== '') {
+                $resolvedSegments[] = $resolvedSegment;
+            }
         }
 
         if ($missing !== []) {
             throw \Bin\Exception\UrlGenerationException::forMissingParameters($this->getPath(), $missing);
         }
 
-        return '/' . trim((string) preg_replace('#//+#', '/', $url), '/');
+        if ($resolvedSegments === []) {
+            return '/';
+        }
+
+        return '/' . implode('/', $resolvedSegments);
     }
 }
