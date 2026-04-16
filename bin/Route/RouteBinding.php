@@ -121,9 +121,9 @@ class RouteBinding
             return $value;
         }
 
-        if ($type->getName() === 'int' && is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+        if ($type->getName() === 'int' && is_string($value) && preg_match('/^[+-]?\d+$/', $value) === 1) {
             $negative = str_starts_with($value, '-');
-            $digits = ltrim($negative ? substr($value, 1) : $value, '0');
+            $digits = ltrim(($negative || str_starts_with($value, '+')) ? substr($value, 1) : $value, '0');
             $digits = $digits === '' ? '0' : $digits;
             $bound = $negative ? ltrim((string) PHP_INT_MIN, '-') : (string) PHP_INT_MAX;
 
