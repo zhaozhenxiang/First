@@ -308,6 +308,31 @@ class RouteEnhancementTest extends TestCase
         $this->assertStringContainsString('42', $url);
     }
 
+    public function testNamedRouteUrlThrowsWhenRequiredParameterMissing(): void
+    {
+        RouteCollection::get('/posts/{post}', fn () => 'ok')->name('posts.show');
+
+        $this->assertThrows(\Bin\Exception\UrlGenerationException::class, function () {
+            RouteCollection::url('posts.show');
+        });
+    }
+
+    public function testNamedRouteUrlOmitsOptionalParameterWhenMissing(): void
+    {
+        RouteCollection::get('/reports/{year}/{month?}', fn () => 'ok')->name('reports.show');
+
+        $this->assertEquals('/reports/2026', RouteCollection::url('reports.show', ['year' => 2026]));
+    }
+
+    public function testModelBindingMissingRecordThrowsNotFoundHttpException(): void
+    {
+        RouteBinding::model('user', MissingBoundModel::class);
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function () {
+            RouteBinding::resolve('user', '404');
+        });
+    }
+
     // ================================================================
     // Route 新增方法
     // ================================================================
@@ -495,5 +520,13 @@ class RouteEnhancementTest extends TestCase
         $this->assertEquals('api.v1.users.show', $route->getName());
         $this->assertContains('api', $route->getMiddleware());
         $this->assertEquals(['id' => '[0-9]+'], $route->getWheres());
+    }
+}
+
+class MissingBoundModel
+{
+    public static function find(string $id): ?self
+    {
+        return null;
     }
 }

@@ -461,11 +461,32 @@ class Route
     public function url(array $params = []): string
     {
         $url = $this->getPath();
+        preg_match_all('/\{([^}]+)\}/', $url, $matches);
 
-        foreach ($params as $key => $value) {
-            $url = str_replace('{' . $key . '}', (string) $value, $url);
+        $missing = [];
+
+        foreach ($matches[1] as $raw) {
+            $optional = str_ends_with($raw, '?');
+            $name = rtrim($raw, '?');
+
+            if (array_key_exists($name, $params)) {
+                $url = str_replace('{' . $raw . '}', (string) $params[$name], $url);
+                continue;
+            }
+
+            if ($optional) {
+                $url = str_replace('/{' . $raw . '}', '', $url);
+                $url = str_replace('{' . $raw . '}', '', $url);
+                continue;
+            }
+
+            $missing[] = $name;
         }
 
-        return '/' . trim($url, '/');
+        if ($missing !== []) {
+            throw \Bin\Exception\UrlGenerationException::forMissingParameters($this->getPath(), $missing);
+        }
+
+        return '/' . trim((string) preg_replace('#//+#', '/', $url), '/');
     }
 }
