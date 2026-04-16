@@ -41,7 +41,9 @@ class DispatcherIntegrationTest extends TestCase
     protected function tearDown(): void
     {
         \Bin\Route\RouteCollection::clear();
-        App::getInstance()->forget(ControllerDispatcher::class);
+        $app = App::getInstance();
+        $app->forget(ControllerDispatcher::class);
+        $app->singleton(ControllerDispatcher::class, ControllerDispatcher::class);
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
         $property->setAccessible(true);
         $property->setValue(null, null);
@@ -174,6 +176,19 @@ class DispatcherIntegrationTest extends TestCase
         App::getInstance()->instance(ControllerDispatcher::class, $custom);
 
         $this->assertSame($custom, RouteAction::getDispatcher());
+    }
+
+    public function testTearDownRestoresDefaultControllerDispatcherSingletonBinding(): void
+    {
+        $app = App::getInstance();
+
+        $this->tearDown();
+
+        $this->assertTrue($app->bound(ControllerDispatcher::class));
+        $this->assertSame(
+            $app->make(ControllerDispatcher::class),
+            $app->make(ControllerDispatcher::class)
+        );
     }
 
     // ================================================================
