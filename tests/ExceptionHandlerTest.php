@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\App\App;
 use Bin\Exception\AuthorizationException;
 use Bin\Exception\AuthenticationException;
 use Bin\Exception\ExceptionHandler;
@@ -11,6 +12,7 @@ use Bin\Exception\HttpException;
 use Bin\Exception\NotFoundHttpException;
 use Bin\Exception\ValidationException;
 use Bin\Response\Response;
+use Bin\Response\ResponseFactory;
 use Bin\Testing\TestCase;
 
 /**
@@ -337,6 +339,28 @@ class ExceptionHandlerTest extends TestCase
         $this->assertInstanceOf(Response::class, $response);
         $this->assertEquals(302, $response->getStatusCode());
         $this->assertEquals('/previous', $response->getHeader('Location'));
+    }
+
+    public function testAjaxRenderFallsBackToDirectResponseFactoryWhenContainerResolutionFails(): void
+    {
+        $app = App::getInstance();
+        $app->forget(ResponseFactory::class);
+        $app->singleton(ResponseFactory::class, function (): ResponseFactory {
+            throw new \RuntimeException('factory broken');
+        });
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+
+        try {
+            $response = $this->handler->render(new \RuntimeException('ajax boom'));
+
+            $this->assertInstanceOf(Response::class, $response);
+            $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+            $this->assertEquals(500, $response->getStatusCode());
+        } finally {
+            unset($_SERVER['HTTP_X_REQUESTED_WITH']);
+            $app->forget(ResponseFactory::class);
+            $app->singleton(ResponseFactory::class, ResponseFactory::class);
+        }
     }
 
     public function testGenericMessageMapping(): void

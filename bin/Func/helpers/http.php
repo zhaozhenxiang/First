@@ -42,12 +42,7 @@ if (!function_exists('response')) {
     {
         $app = \Bin\App\App::getInstance();
 
-        try {
-            return $app->make(\Bin\Response\ResponseFactory::class)->make($data, $status);
-        } catch (\Throwable) {
-        }
-
-        return new \Bin\Response\Response($data, $status);
+        return $app->make(\Bin\Response\ResponseFactory::class)->make($data, $status);
     }
 }
 
@@ -59,12 +54,7 @@ if (!function_exists('redirect')) {
     {
         $app = \Bin\App\App::getInstance();
 
-        try {
-            return $app->make(\Bin\Response\ResponseFactory::class)->redirect($url, $status);
-        } catch (\Throwable) {
-        }
-
-        return new \Bin\Response\Response('', $status, ['Location' => $url]);
+        return $app->make(\Bin\Response\ResponseFactory::class)->redirect($url, $status);
     }
 }
 

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\App\App;
 use Bin\Testing\TestCase;
 use Bin\Response\Response;
+use Bin\Response\ResponseFactory;
 
 class ResponseTest extends TestCase
 {
@@ -108,5 +110,31 @@ class ResponseTest extends TestCase
 
         $this->assertEquals(201, $response->getStatusCode());
         $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+    }
+
+    public function testResponseFactoryCastsIntegerPayloadsToStrings(): void
+    {
+        $response = (new ResponseFactory())->make(123);
+
+        $this->assertEquals('123', $response->getContent());
+    }
+
+    public function testResponseHelperPropagatesFactoryResolutionFailures(): void
+    {
+        $app = App::getInstance();
+        $app->forget(ResponseFactory::class);
+        $app->singleton(ResponseFactory::class, function (): ResponseFactory {
+            throw new \RuntimeException('factory broken');
+        });
+
+        try {
+            response('boom');
+            $this->fail('Expected response() to propagate factory resolution failure');
+        } catch (\RuntimeException $e) {
+            $this->assertEquals('factory broken', $e->getMessage());
+        } finally {
+            $app->forget(ResponseFactory::class);
+            $app->singleton(ResponseFactory::class, ResponseFactory::class);
+        }
     }
 }

@@ -16,6 +16,10 @@ class ResponseFactory
             return $payload;
         }
 
+        if (is_scalar($payload)) {
+            $payload = (string) $payload;
+        }
+
         if (is_array($payload) && !isset($headers['Content-Type'])) {
             $headers['Content-Type'] = 'application/json';
         }
