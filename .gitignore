@@ -34,3 +34,4 @@ composer.lock
 *.cache
 .gitnexus
 graphify-out
+.worktrees/
