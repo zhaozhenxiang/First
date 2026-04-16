@@ -368,6 +368,13 @@ class RouteEnhancementTest extends TestCase
         $this->assertSame(42, $result->id);
     }
 
+    public function testImplicitModelBindingDoesNotSaturateOversizedNumericString(): void
+    {
+        $this->assertThrows(\TypeError::class, function () {
+            RouteBinding::resolveForClass(TypedFindOrFailBoundModel::class, '9223372036854775808');
+        });
+    }
+
     // ================================================================
     // Route 新增方法
     // ================================================================

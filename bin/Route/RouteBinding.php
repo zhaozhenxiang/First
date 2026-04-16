@@ -121,8 +121,12 @@ class RouteBinding
             return $value;
         }
 
-        if ($type->getName() === 'int' && is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
-            return (int) $value;
+        if ($type->getName() === 'int' && is_string($value)) {
+            $normalized = filter_var($value, FILTER_VALIDATE_INT);
+
+            if ($normalized !== false) {
+                return $normalized;
+            }
         }
 
         return $value;
