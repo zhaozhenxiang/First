@@ -124,6 +124,24 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertEquals('id=42', $result->getContent());
     }
 
+    public function testRouteActionDispatchUsesProvidedRequestInstance(): void
+    {
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $_SERVER['REQUEST_URI'] = '/users/42';
+
+        \Bin\Route\RouteCollection::get('/users/{id}', fn (string $id): string => "id={$id}")
+            ->where('id', '[^/]+');
+
+        $request = \Bin\Request\Request::capture();
+        \Bin\App\App::getInstance()->instance(\Bin\Request\Request::class, $request);
+
+        $response = RouteAction::dispatch($request);
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals('id=42', $response->getContent());
+        $this->assertSame($request, \Bin\App\App::getInstance()->make(\Bin\Request\Request::class));
+    }
+
     // ================================================================
     // RouteAction getter/setter
     // ================================================================

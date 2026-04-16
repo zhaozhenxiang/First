@@ -74,13 +74,14 @@ class HttpKernel
         $this->bootstrap();
 
         $this->currentRequest = Request::capture();
+        $this->app->instance(Request::class, $this->currentRequest);
 
         // 通过路由系统分发请求
-        $response = RouteAction::action();
+        $response = RouteAction::dispatch($this->currentRequest);
 
         $this->currentResponse = $response instanceof Response
             ? $response
-            : new Response((string)$response);
+            : new Response((string) $response);
 
         return $this->currentResponse;
     }

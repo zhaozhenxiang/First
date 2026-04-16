@@ -8,6 +8,7 @@ use Bin\App\App;
 use Bin\Middleware\MiddlewareNameResolver;
 use Bin\Middleware\MiddlewareStack;
 use Bin\Middleware\Pipeline;
+use Bin\Request\Request;
 use Bin\Routing\ControllerDispatcher;
 
 class RouteAction
@@ -47,10 +48,11 @@ class RouteAction
      * 执行路由
      * @throws \Exception
      */
-    public static function action(): mixed
+    public static function dispatch(Request $request): mixed
     {
+        App::getInstance()->instance(Request::class, $request);
+
         $route = RouteCollection::getRoute();
-        $request = \Bin\Request\Request::capture();
 
         // 收集所有中间件（全局 + 组 + 路由指定 - 排除）
         $stack = MiddlewareStack::getInstance();
@@ -78,8 +80,17 @@ class RouteAction
         static::$lastPipeline = $pipeline;
 
         return $pipeline->then(function () use ($route): mixed {
-            return static::dispatch($route);
+            return static::dispatchRoute($route);
         });
+    }
+
+    /**
+     * 执行路由
+     * @throws \Exception
+     */
+    public static function action(): mixed
+    {
+        return static::dispatch(Request::capture());
     }
 
     /**
@@ -103,7 +114,7 @@ class RouteAction
      * - 闭包 action：容器注入参数
      * - Controller@method 字符串：容器实例化 + 方法注入
      */
-    private static function dispatch(Route $route): mixed
+    private static function dispatchRoute(Route $route): mixed
     {
         $action = $route->getAction();
         $dispatcher = static::getDispatcher();
