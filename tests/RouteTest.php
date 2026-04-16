@@ -259,6 +259,22 @@ class RouteTest extends TestCase
         $this->assertFalse($route->matches('/post/abc/comment/abc'));
     }
 
+    public function testOptionalDynamicRouteMatchesWithoutWhereAndWithoutOptionalSegment(): void
+    {
+        $route = Route::get('/reports/{year}/{month?}', function () {});
+
+        $this->assertTrue($route->matches('/reports/2026'));
+        $this->assertEquals(['year' => '2026'], $this->getMatchedParams($route));
+    }
+
+    public function testOptionalDynamicRouteMatchesWithoutWhereAndWithOptionalSegment(): void
+    {
+        $route = Route::get('/reports/{year}/{month?}', function () {});
+
+        $this->assertTrue($route->matches('/reports/2026/04'));
+        $this->assertEquals(['year' => '2026', 'month' => '04'], $this->getMatchedParams($route));
+    }
+
     public function testOptionalWhereConstraintMatchesWithoutOptionalSegment(): void
     {
         $route = Route::get('/reports/{year}/{month?}', function () {});

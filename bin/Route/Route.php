@@ -348,6 +348,11 @@ class Route
             return $this->matchWithConstraints($url);
         }
 
+        // 无约束的占位符路由也应支持动态匹配；仅在显式使用旧 with() 模式时走旧逻辑
+        if (str_contains($this->getPath(), '{') && $this->getPreg() === null) {
+            return $this->matchWithConstraints($url);
+        }
+
         // 旧正则匹配
         return $this->pregMatch($url);
     }
