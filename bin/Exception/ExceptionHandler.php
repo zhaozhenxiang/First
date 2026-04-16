@@ -99,6 +99,22 @@ class ExceptionHandler
         return $this->renderException($e);
     }
 
+    public function renderForConsole(Throwable $e): string
+    {
+        if ($this->debug) {
+            return sprintf(
+                "%s: %s in %s:%d\n%s\n",
+                get_class($e),
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine(),
+                $e->getTraceAsString()
+            );
+        }
+
+        return $e->getMessage() . PHP_EOL;
+    }
+
     /**
      * 处理异常
      */

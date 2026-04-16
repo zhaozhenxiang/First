@@ -314,6 +314,10 @@ class Kernel
 
             return $exitCode;
         } catch (RuntimeException $e) {
+            if (self::hasCommand($command)) {
+                throw $e;
+            }
+
             return 1;
         } finally {
             ob_end_clean();
@@ -346,6 +350,10 @@ class Kernel
 
             return $command->run($input, $output);
         } catch (RuntimeException $e) {
+            if (self::hasCommand($commandName)) {
+                throw $e;
+            }
+
             $output->error("<error>{$e->getMessage()}</error>");
             return 1;
         }

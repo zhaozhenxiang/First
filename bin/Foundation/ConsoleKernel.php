@@ -73,7 +73,11 @@ class ConsoleKernel
 
         ConsoleKernelBase::setConsoleKernel($this);
 
-        return ConsoleKernelBase::handle();
+        try {
+            return ConsoleKernelBase::handle();
+        } catch (\Throwable $e) {
+            return $this->handleThrowable($e);
+        }
     }
 
     /**
@@ -83,7 +87,11 @@ class ConsoleKernel
     {
         $this->bootstrap();
 
-        return ConsoleKernelBase::call($command, $arguments);
+        try {
+            return ConsoleKernelBase::call($command, $arguments);
+        } catch (\Throwable $e) {
+            return $this->handleThrowable($e);
+        }
     }
 
     /**
@@ -128,5 +136,18 @@ class ConsoleKernel
     public function appendBootstrapper(string $bootstrapper): void
     {
         $this->bootstrappers[] = $bootstrapper;
+    }
+
+    private function handleThrowable(\Throwable $e): int
+    {
+        try {
+            $handler = $this->app->make(\Bin\Exception\ExceptionHandler::class);
+            $handler->report($e);
+            echo $handler->renderForConsole($e);
+        } catch (\Throwable) {
+            echo $e->getMessage() . PHP_EOL;
+        }
+
+        return 1;
     }
 }

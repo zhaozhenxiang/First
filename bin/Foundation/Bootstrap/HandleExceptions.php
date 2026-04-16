@@ -40,17 +40,28 @@ class HandleExceptions implements BootstrapperContract
             }
 
             // 委托给 ExceptionHandler
-            if ($app->bound(\Bin\Exception\ExceptionHandler::class)) {
-                $app->make(\Bin\Exception\ExceptionHandler::class)->report($e);
-                $response = $app->make(\Bin\Exception\ExceptionHandler::class)->render($e);
-                if ($response !== null) {
-                    $response->send();
-                }
+            $handler = $this->resolveHandler($app);
+            $handler->report($e);
+            $response = $handler->render($e);
+            if ($response !== null) {
+                $response->send();
                 return;
             }
 
             // 降级：直接输出
             (new \Bin\Response\Response('Internal Server Error', 500))->send();
         });
+    }
+
+    private function resolveHandler(App $app): \Bin\Exception\ExceptionHandler
+    {
+        if ($app->bound(\Bin\Exception\ExceptionHandler::class)) {
+            return $app->make(\Bin\Exception\ExceptionHandler::class);
+        }
+
+        $handler = new \Bin\Exception\ExceptionHandler((bool) env('APP_DEBUG', false));
+        $app->instance(\Bin\Exception\ExceptionHandler::class, $handler);
+
+        return $handler;
     }
 }

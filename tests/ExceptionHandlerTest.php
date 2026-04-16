@@ -230,6 +230,13 @@ class ExceptionHandlerTest extends TestCase
         $this->assertInstanceOf(Response::class, $response);
     }
 
+    public function testRenderForConsoleIncludesExceptionMessage(): void
+    {
+        $output = $this->handler->renderForConsole(new \RuntimeException('console boom'));
+
+        $this->assertStringContainsString('console boom', $output);
+    }
+
     // ================================================================
     // 异常驱动流程 — 各模块 throw → ExceptionHandler render
     // ================================================================

@@ -443,9 +443,10 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertEquals('handled-response', $output);
     }
 
-    public function testHandleExceptionsFallbackSendsResponse(): void
+    public function testHandleExceptionsResolvesDefaultHandlerWhenContainerBindingMissing(): void
     {
         $app = App::getInstance();
+        $app->getContainer()->forget(\Bin\Exception\ExceptionHandler::class);
         $bootstrapper = new HandleExceptions();
         $bootstrapper->bootstrap($app);
 
@@ -458,7 +459,7 @@ class ApplicationLifecycleTest extends TestCase
         $registered(new \RuntimeException('fallback boom'));
         $output = ob_get_clean();
 
-        $this->assertEquals('Internal Server Error', $output);
+        $this->assertStringContainsString('Internal Server Error', $output);
     }
 
     public function testSetRequestContextBootstrap(): void

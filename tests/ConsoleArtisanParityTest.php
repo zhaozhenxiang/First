@@ -322,6 +322,40 @@ class ConsoleArtisanParityTest extends TestCase
         $this->assertEquals(\stdClass::class, reset($modified));
     }
 
+    public function testConsoleKernelRendersThrowableThroughExceptionHandler(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new ConsoleKernel($app);
+
+        $handler = new class(false) extends \Bin\Exception\ExceptionHandler {
+            public bool $reported = false;
+
+            public function report(\Throwable $e): void
+            {
+                $this->reported = true;
+            }
+
+            public function renderForConsole(\Throwable $e): string
+            {
+                return 'console: ' . $e->getMessage() . PHP_EOL;
+            }
+        };
+
+        $app->instance(\Bin\Exception\ExceptionHandler::class, $handler);
+
+        Kernel::command('boom:test', function () {
+            throw new \RuntimeException('boom');
+        });
+
+        ob_start();
+        $exitCode = $kernel->call('boom:test');
+        $output = ob_get_clean();
+
+        $this->assertSame(1, $exitCode);
+        $this->assertTrue($handler->reported);
+        $this->assertStringContainsString('console: boom', $output);
+    }
+
     // =========================================================================
     // Kernel::command() 完整签名测试
     // =========================================================================
