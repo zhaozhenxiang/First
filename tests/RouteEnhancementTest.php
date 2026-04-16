@@ -175,6 +175,26 @@ class RouteEnhancementTest extends TestCase
         $this->assertEquals('resolved:123', $result);
     }
 
+    public function testModelBindingWithTypedCallbackCoercesNumericString(): void
+    {
+        RouteBinding::model('user', TypedFindOrFailBoundModel::class, fn(int $id) => new TypedFindOrFailBoundModel($id));
+
+        $result = RouteBinding::resolve('user', '42');
+        $this->assertInstanceOf(TypedFindOrFailBoundModel::class, $result);
+        $this->assertSame(42, $result->id);
+    }
+
+    public function testModelBindingWithCallbackTranslatesNotFoundInvalidArgument(): void
+    {
+        RouteBinding::model('user', TypedFindOrFailBoundModel::class, function (string $id) {
+            throw new \InvalidArgumentException("No query results for model [{$id}]");
+        });
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function () {
+            RouteBinding::resolve('user', '404');
+        });
+    }
+
     // ================================================================
     // RouteCollection::model/bind 代理
     // ================================================================

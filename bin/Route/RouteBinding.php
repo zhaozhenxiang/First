@@ -56,7 +56,7 @@ class RouteBinding
             $model = static::$models[$key];
 
             if ($model['callback'] !== null) {
-                return ($model['callback'])($value);
+                return static::resolveWithCallback($model['callback'], $value);
             }
 
             return static::resolveFromClass($model['class'], $value);
@@ -84,10 +84,7 @@ class RouteBinding
             try {
                 return $class::findOrFail($value);
             } catch (\InvalidArgumentException $e) {
-                if (str_starts_with($e->getMessage(), 'No query results for model [')) {
-                    throw new \Bin\Exception\NotFoundHttpException($e->getMessage(), $e);
-                }
-
+                static::throwIfNotFound($e);
                 throw $e;
             }
         }
@@ -106,6 +103,18 @@ class RouteBinding
         return new $class();
     }
 
+    protected static function resolveWithCallback(callable $callback, mixed $value): mixed
+    {
+        $value = static::normalizeCallbackValue($callback, $value);
+
+        try {
+            return $callback($value);
+        } catch (\InvalidArgumentException $e) {
+            static::throwIfNotFound($e);
+            throw $e;
+        }
+    }
+
     protected static function normalizeFinderValue(string $class, string $method, mixed $value): mixed
     {
         $reflection = new \ReflectionMethod($class, $method);
@@ -121,6 +130,29 @@ class RouteBinding
             return $value;
         }
 
+        return static::normalizeValueForType($type, $value);
+    }
+
+    protected static function normalizeCallbackValue(callable $callback, mixed $value): mixed
+    {
+        $reflection = new \ReflectionFunction(\Closure::fromCallable($callback));
+        $parameters = $reflection->getParameters();
+
+        if ($parameters === []) {
+            return $value;
+        }
+
+        $type = $parameters[0]->getType();
+
+        if (!$type instanceof \ReflectionNamedType) {
+            return $value;
+        }
+
+        return static::normalizeValueForType($type, $value);
+    }
+
+    protected static function normalizeValueForType(\ReflectionNamedType $type, mixed $value): mixed
+    {
         if ($type->getName() === 'int' && is_string($value) && preg_match('/^[+-]?\d+$/', $value) === 1) {
             $negative = str_starts_with($value, '-');
             $digits = ltrim(($negative || str_starts_with($value, '+')) ? substr($value, 1) : $value, '0');
@@ -136,6 +168,13 @@ class RouteBinding
         }
 
         return $value;
+    }
+
+    protected static function throwIfNotFound(\InvalidArgumentException $e): void
+    {
+        if (str_starts_with($e->getMessage(), 'No query results for model [')) {
+            throw new \Bin\Exception\NotFoundHttpException($e->getMessage(), $e);
+        }
     }
 
     /**
