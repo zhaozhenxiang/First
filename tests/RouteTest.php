@@ -142,6 +142,18 @@ class RouteTest extends TestCase
         $this->assertEquals('/prefix/{optional?}', $route->url(['slug' => '{optional?}']));
     }
 
+    public function testRouteUrlPreservesCompositePlaceholderLookingValue(): void
+    {
+        $route = Route::get('/files/{name}.{ext}', function () {});
+        $this->assertEquals('/files/{ext}.txt', $route->url(['name' => '{ext}', 'ext' => 'txt']));
+    }
+
+    public function testRouteUrlPreservesSlugValueWhenOptionalPlaceholderMissingInSameSegment(): void
+    {
+        $route = Route::get('/{slug}-{optional?}', function () {});
+        $this->assertEquals('/{optional?}-', $route->url(['slug' => '{optional?}']));
+    }
+
     public function testRouteGetAction(): void
     {
         $action = function () { return 'test'; };

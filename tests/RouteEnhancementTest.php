@@ -360,6 +360,14 @@ class RouteEnhancementTest extends TestCase
         });
     }
 
+    public function testImplicitModelBindingCoercesNumericStringForTypedFindOrFail(): void
+    {
+        $result = RouteBinding::resolveForClass(TypedFindOrFailBoundModel::class, '42');
+
+        $this->assertInstanceOf(TypedFindOrFailBoundModel::class, $result);
+        $this->assertSame(42, $result->id);
+    }
+
     // ================================================================
     // Route 新增方法
     // ================================================================
@@ -579,5 +587,17 @@ class InvalidFindOrFailBoundModel
     public static function findOrFail(string $id): self
     {
         throw new \InvalidArgumentException("Unexpected invalid input for [{$id}]");
+    }
+}
+
+class TypedFindOrFailBoundModel
+{
+    public function __construct(public int $id)
+    {
+    }
+
+    public static function findOrFail(int $id): self
+    {
+        return new self($id);
     }
 }

@@ -79,6 +79,8 @@ class RouteBinding
     protected static function resolveFromClass(string $class, mixed $value): mixed
     {
         if (method_exists($class, 'findOrFail')) {
+            $value = static::normalizeFinderValue($class, 'findOrFail', $value);
+
             try {
                 return $class::findOrFail($value);
             } catch (\InvalidArgumentException $e) {
@@ -91,6 +93,7 @@ class RouteBinding
         }
 
         if (method_exists($class, 'find')) {
+            $value = static::normalizeFinderValue($class, 'find', $value);
             $result = $class::find($value);
 
             if ($result === null) {
@@ -101,6 +104,28 @@ class RouteBinding
         }
 
         return new $class();
+    }
+
+    protected static function normalizeFinderValue(string $class, string $method, mixed $value): mixed
+    {
+        $reflection = new \ReflectionMethod($class, $method);
+        $parameters = $reflection->getParameters();
+
+        if ($parameters === []) {
+            return $value;
+        }
+
+        $type = $parameters[0]->getType();
+
+        if (!$type instanceof \ReflectionNamedType) {
+            return $value;
+        }
+
+        if ($type->getName() === 'int' && is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            return (int) $value;
+        }
+
+        return $value;
     }
 
     /**

@@ -469,39 +469,29 @@ class Route
                 continue;
             }
 
-            preg_match_all('/\{([^}]+)\}/', $segment, $matches);
-
-            if ($matches[1] === []) {
+            if (preg_match('/\{([^}]+)\}/', $segment) !== 1) {
                 $resolvedSegments[] = $segment;
                 continue;
             }
 
-            $resolvedSegment = $segment;
-            $skipSegment = false;
-
-            foreach ($matches[1] as $raw) {
+            $resolvedSegment = preg_replace_callback('/\{([^}]+)\}/', function (array $matches) use ($params, &$missing): string {
+                $raw = $matches[1];
                 $optional = str_ends_with($raw, '?');
                 $name = rtrim($raw, '?');
 
                 if (array_key_exists($name, $params)) {
-                    $resolvedSegment = str_replace('{' . $raw . '}', (string) $params[$name], $resolvedSegment);
-                    continue;
+                    return (string) $params[$name];
                 }
 
                 if ($optional) {
-                    if ($segment === '{' . $raw . '}') {
-                        $skipSegment = true;
-                        break;
-                    }
-
-                    $resolvedSegment = str_replace('{' . $raw . '}', '', $resolvedSegment);
-                    continue;
+                    return '';
                 }
 
                 $missing[] = $name;
-            }
+                return $matches[0];
+            }, $segment);
 
-            if (!$skipSegment && $resolvedSegment !== '') {
+            if ($resolvedSegment !== null && $resolvedSegment !== '') {
                 $resolvedSegments[] = $resolvedSegment;
             }
         }
