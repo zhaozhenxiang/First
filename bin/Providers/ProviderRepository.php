@@ -186,14 +186,10 @@ class ProviderRepository
      */
     protected function createProvider(string $providerClass): ServiceProvider
     {
-        try {
-            /** @var ServiceProvider $provider */
-            $provider = $this->app->make($providerClass);
+        /** @var ServiceProvider $provider */
+        $provider = $this->app->make($providerClass);
 
-            return $provider;
-        } catch (\Throwable) {
-            return new $providerClass($this->app);
-        }
+        return $provider;
     }
 
     /**

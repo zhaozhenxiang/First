@@ -29,12 +29,7 @@ class RouteAction
     {
         if (static::$dispatcher === null) {
             $app = App::getInstance();
-
-            try {
-                static::$dispatcher = $app->make(ControllerDispatcher::class);
-            } catch (\Throwable) {
-                static::$dispatcher = new ControllerDispatcher();
-            }
+            static::$dispatcher = $app->make(ControllerDispatcher::class);
         }
 
         return static::$dispatcher;

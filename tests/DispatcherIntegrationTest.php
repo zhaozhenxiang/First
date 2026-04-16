@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\App\App;
 use Bin\Container\Container;
 use Bin\Middleware\Middleware;
 use Bin\Response\Response;
@@ -31,11 +32,19 @@ class DispatcherIntegrationTest extends TestCase
         parent::setUp();
         $this->dispatcher = new ControllerDispatcher();
         \Bin\Route\RouteCollection::clear();
+
+        $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
+        $property->setAccessible(true);
+        $property->setValue(null, null);
     }
 
     protected function tearDown(): void
     {
         \Bin\Route\RouteCollection::clear();
+        App::getInstance()->forget(ControllerDispatcher::class);
+        $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
+        $property->setAccessible(true);
+        $property->setValue(null, null);
         parent::tearDown();
     }
 
@@ -135,11 +144,34 @@ class DispatcherIntegrationTest extends TestCase
     public function testRouteActionResolvesDispatcherFromContainer(): void
     {
         $custom = new ControllerDispatcher();
-        \Bin\App\App::getInstance()->instance(ControllerDispatcher::class, $custom);
+        App::getInstance()->instance(ControllerDispatcher::class, $custom);
 
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
         $property->setAccessible(true);
         $property->setValue(null, null);
+
+        $this->assertSame($custom, RouteAction::getDispatcher());
+    }
+
+    public function testRouteActionPropagatesDispatcherResolutionFailures(): void
+    {
+        App::getInstance()->forget(ControllerDispatcher::class);
+        App::getInstance()->singleton(ControllerDispatcher::class, function (): ControllerDispatcher {
+            throw new \RuntimeException('dispatcher wiring failed');
+        });
+
+        try {
+            RouteAction::getDispatcher();
+            $this->fail('Expected dispatcher resolution failure to be propagated');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('dispatcher wiring failed', $e->getMessage());
+        }
+    }
+
+    public function testRouteActionStartsEachTestWithFreshDispatcherState(): void
+    {
+        $custom = new ControllerDispatcher();
+        App::getInstance()->instance(ControllerDispatcher::class, $custom);
 
         $this->assertSame($custom, RouteAction::getDispatcher());
     }

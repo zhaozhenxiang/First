@@ -32,16 +32,6 @@ class App implements ContainerInterface
     private ?string $basePath = null;
 
     /**
-     * HTTP 内核实例
-     */
-    private ?\Bin\Foundation\HttpKernel $httpKernel = null;
-
-    /**
-     * Console 内核实例
-     */
-    private ?\Bin\Foundation\ConsoleKernel $consoleKernel = null;
-
-    /**
      * 底层容器实例
      */
     private Container $container;
@@ -101,11 +91,6 @@ class App implements ContainerInterface
         \Bin\Providers\DatabaseServiceProvider::class,
         \Bin\Providers\ViewServiceProvider::class,
     ];
-
-    /**
-     * 服务提供者仓库
-     */
-    private ?ProviderRepository $providerRepository = null;
 
     /**
      * 应用是否已启动
@@ -270,22 +255,34 @@ class App implements ContainerInterface
         $this->container->instance(Container::class, $this->container);
 
         foreach (self::$coreAliases as $alias => $class) {
-            if (!$this->container->bound($alias)) {
-                $this->container->singleton($alias, $class);
-            }
-
             if (!$this->container->bound($class)) {
                 $this->container->singleton($class, $class);
             }
+
+            if (!$this->container->hasAlias($alias)) {
+                $this->container->alias($class, $alias);
+            }
         }
 
-        $this->providerRepository ??= new ProviderRepository($this);
-        $this->container->instance(ProviderRepository::class, $this->providerRepository);
+        if (!$this->container->bound(ProviderRepository::class)) {
+            $this->container->singleton(ProviderRepository::class, fn () => new ProviderRepository($this));
+        }
 
-        $this->container->singleton(\Bin\Foundation\HttpKernel::class, fn () => new \Bin\Foundation\HttpKernel($this));
-        $this->container->singleton(\Bin\Foundation\ConsoleKernel::class, fn () => new \Bin\Foundation\ConsoleKernel($this));
-        $this->container->singleton(\Bin\Routing\ControllerDispatcher::class, \Bin\Routing\ControllerDispatcher::class);
-        $this->container->singleton(\Bin\Exception\ExceptionHandler::class, fn () => new \Bin\Exception\ExceptionHandler((bool) env('APP_DEBUG', false)));
+        if (!$this->container->bound(\Bin\Foundation\HttpKernel::class)) {
+            $this->container->singleton(\Bin\Foundation\HttpKernel::class, fn () => new \Bin\Foundation\HttpKernel($this));
+        }
+
+        if (!$this->container->bound(\Bin\Foundation\ConsoleKernel::class)) {
+            $this->container->singleton(\Bin\Foundation\ConsoleKernel::class, fn () => new \Bin\Foundation\ConsoleKernel($this));
+        }
+
+        if (!$this->container->bound(\Bin\Routing\ControllerDispatcher::class)) {
+            $this->container->singleton(\Bin\Routing\ControllerDispatcher::class, \Bin\Routing\ControllerDispatcher::class);
+        }
+
+        if (!$this->container->bound(\Bin\Exception\ExceptionHandler::class)) {
+            $this->container->singleton(\Bin\Exception\ExceptionHandler::class, fn () => new \Bin\Exception\ExceptionHandler((bool) env('APP_DEBUG', false)));
+        }
 
         // 注册 Facade
         foreach (self::$facades as $alias => $facade) {
@@ -316,7 +313,7 @@ class App implements ContainerInterface
      */
     public function register(string|ServiceProvider $provider, bool $force = false): void
     {
-        $this->providerRepository?->register($provider, $force);
+        $this->getProviderRepository()->register($provider, $force);
     }
 
     /**
@@ -328,7 +325,7 @@ class App implements ContainerInterface
             return;
         }
 
-        $this->providerRepository?->boot();
+        $this->getProviderRepository()->boot();
 
         $this->booted = true;
     }
@@ -346,7 +343,10 @@ class App implements ContainerInterface
      */
     public function getProviderRepository(): ?ProviderRepository
     {
-        return $this->providerRepository;
+        /** @var ProviderRepository $repository */
+        $repository = $this->container->make(ProviderRepository::class);
+
+        return $repository;
     }
 
     /**
@@ -355,7 +355,7 @@ class App implements ContainerInterface
     public function getHttpKernel(): \Bin\Foundation\HttpKernel
     {
         /** @var \Bin\Foundation\HttpKernel $kernel */
-        $kernel = $this->httpKernel ??= $this->make(\Bin\Foundation\HttpKernel::class);
+        $kernel = $this->make(\Bin\Foundation\HttpKernel::class);
 
         return $kernel;
     }
@@ -366,7 +366,7 @@ class App implements ContainerInterface
     public function getConsoleKernel(): \Bin\Foundation\ConsoleKernel
     {
         /** @var \Bin\Foundation\ConsoleKernel $kernel */
-        $kernel = $this->consoleKernel ??= $this->make(\Bin\Foundation\ConsoleKernel::class);
+        $kernel = $this->make(\Bin\Foundation\ConsoleKernel::class);
 
         return $kernel;
     }
@@ -376,9 +376,12 @@ class App implements ContainerInterface
      */
     public function make(string $abstract): object
     {
-        // 检查是否是延迟服务
-        if ($this->providerRepository?->isDeferredService($abstract)) {
-            $this->providerRepository->loadDeferredProvider($abstract);
+        if ($abstract !== ProviderRepository::class) {
+            $repository = $this->getProviderRepository();
+
+            if ($repository->isDeferredService($abstract)) {
+                $repository->loadDeferredProvider($abstract);
+            }
         }
 
         return $this->container->make($abstract);

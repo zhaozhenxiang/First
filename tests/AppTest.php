@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\App\App;
+use Bin\Container\Exceptions\BindingResolutionException;
 use Bin\Providers\ServiceProvider;
 use Bin\Testing\TestCase;
 
@@ -393,6 +394,60 @@ class AppTest extends TestCase
         $this->assertEquals('from-container', $resolved->name);
     }
 
+    public function testCoreAliasAndClassResolveSameSingletonInstance(): void
+    {
+        $alias = $this->app->make('session');
+        $class = $this->app->make(\Bin\Session\SessionManager::class);
+
+        $alias->setLifetime(15);
+
+        $this->assertSame($alias, $class);
+        $this->assertSame(15 * 60, $class->getLifetime());
+    }
+
+    public function testProviderRepositoryPropagatesProviderConstructionFailures(): void
+    {
+        try {
+            $this->app->register(BrokenContainerAwareProvider::class, true);
+            $this->fail('Expected provider construction failure to be propagated');
+        } catch (BindingResolutionException $e) {
+            $this->assertMatchesRegularExpression('/UnresolvableProviderDependency/', $e->getMessage());
+        }
+    }
+
+    public function testAppReturnsReboundHttpKernelFromContainer(): void
+    {
+        $original = $this->app->getHttpKernel();
+        $replacement = new \Bin\Foundation\HttpKernel($this->app);
+
+        $this->app->instance(\Bin\Foundation\HttpKernel::class, $replacement);
+
+        $this->assertNotSame($original, $replacement);
+        $this->assertSame($replacement, $this->app->getHttpKernel());
+    }
+
+    public function testAppReturnsReboundConsoleKernelFromContainer(): void
+    {
+        $original = $this->app->getConsoleKernel();
+        $replacement = new \Bin\Foundation\ConsoleKernel($this->app);
+
+        $this->app->instance(\Bin\Foundation\ConsoleKernel::class, $replacement);
+
+        $this->assertNotSame($original, $replacement);
+        $this->assertSame($replacement, $this->app->getConsoleKernel());
+    }
+
+    public function testAppReturnsReboundProviderRepositoryFromContainer(): void
+    {
+        $original = $this->app->getProviderRepository();
+        $replacement = new \Bin\Providers\ProviderRepository($this->app);
+
+        $this->app->instance(\Bin\Providers\ProviderRepository::class, $replacement);
+
+        $this->assertNotSame($original, $replacement);
+        $this->assertSame($replacement, $this->app->getProviderRepository());
+    }
+
     public function testMagicCall(): void
     {
         $this->app->bind('test', \StdClass::class);
@@ -460,6 +515,25 @@ class ContainerAwareProvider extends ServiceProvider
     public function provides(): array
     {
         return ['provider.dependency'];
+    }
+}
+
+class UnresolvableProviderDependency
+{
+    public function __construct(string $name)
+    {
+    }
+}
+
+class BrokenContainerAwareProvider extends ServiceProvider
+{
+    public function __construct(\Bin\App\App $app, private UnresolvableProviderDependency $dependency)
+    {
+        parent::__construct($app);
+    }
+
+    public function register(): void
+    {
     }
 }
 
