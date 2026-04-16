@@ -6,7 +6,9 @@ namespace Tests;
 
 use Bin\App\App;
 use Bin\Container\Container;
+use Bin\Foundation\HttpKernel;
 use Bin\Middleware\Middleware;
+use Bin\Request\Request;
 use Bin\Response\Response;
 use Bin\Routing\ControllerDispatcher;
 use Bin\Route\Route;
@@ -44,6 +46,8 @@ class DispatcherIntegrationTest extends TestCase
         $app = App::getInstance();
         $app->forget(ControllerDispatcher::class);
         $app->singleton(ControllerDispatcher::class, ControllerDispatcher::class);
+        $app->forget(Request::class);
+        $app->singleton(Request::class, Request::class);
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
         $property->setAccessible(true);
         $property->setValue(null, null);
@@ -129,17 +133,65 @@ class DispatcherIntegrationTest extends TestCase
         $_SERVER['REQUEST_METHOD'] = 'GET';
         $_SERVER['REQUEST_URI'] = '/users/42';
 
-        \Bin\Route\RouteCollection::get('/users/{id}', fn (string $id): string => "id={$id}")
+        $resolvedRequest = null;
+
+        \Bin\Route\RouteCollection::get('/users/{id}', function (Request $request, string $id) use (&$resolvedRequest): string {
+            $resolvedRequest = $request;
+            return "id={$id}";
+        })
             ->where('id', '[^/]+');
 
-        $request = \Bin\Request\Request::capture();
-        \Bin\App\App::getInstance()->instance(\Bin\Request\Request::class, $request);
+        $staleRequest = new Request([], [], [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/stale',
+        ], []);
+        App::getInstance()->instance(Request::class, $staleRequest);
+
+        $request = Request::capture();
 
         $response = RouteAction::dispatch($request);
 
         $this->assertInstanceOf(Response::class, $response);
         $this->assertEquals('id=42', $response->getContent());
-        $this->assertSame($request, \Bin\App\App::getInstance()->make(\Bin\Request\Request::class));
+        $this->assertSame($request, $resolvedRequest);
+        $this->assertNotSame($staleRequest, $resolvedRequest);
+        $this->assertSame($request, App::getInstance()->make(Request::class));
+    }
+
+    public function testHttpKernelHandleUsesCapturedRequestThroughDispatchPipeline(): void
+    {
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $_SERVER['REQUEST_URI'] = '/users/42';
+
+        $resolvedRequest = null;
+
+        \Bin\Route\RouteCollection::get('/users/{id}', function (Request $request, string $id) use (&$resolvedRequest): string {
+            $resolvedRequest = $request;
+            return "id={$id}";
+        })
+            ->where('id', '[^/]+');
+
+        $staleRequest = new Request([], [], [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/stale',
+        ], []);
+        App::getInstance()->instance(Request::class, $staleRequest);
+
+        $kernel = new HttpKernel(App::getInstance());
+        $kernel->setBootstrappers([]);
+
+        $response = $kernel->handle();
+
+        $property = new \ReflectionProperty(HttpKernel::class, 'currentRequest');
+        $property->setAccessible(true);
+        $currentRequest = $property->getValue($kernel);
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals('id=42', $response->getContent());
+        $this->assertInstanceOf(Request::class, $currentRequest);
+        $this->assertSame($currentRequest, $resolvedRequest);
+        $this->assertNotSame($staleRequest, $currentRequest);
+        $this->assertSame($currentRequest, App::getInstance()->make(Request::class));
     }
 
     // ================================================================
@@ -206,6 +258,25 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertSame(
             $app->make(ControllerDispatcher::class),
             $app->make(ControllerDispatcher::class)
+        );
+    }
+
+    public function testTearDownRestoresDefaultRequestSingletonBinding(): void
+    {
+        $app = App::getInstance();
+        $custom = new Request([], [], [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/custom',
+        ], []);
+        $app->instance(Request::class, $custom);
+
+        $this->tearDown();
+
+        $this->assertTrue($app->bound(Request::class));
+        $this->assertNotSame($custom, $app->make(Request::class));
+        $this->assertSame(
+            $app->make(Request::class),
+            $app->make(Request::class)
         );
     }
 
