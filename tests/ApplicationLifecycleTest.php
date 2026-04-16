@@ -16,7 +16,11 @@ use Bin\Foundation\Bootstrap\SetRequestContext;
 use Bin\Foundation\Bootstrap\RegisterProviders;
 use Bin\Foundation\Bootstrap\BootProviders;
 use Bin\Foundation\Contracts\Bootstrapper;
+use Bin\Middleware\AuthMiddleware;
+use Bin\Middleware\CsrfMiddleware;
+use Bin\Middleware\MiddlewareStack;
 use Bin\Response\Response;
+use Bin\Route\RouteCollection as Route;
 use Bin\Testing\TestCase;
 
 /**
@@ -33,10 +37,14 @@ class ApplicationLifecycleTest extends TestCase
         parent::setUp();
         $this->previousInstance = App::getInstance();
         App::setInstance(null);
+        Route::clear();
+        MiddlewareStack::reset();
     }
 
     protected function tearDown(): void
     {
+        Route::clear();
+        MiddlewareStack::reset();
         parent::tearDown();
         App::setInstance($this->previousInstance);
     }
@@ -325,16 +333,30 @@ class ApplicationLifecycleTest extends TestCase
         $app = App::getInstance();
         $console = new ConsoleKernel($app);
         $http = new HttpKernel($app);
+        $tempBasePath = $this->createTempBootstrapBasePath();
+        $this->setAppBasePath($app, $tempBasePath);
+
+        $this->assertSame([], Route::getRoutes());
+        $this->assertSame([], MiddlewareStack::getInstance()->getAliases());
 
         $console->bootstrap();
         $this->assertFalse($app->hasBeenBootstrappedBy(SetRequestContext::class));
+        $this->assertSame([], Route::getRoutes());
+        $this->assertSame([], MiddlewareStack::getInstance()->getAliases());
 
         $reflection = new \ReflectionMethod(HttpKernel::class, 'bootstrap');
         $reflection->invoke($http);
 
+        $routes = Route::getRoutes();
+        $stack = MiddlewareStack::getInstance();
+
         $this->assertTrue($app->hasBeenBootstrappedBy(SetRequestContext::class));
         $this->assertTrue($app->hasBeenBootstrappedBy(LoadMiddlewareConfiguration::class));
         $this->assertTrue($app->hasBeenBootstrappedBy(LoadRoutes::class));
+        $this->assertCount(1, $routes);
+        $this->assertSame('/bootstrap/test-route', $routes[0]->getPath());
+        $this->assertSame(AuthMiddleware::class, $stack->getAliases()['auth']);
+        $this->assertContains(CsrfMiddleware::class, $stack->getGroup('web'));
     }
 
     public function testBootstrapWithPartialPipeline(): void
@@ -502,5 +524,59 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertTrue(method_exists($app, 'boot'));
         $this->assertTrue(method_exists($app, 'isBooted'));
         $this->assertTrue(method_exists($app, 'hasBeenBootstrapped'));
+    }
+
+    private function createTempBootstrapBasePath(): string
+    {
+        $basePath = sys_get_temp_dir() . '/first-bootstrap-' . bin2hex(random_bytes(6));
+        $appPath = $basePath . '/app';
+        $configPath = $basePath . '/config';
+
+        mkdir($appPath, 0777, true);
+        mkdir($configPath, 0777, true);
+
+        file_put_contents($appPath . '/routes.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/bootstrap/test-route', static function (): string {
+    return 'loaded';
+});
+PHP);
+
+        file_put_contents($configPath . '/middleware.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Middleware\AuthMiddleware;
+use Bin\Middleware\CsrfMiddleware;
+
+return [
+    'global' => [],
+    'groups' => [
+        'web' => [
+            CsrfMiddleware::class,
+        ],
+    ],
+    'aliases' => [
+        'auth' => AuthMiddleware::class,
+    ],
+    'priority' => [
+        'auth' => 20,
+    ],
+];
+PHP);
+
+        return $basePath;
+    }
+
+    private function setAppBasePath(App $app, string $basePath): void
+    {
+        $reflection = new \ReflectionProperty(App::class, 'basePath');
+        $reflection->setValue($app, $basePath);
     }
 }

@@ -19,9 +19,7 @@ use Bin\Route\RouteCollection;
  * 统一处理 HTTP 请求的 bootstrapping 和分发
  * 职责：
  *   1. 运行 HTTP 所需的引导器
- *   2. 加载路由定义
- *   3. 加载中间件配置
- *   4. 将请求分发到路由 → 控制器
+ *   2. 将请求分发到路由 → 控制器
  */
 class HttpKernel
 {
@@ -48,12 +46,6 @@ class HttpKernel
         \Bin\Foundation\Bootstrap\LoadMiddlewareConfiguration::class,
         \Bin\Foundation\Bootstrap\LoadRoutes::class,
     ];
-
-    /**
-     * 中间件配置
-     * @var array<string, mixed>
-     */
-    protected array $middlewareConfig = [];
 
     /** @var Request|null 当前请求 */
     protected ?Request $currentRequest = null;
@@ -111,31 +103,6 @@ class HttpKernel
     {
         if ($this->currentRequest !== null && $this->currentResponse !== null) {
             RouteAction::terminate($this->currentRequest, $this->currentResponse);
-        }
-    }
-
-    /**
-     * 加载中间件配置
-     */
-    protected function loadMiddleware(): void
-    {
-        $configPath = $this->app->configPath('middleware.php');
-
-        if (file_exists($configPath)) {
-            $this->middlewareConfig = require $configPath;
-            \Bin\Middleware\MiddlewareStack::loadFromConfig($this->middlewareConfig);
-        }
-    }
-
-    /**
-     * 加载路由定义
-     */
-    protected function loadRoutes(): void
-    {
-        $routeFile = $this->app->basePath() . '/app/routes.php';
-
-        if (file_exists($routeFile)) {
-            require_once $routeFile;
         }
     }
 
