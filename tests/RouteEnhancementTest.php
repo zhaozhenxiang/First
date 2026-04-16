@@ -195,6 +195,15 @@ class RouteEnhancementTest extends TestCase
         });
     }
 
+    public function testModelBindingWithCallbackReturningNullThrowsNotFoundHttpException(): void
+    {
+        RouteBinding::model('user', TypedFindOrFailBoundModel::class, fn(int $id) => null);
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function () {
+            RouteBinding::resolve('user', '404');
+        });
+    }
+
     // ================================================================
     // RouteCollection::model/bind 代理
     // ================================================================

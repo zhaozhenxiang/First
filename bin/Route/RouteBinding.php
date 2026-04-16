@@ -56,7 +56,7 @@ class RouteBinding
             $model = static::$models[$key];
 
             if ($model['callback'] !== null) {
-                return static::resolveWithCallback($model['callback'], $value);
+                return static::resolveWithCallback($model['class'], $model['callback'], $value);
             }
 
             return static::resolveFromClass($model['class'], $value);
@@ -103,16 +103,22 @@ class RouteBinding
         return new $class();
     }
 
-    protected static function resolveWithCallback(callable $callback, mixed $value): mixed
+    protected static function resolveWithCallback(string $class, callable $callback, mixed $value): mixed
     {
         $value = static::normalizeCallbackValue($callback, $value);
 
         try {
-            return $callback($value);
+            $result = $callback($value);
         } catch (\InvalidArgumentException $e) {
             static::throwIfNotFound($e);
             throw $e;
         }
+
+        if ($result === null) {
+            throw new \Bin\Exception\NotFoundHttpException("{$class} with ID {$value} not found");
+        }
+
+        return $result;
     }
 
     protected static function normalizeFinderValue(string $class, string $method, mixed $value): mixed
