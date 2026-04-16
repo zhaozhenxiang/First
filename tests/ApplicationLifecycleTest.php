@@ -450,6 +450,14 @@ class ApplicationLifecycleTest extends TestCase
         $bootstrapper = new HandleExceptions();
         $bootstrapper->bootstrap($app);
 
+        $resolver = \Closure::bind(
+            fn (App $app): \Bin\Exception\ExceptionHandler => $this->resolveHandler($app),
+            $bootstrapper,
+            HandleExceptions::class
+        );
+        $handler = $resolver($app);
+        $handler->dontReport([\RuntimeException::class]);
+
         $registered = set_exception_handler(static function (): void {});
         restore_exception_handler();
 

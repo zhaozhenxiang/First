@@ -6,6 +6,7 @@ namespace Bin\Foundation;
 
 use Bin\App\App;
 use Bin\Console\Kernel as ConsoleKernelBase;
+use Bin\Console\Output;
 
 /**
  * Console 内核
@@ -69,11 +70,9 @@ class ConsoleKernel
      */
     public function handle(): int
     {
-        $this->bootstrap();
-
-        ConsoleKernelBase::setConsoleKernel($this);
-
         try {
+            $this->bootstrap();
+            ConsoleKernelBase::setConsoleKernel($this);
             return ConsoleKernelBase::handle();
         } catch (\Throwable $e) {
             return $this->handleThrowable($e);
@@ -85,9 +84,8 @@ class ConsoleKernel
      */
     public function call(string $command, array $arguments = []): int
     {
-        $this->bootstrap();
-
         try {
+            $this->bootstrap();
             return ConsoleKernelBase::call($command, $arguments);
         } catch (\Throwable $e) {
             return $this->handleThrowable($e);
@@ -140,12 +138,14 @@ class ConsoleKernel
 
     private function handleThrowable(\Throwable $e): int
     {
+        $output = new Output();
+
         try {
             $handler = $this->app->make(\Bin\Exception\ExceptionHandler::class);
             $handler->report($e);
-            echo $handler->renderForConsole($e);
+            $output->writeError($handler->renderForConsole($e), false);
         } catch (\Throwable) {
-            echo $e->getMessage() . PHP_EOL;
+            $output->writeError($e->getMessage() . PHP_EOL, false);
         }
 
         return 1;

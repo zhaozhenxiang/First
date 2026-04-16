@@ -356,6 +356,81 @@ class ConsoleArtisanParityTest extends TestCase
         $this->assertStringContainsString('console: boom', $output);
     }
 
+    public function testConsoleKernelCallHandlesBootstrapFailuresThroughExceptionHandler(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new ConsoleKernel($app);
+        $kernel->setBootstrappers([ConsoleKernelThrowingBootstrapper::class]);
+
+        $handler = new class(false) extends \Bin\Exception\ExceptionHandler {
+            public bool $reported = false;
+
+            public function report(\Throwable $e): void
+            {
+                $this->reported = true;
+            }
+
+            public function renderForConsole(\Throwable $e): string
+            {
+                return 'console bootstrap: ' . $e->getMessage() . PHP_EOL;
+            }
+        };
+
+        $app->instance(\Bin\Exception\ExceptionHandler::class, $handler);
+
+        ob_start();
+        $exitCode = $kernel->call('ignored:test');
+        $output = ob_get_clean();
+
+        $this->assertSame(1, $exitCode);
+        $this->assertTrue($handler->reported);
+        $this->assertStringContainsString('console bootstrap: bootstrap boom', $output);
+    }
+
+    public function testConsoleKernelHandleHandlesBootstrapFailuresThroughExceptionHandler(): void
+    {
+        $app = \Bin\App\App::getInstance();
+        $kernel = new ConsoleKernel($app);
+        $kernel->setBootstrappers([ConsoleKernelThrowingBootstrapper::class]);
+
+        $handler = new class(false) extends \Bin\Exception\ExceptionHandler {
+            public bool $reported = false;
+
+            public function report(\Throwable $e): void
+            {
+                $this->reported = true;
+            }
+
+            public function renderForConsole(\Throwable $e): string
+            {
+                return 'console handle: ' . $e->getMessage() . PHP_EOL;
+            }
+        };
+
+        $app->instance(\Bin\Exception\ExceptionHandler::class, $handler);
+
+        $originalArgv = $_SERVER['argv'] ?? null;
+        $_SERVER['argv'] = ['command', 'boom:test'];
+        $GLOBALS['argv'] = $_SERVER['argv'];
+
+        try {
+            ob_start();
+            $exitCode = $kernel->handle();
+            $output = ob_get_clean();
+        } finally {
+            if ($originalArgv === null) {
+                unset($_SERVER['argv'], $GLOBALS['argv']);
+            } else {
+                $_SERVER['argv'] = $originalArgv;
+                $GLOBALS['argv'] = $originalArgv;
+            }
+        }
+
+        $this->assertSame(1, $exitCode);
+        $this->assertTrue($handler->reported);
+        $this->assertStringContainsString('console handle: bootstrap boom', $output);
+    }
+
     // =========================================================================
     // Kernel::command() 完整签名测试
     // =========================================================================
@@ -392,4 +467,12 @@ class LazyTestCommand extends \Bin\Console\Command
     public string $name = 'lazy:test';
     public string $description = 'Lazy loaded command';
     public function execute(): int { return 0; }
+}
+
+class ConsoleKernelThrowingBootstrapper implements \Bin\Foundation\Contracts\Bootstrapper
+{
+    public function bootstrap(\Bin\App\App $app): void
+    {
+        throw new \RuntimeException('bootstrap boom');
+    }
 }
