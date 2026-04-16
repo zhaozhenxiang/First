@@ -28,8 +28,15 @@ class RouteAction
     public static function getDispatcher(): ControllerDispatcher
     {
         if (static::$dispatcher === null) {
-            static::$dispatcher = new ControllerDispatcher();
+            $app = App::getInstance();
+
+            try {
+                static::$dispatcher = $app->make(ControllerDispatcher::class);
+            } catch (\Throwable) {
+                static::$dispatcher = new ControllerDispatcher();
+            }
         }
+
         return static::$dispatcher;
     }
 

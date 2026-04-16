@@ -130,7 +130,6 @@ class App implements ContainerInterface
     {
         $this->basePath = $basePath;
         $this->container = new Container();
-        $this->providerRepository = new ProviderRepository($this);
         $this->registerCoreServices();
     }
 
@@ -267,12 +266,26 @@ class App implements ContainerInterface
      */
     private function registerCoreServices(): void
     {
-        // 注册单例服务
+        $this->container->instance(self::class, $this);
+        $this->container->instance(Container::class, $this->container);
+
         foreach (self::$coreAliases as $alias => $class) {
             if (!$this->container->bound($alias)) {
                 $this->container->singleton($alias, $class);
             }
+
+            if (!$this->container->bound($class)) {
+                $this->container->singleton($class, $class);
+            }
         }
+
+        $this->providerRepository ??= new ProviderRepository($this);
+        $this->container->instance(ProviderRepository::class, $this->providerRepository);
+
+        $this->container->singleton(\Bin\Foundation\HttpKernel::class, fn () => new \Bin\Foundation\HttpKernel($this));
+        $this->container->singleton(\Bin\Foundation\ConsoleKernel::class, fn () => new \Bin\Foundation\ConsoleKernel($this));
+        $this->container->singleton(\Bin\Routing\ControllerDispatcher::class, \Bin\Routing\ControllerDispatcher::class);
+        $this->container->singleton(\Bin\Exception\ExceptionHandler::class, fn () => new \Bin\Exception\ExceptionHandler((bool) env('APP_DEBUG', false)));
 
         // 注册 Facade
         foreach (self::$facades as $alias => $facade) {
@@ -341,7 +354,10 @@ class App implements ContainerInterface
      */
     public function getHttpKernel(): \Bin\Foundation\HttpKernel
     {
-        return $this->httpKernel ??= new \Bin\Foundation\HttpKernel($this);
+        /** @var \Bin\Foundation\HttpKernel $kernel */
+        $kernel = $this->httpKernel ??= $this->make(\Bin\Foundation\HttpKernel::class);
+
+        return $kernel;
     }
 
     /**
@@ -349,7 +365,10 @@ class App implements ContainerInterface
      */
     public function getConsoleKernel(): \Bin\Foundation\ConsoleKernel
     {
-        return $this->consoleKernel ??= new \Bin\Foundation\ConsoleKernel($this);
+        /** @var \Bin\Foundation\ConsoleKernel $kernel */
+        $kernel = $this->consoleKernel ??= $this->make(\Bin\Foundation\ConsoleKernel::class);
+
+        return $kernel;
     }
 
     /**

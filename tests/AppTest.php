@@ -370,6 +370,29 @@ class AppTest extends TestCase
         $this->assertInstanceOf(\StdClass::class, $this->app->make('test.service'));
     }
 
+    public function testAppResolvesHttpKernelThroughContainer(): void
+    {
+        $custom = new \Bin\Foundation\HttpKernel($this->app);
+        $this->app->instance(\Bin\Foundation\HttpKernel::class, $custom);
+
+        $this->assertSame($custom, $this->app->getHttpKernel());
+    }
+
+    public function testProviderRepositoryBuildsProvidersThroughContainer(): void
+    {
+        $dependency = new ProviderDependency();
+        $dependency->name = 'from-container';
+
+        $this->app->instance(ProviderDependency::class, $dependency);
+        $this->app->register(ContainerAwareProvider::class, true);
+        $this->app->make('provider.dependency');
+
+        $resolved = $this->app->make('provider.dependency');
+
+        $this->assertSame($dependency, $resolved);
+        $this->assertEquals('from-container', $resolved->name);
+    }
+
     public function testMagicCall(): void
     {
         $this->app->bind('test', \StdClass::class);
@@ -415,6 +438,29 @@ class TestDependencyB
 class ResolvingTestDependency
 {
     // 空类，用于测试解析状态
+}
+
+class ProviderDependency
+{
+    public string $name = 'default';
+}
+
+class ContainerAwareProvider extends ServiceProvider
+{
+    public function __construct(\Bin\App\App $app, private ProviderDependency $dependency)
+    {
+        parent::__construct($app);
+    }
+
+    public function register(): void
+    {
+        $this->instance('provider.dependency', $this->dependency);
+    }
+
+    public function provides(): array
+    {
+        return ['provider.dependency'];
+    }
 }
 
 /**

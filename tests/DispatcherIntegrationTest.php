@@ -132,6 +132,18 @@ class DispatcherIntegrationTest extends TestCase
         RouteAction::setDispatcher(new ControllerDispatcher());
     }
 
+    public function testRouteActionResolvesDispatcherFromContainer(): void
+    {
+        $custom = new ControllerDispatcher();
+        \Bin\App\App::getInstance()->instance(ControllerDispatcher::class, $custom);
+
+        $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
+        $property->setAccessible(true);
+        $property->setValue(null, null);
+
+        $this->assertSame($custom, RouteAction::getDispatcher());
+    }
+
     // ================================================================
     // Response 包装
     // ================================================================
