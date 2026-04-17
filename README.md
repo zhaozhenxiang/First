@@ -21,4 +21,7 @@
 * php cli mode
 
 #### 已完成的功能 
-*
+* 
+
+#### 文档 / Specs
+* M1 运行时骨架统一文档索引： [docs/superpowers/specs/README.md](/home/x/src/install/php/First/docs/superpowers/specs/README.md)
