@@ -78,4 +78,95 @@ class TestCommandScriptTest extends TestCase
         $this->assertStringContainsString('Passed: 22, Failed: 0', $rendered);
         $this->assertStringNotContainsString('Cannot modify header information', $rendered);
     }
+
+    public function testRootTestScriptReturnsNonZeroForUnhandledErrorInSuiteMode(): void
+    {
+        $script = basePath('test');
+        $tempDir = sys_get_temp_dir() . '/test_command_error_suite_' . uniqid();
+
+        mkdir($tempDir, 0777, true);
+        file_put_contents($tempDir . '/FailingErrorTest.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace Tests;
+
+use Bin\Testing\TestCase;
+
+class FailingErrorTest extends TestCase
+{
+    public function testThrowsError(): void
+    {
+        \Does\Not\Exist::boom();
+    }
+}
+PHP);
+
+        try {
+            $command = 'php ' . escapeshellarg($script) . ' ' . escapeshellarg($tempDir) . ' 2>&1';
+
+            $output = [];
+            $exitCode = 0;
+            exec($command, $output, $exitCode);
+
+            $rendered = implode("\n", $output);
+
+            $this->assertEquals(1, $exitCode);
+            $this->assertStringContainsString('Class "Does\Not\Exist" not found', $rendered);
+            $this->assertStringContainsString('Tests:  1, ✗ 1 failed, ✓ 0 passed', $rendered);
+            $this->assertStringNotContainsString('PHP Fatal error', $rendered);
+        } finally {
+            unlink($tempDir . '/FailingErrorTest.php');
+            rmdir($tempDir);
+        }
+    }
+
+    public function testRootTestScriptReturnsNonZeroForTearDownErrorInSuiteMode(): void
+    {
+        $script = basePath('test');
+        $tempDir = sys_get_temp_dir() . '/test_command_teardown_suite_' . uniqid();
+
+        mkdir($tempDir, 0777, true);
+        file_put_contents($tempDir . '/FailingTearDownTest.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace Tests;
+
+use Bin\Testing\TestCase;
+
+class FailingTearDownTest extends TestCase
+{
+    protected function tearDown(): void
+    {
+        \Does\Not\Exist::boom();
+    }
+
+    public function testPassesUntilTearDown(): void
+    {
+        // noop
+    }
+}
+PHP);
+
+        try {
+            $command = 'php ' . escapeshellarg($script) . ' ' . escapeshellarg($tempDir) . ' 2>&1';
+
+            $output = [];
+            $exitCode = 0;
+            exec($command, $output, $exitCode);
+
+            $rendered = implode("\n", $output);
+
+            $this->assertEquals(1, $exitCode);
+            $this->assertStringContainsString('Class "Does\Not\Exist" not found', $rendered);
+            $this->assertStringContainsString('Tests:  1, ✗ 1 failed, ✓ 0 passed', $rendered);
+            $this->assertStringNotContainsString('PHP Fatal error', $rendered);
+        } finally {
+            unlink($tempDir . '/FailingTearDownTest.php');
+            rmdir($tempDir);
+        }
+    }
 }

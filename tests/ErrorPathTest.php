@@ -152,19 +152,19 @@ class ErrorPathTest extends TestCase
 
     public function testRequestInputReturnsDefaultForMissing(): void
     {
-        $request = new \Bin\Request\Request(query: []);
+        $request = new \Bin\Request\Request(query: [], post: [], server: [], cookies: []);
         $this->assertEquals('default', $request->input('nonexistent', 'default'));
     }
 
     public function testRequestAllReturnsEmptyArray(): void
     {
-        $request = new \Bin\Request\Request(query: []);
+        $request = new \Bin\Request\Request(query: [], post: [], server: [], cookies: []);
         $this->assertEquals([], $request->all());
     }
 
     public function testRequestOnlyReturnsEmptyForMissing(): void
     {
-        $request = new \Bin\Request\Request(query: ['a' => 1]);
+        $request = new \Bin\Request\Request(query: ['a' => 1], post: [], server: [], cookies: []);
         $result = $request->only(['b', 'c']);
         $this->assertEquals([], $result);
     }
@@ -173,6 +173,9 @@ class ErrorPathTest extends TestCase
     {
         $request = new \Bin\Request\Request(
             query: ['a' => 1, 'b' => 2, 'c' => 3],
+            post: [],
+            server: [],
+            cookies: [],
         );
         $result = $request->except(['a']);
         $this->assertArrayNotHasKey('a', $result);

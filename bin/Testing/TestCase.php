@@ -6,7 +6,7 @@ namespace Bin\Testing;
 
 use Bin\Database\Schema\Schema;
 use Bin\Database\Migrations\Migrator;
-use Exception;
+use Throwable;
 
 /**
  * 测试用例基类
@@ -80,6 +80,10 @@ abstract class TestCase
     final public function runTest(string $method): TestResult
     {
         $result = new TestResult(static::class, $method);
+        $deferredException = null;
+        $cleanupError = null;
+        $previousErrorHandler = $this->captureErrorHandler();
+        $previousExceptionHandler = $this->captureExceptionHandler();
 
         try {
             // 执行 beforeEach 回调
@@ -98,24 +102,22 @@ abstract class TestCase
 
         } catch (AssertionFailedException $e) {
             $result->setFailed($e->getMessage(), $e->getFile(), $e->getLine());
-        } catch (Exception $e) {
+        } catch (SkippedTestException | IncompleteTestException $e) {
+            $deferredException = $e;
+        } catch (Throwable $e) {
             $result->setError($e->getMessage(), $e->getFile(), $e->getLine());
         } finally {
-            // 执行 tearDown
-            if ($this->setUpHasRun && !$this->tearDownHasRun) {
-                $this->tearDownHasRun = true;
-                $this->tearDown();
-            }
+            $cleanupError = $this->runCleanup();
+            $this->restoreErrorHandler($previousErrorHandler);
+            $this->restoreExceptionHandler($previousExceptionHandler);
 
-            // 执行 afterEach 回调
-            foreach ($this->afterEachCallbacks as $callback) {
-                $callback($this);
+            if ($cleanupError !== null && !$result->isFailure() && !$result->isError()) {
+                $result->setError($cleanupError->getMessage(), $cleanupError->getFile(), $cleanupError->getLine());
             }
+        }
 
-            // 自动验证所有 Mock
-            foreach ($this->createdMocks as $mock) {
-                $mock->verify();
-            }
+        if ($deferredException !== null && !$result->isError()) {
+            throw $deferredException;
         }
 
         return $result;
@@ -578,6 +580,108 @@ abstract class TestCase
         }
 
         return (string) $value;
+    }
+
+    private function runCleanup(): ?Throwable
+    {
+        try {
+            // 执行 tearDown
+            if ($this->setUpHasRun && !$this->tearDownHasRun) {
+                $this->tearDownHasRun = true;
+                $this->tearDown();
+            }
+
+            // 执行 afterEach 回调
+            foreach ($this->afterEachCallbacks as $callback) {
+                $callback($this);
+            }
+
+            // 自动验证所有 Mock
+            foreach ($this->createdMocks as $mock) {
+                $mock->verify();
+            }
+        } catch (Throwable $e) {
+            return $e;
+        }
+
+        return null;
+    }
+
+    private function captureExceptionHandler(): mixed
+    {
+        $handler = set_exception_handler(static function (Throwable $e): void {
+        });
+        restore_exception_handler();
+
+        return $handler;
+    }
+
+    private function captureErrorHandler(): mixed
+    {
+        $handler = set_error_handler(static function (): bool {
+            return false;
+        });
+        restore_error_handler();
+
+        return $handler;
+    }
+
+    private function restoreExceptionHandler(mixed $expected): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $current = $this->captureExceptionHandler();
+            if ($this->handlersMatch($current, $expected)) {
+                return;
+            }
+
+            restore_exception_handler();
+        }
+    }
+
+    private function restoreErrorHandler(mixed $expected): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $current = $this->captureErrorHandler();
+            if ($this->handlersMatch($current, $expected)) {
+                return;
+            }
+
+            restore_error_handler();
+        }
+    }
+
+    private function handlersMatch(mixed $left, mixed $right): bool
+    {
+        return $this->normalizeHandler($left) === $this->normalizeHandler($right);
+    }
+
+    private function normalizeHandler(mixed $handler): string
+    {
+        if ($handler === null) {
+            return 'null';
+        }
+
+        if ($handler instanceof \Closure) {
+            return 'closure:' . spl_object_id($handler);
+        }
+
+        if (is_string($handler)) {
+            return 'string:' . $handler;
+        }
+
+        if (is_array($handler) && count($handler) === 2) {
+            $target = is_object($handler[0])
+                ? 'object:' . spl_object_id($handler[0])
+                : 'class:' . (string) $handler[0];
+
+            return 'array:' . $target . '::' . (string) $handler[1];
+        }
+
+        if (is_object($handler)) {
+            return 'object:' . spl_object_id($handler);
+        }
+
+        return get_debug_type($handler) . ':' . json_encode($handler);
     }
 
     /**

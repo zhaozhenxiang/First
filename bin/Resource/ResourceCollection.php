@@ -292,7 +292,7 @@ class ResourceCollection implements JsonSerializable, Countable, IteratorAggrega
     /**
      * 获取指定范围的资源
      */
-    public function slice(int $offset, int $length = null): array
+    public function slice(int $offset, ?int $length = null): array
     {
         $items = is_array($this->resource)
             ? array_slice($this->resource, $offset, $length)
