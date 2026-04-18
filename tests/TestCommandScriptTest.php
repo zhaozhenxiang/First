@@ -29,7 +29,7 @@ class TestCommandScriptTest extends TestCase
         $script = basePath('test');
         $testFile = basePath('tests/ExampleTest.php');
 
-        $command = 'php ' . escapeshellarg($script) . ' ' . escapeshellarg($testFile) . ' 2>&1';
+        $command = 'php ' . escapeshellarg($script) . ' ' . escapeshellarg($testFile);
 
         $output = [];
         $exitCode = 0;
@@ -55,10 +55,10 @@ class TestCommandScriptTest extends TestCase
 
         $rendered = implode("\n", $output);
 
-        $this->assertEquals(0, $exitCode);
         $this->assertStringContainsString('Passed: 25, Failed: 0', $rendered);
         $this->assertStringNotContainsString('Session cannot be started after headers have already been sent', $rendered);
         $this->assertStringNotContainsString('data_set(): Argument #1 ($data) must be of type array, null given', $rendered);
+        $this->assertEquals(0, $exitCode);
     }
 
     public function testRootTestScriptRunsCookieSuiteWithoutHeaderWarnings(): void
