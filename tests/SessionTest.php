@@ -20,6 +20,10 @@ class SessionTest extends TestCase
     {
         parent::setUp();
 
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
         // 创建临时 Session 目录
         $this->tempSessionPath = sys_get_temp_dir() . '/session_test_' . uniqid();
         mkdir($this->tempSessionPath, 0777, true);
@@ -236,6 +240,7 @@ class SessionTest extends TestCase
         $sidLength = (int) ini_get('session.sid_length');
 
         $this->assertNotEmpty($id);
+        $this->assertGreaterThan(0, $sidLength);
         $this->assertEquals($sidLength, strlen($id)); // PHP session_id 长度取决于当前环境
     }
 
@@ -283,7 +288,7 @@ class SessionTest extends TestCase
      */
     private function ageFlashData(): void
     {
-        $sessionData = $_SESSION;
+        $this->session->start();
 
         // 先结束当前请求的 session，确保下一次 start() 会真正进入新请求边界
         $currentSessionId = session_id();
@@ -294,16 +299,6 @@ class SessionTest extends TestCase
         $newSession->setHandler(new FileSessionHandler($this->tempSessionPath));
         $newSession->setId($currentSessionId);
         $newSession->start();
-
-        // 某些测试运行环境会让 session_start() 重新得到空数组。
-        // 如果这样，手动补回“下一次请求”应看到的旧 Flash 状态。
-        if (isset($sessionData['_flash'])) {
-            $_SESSION = $sessionData;
-            if (isset($_SESSION['_flash'])) {
-                $_SESSION['_flash_old'] = $_SESSION['_flash'];
-                unset($_SESSION['_flash']);
-            }
-        }
 
         $this->session = $newSession;
     }
