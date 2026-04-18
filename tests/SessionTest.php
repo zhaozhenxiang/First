@@ -20,6 +20,10 @@ class SessionTest extends TestCase
     {
         parent::setUp();
 
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
         // 创建临时 Session 目录
         $this->tempSessionPath = sys_get_temp_dir() . '/session_test_' . uniqid();
         mkdir($this->tempSessionPath, 0777, true);
@@ -233,9 +237,11 @@ class SessionTest extends TestCase
     public function testSessionId(): void
     {
         $id = $this->session->getId();
+        $sidLength = (int) ini_get('session.sid_length');
 
         $this->assertNotEmpty($id);
-        $this->assertEquals(26, strlen($id)); // PHP session_id 长度
+        $this->assertGreaterThan(0, $sidLength);
+        $this->assertEquals($sidLength, strlen($id)); // PHP session_id 长度取决于当前环境
     }
 
     public function testSessionName(): void
@@ -282,10 +288,16 @@ class SessionTest extends TestCase
      */
     private function ageFlashData(): void
     {
+        $this->session->start();
+
+        // 先结束当前请求的 session，确保下一次 start() 会真正进入新请求边界
+        $currentSessionId = session_id();
+        $this->session->save();
+
         // 创建新的 Session 实例来模拟下次请求
         $newSession = new SessionManager();
         $newSession->setHandler(new FileSessionHandler($this->tempSessionPath));
-        $newSession->setId($this->session->getId());
+        $newSession->setId($currentSessionId);
         $newSession->start();
 
         $this->session = $newSession;

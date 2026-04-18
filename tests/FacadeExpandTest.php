@@ -206,7 +206,7 @@ class FacadeExpandTest extends TestCase
 
     public function testViewFacadeCreatesView(): void
     {
-        $view = View::make('test');
+        $view = View::make('layout');
         $this->assertInstanceOf(\Bin\View\View::class, $view);
     }
 

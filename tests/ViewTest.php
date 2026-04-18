@@ -19,21 +19,21 @@ class ViewTest extends TestCase
 
     public function testViewMakeAppendsPhpSuffix(): void
     {
-        $view = View::make('test');
+        $view = View::make('layout');
         $path = $view->getView();
         $this->assertStringEndsWith('.php', $path);
     }
 
     public function testViewMakeKeepsExistingPhpSuffix(): void
     {
-        $view = View::make('test.php');
+        $view = View::make('layout.php');
         $path = $view->getView();
         $this->assertFalse(str_ends_with($path, '.php.php'));
     }
 
     public function testViewWithSetsData(): void
     {
-        $view = View::make('test');
+        $view = View::make('layout');
         $result = $view->with('key', 'value');
 
         $this->assertSame($view, $result);
@@ -41,7 +41,7 @@ class ViewTest extends TestCase
 
     public function testViewGetData(): void
     {
-        $view = View::make('test');
+        $view = View::make('layout');
         $view->with('name', 'Alice');
         $view->with('age', 30);
 

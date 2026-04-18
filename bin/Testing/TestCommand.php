@@ -157,38 +157,57 @@ class TestCommand
     }
 
     /**
+     * 使用输出缓冲运行
+     */
+    private function runWithBufferedOutput(callable $callback): int
+    {
+        $initialBufferLevel = ob_get_level();
+        ob_start();
+
+        try {
+            return $callback();
+        } finally {
+            while (ob_get_level() > $initialBufferLevel) {
+                ob_end_flush();
+            }
+        }
+    }
+
+    /**
      * 运行
      */
     public function run(): int
     {
-        if ($this->singleTestFile !== null) {
-            return $this->runTestFile($this->singleTestFile);
-        }
+        return $this->runWithBufferedOutput(function (): int {
+            if ($this->singleTestFile !== null) {
+                return $this->runTestFile($this->singleTestFile);
+            }
 
-        echo "Testing Framework\n";
-        echo "==================\n\n";
+            echo "Testing Framework\n";
+            echo "==================\n\n";
 
-        $runner = new TestRunner($this->testPath);
+            $runner = new TestRunner($this->testPath);
 
-        if ($this->verbose) {
-            $runner->setVerbose(true);
-        }
+            if ($this->verbose) {
+                $runner->setVerbose(true);
+            }
 
-        if ($this->stopOnFailure) {
-            $runner->setStopOnFailure(true);
-        }
+            if ($this->stopOnFailure) {
+                $runner->setStopOnFailure(true);
+            }
 
-        $runner->setPattern($this->pattern);
+            $runner->setPattern($this->pattern);
 
-        if ($this->filter !== null) {
-            $runner->setFilter($this->filter);
-        }
+            if ($this->filter !== null) {
+                $runner->setFilter($this->filter);
+            }
 
-        $summary = $runner->run();
+            $summary = $runner->run();
 
-        $summary->output();
+            $summary->output();
 
-        return $summary->getExitCode();
+            return $summary->getExitCode();
+        });
     }
 }
 
