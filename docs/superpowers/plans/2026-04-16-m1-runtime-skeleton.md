@@ -1,6 +1,9 @@
 # M1 Runtime Skeleton Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Status:** Completed on 2026-04-18.
+> Closure was recorded in `docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md`, but this plan file did not previously mirror that final state.
 
 **Goal:** Make bootstrapping, composition, request/console execution, exception handling, response normalization, and route infrastructure deterministic under one runtime skeleton.
 
