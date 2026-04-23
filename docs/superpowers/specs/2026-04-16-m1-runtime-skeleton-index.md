@@ -2,7 +2,13 @@
 
 ## 说明
 
-这组文档围绕 `M1 运行时骨架统一` 组织成一套主 spec + 执行附录。
+这组文档围绕 `M1 运行时骨架统一` 组织成一套主 spec + 执行附录 + 收口记录。
+
+当前状态：
+
+- `M1` 已于 `2026-04-18` 完成验收并关账
+- 如果现在要复盘结果，优先读 [M1 Closure](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md)
+- 任务拆解、改造顺序、测试清单保留为历史实施资料
 
 适用场景：
 
@@ -20,13 +26,15 @@
 2. [M1 任务拆解](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-tasks.md)
 3. [M1 改造顺序](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-order.md)
 4. [M1 测试清单](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-tests.md)
+5. [M1 Closure](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md)
 
 这个顺序对应的是：
 
 - 先看主 spec
 - 再看任务范围
 - 再看改造顺序
-- 最后看测试验证
+- 再看测试验证
+- 最后看收口结论
 
 ---
 
@@ -102,6 +110,23 @@
 - 按 `T1-T6` 映射的测试建议
 - `M1` 完成前的测试标准
 
+## 5. M1 Closure
+
+[M1 Closure](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md)
+
+适合在这些时候看：
+
+- 要确认 `M1` 是否可以正式关账
+- 要看 6 条验收标准是否逐条满足
+- 要看本轮回归测试证据和已知限制
+
+主要内容：
+
+- `M1` 关账结论
+- 验收标准对照
+- 一级 / 二级回归结果
+- 已知限制和后续阶段入口
+
 ---
 
 ## 按角色阅读
@@ -129,7 +154,13 @@
 
 ## 当前推荐入口
 
-如果现在准备真正开始 `M1`，建议从这里开始：
+如果现在要复盘 `M1`，建议从这里开始：
+
+1. 先读 [M1 Closure](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md)
+2. 再回看 [M1 主 spec](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-spec.md) 的 `M1 范围`、`M1 设计原则` 和 `验收标准`
+3. 如需追溯实施过程，再看任务拆解、改造顺序和测试清单
+
+如果是要回放当初的实施顺序，历史入口仍然是：
 
 1. 阅读 [M1 主 spec](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-spec.md) 里的 `M1 范围`、`M1 设计原则` 和 `实施入口`
 2. 打开 [M1 任务拆解](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-tasks.md) 对照 `T1 Bootstrap`
@@ -144,3 +175,4 @@
 - 看任务范围： [M1 任务拆解](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-tasks.md)
 - 看实施顺序： [M1 改造顺序](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-order.md)
 - 看测试验证： [M1 测试清单](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-16-m1-runtime-skeleton-tests.md)
+- 看收口结论： [M1 Closure](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md)
