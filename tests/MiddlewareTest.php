@@ -145,22 +145,48 @@ class MiddlewareTest extends TestCase
         $this->assertStringContainsString('hidden', $field);
     }
 
-    public function testCsrfMiddlewareReturnsResponseOnInvalidToken(): void
+    public function testCsrfTokenGenerationStoresTokenInSessionManager(): void
     {
-        $_SESSION = ['_csrf_token' => 'expected-token'];
+        $app = App::getInstance();
+        $previous = $app->make(SessionManager::class);
 
-        $middleware = new \Bin\Middleware\CsrfMiddleware();
-        $request = new Request(
-            query: [],
-            post: ['_csrf_token' => 'wrong-token'],
-            server: ['REQUEST_METHOD' => 'POST']
-        );
+        try {
+            $session = new SessionManager();
+            $app->instance(SessionManager::class, $session);
 
-        $result = $middleware->handle($request, fn($req) => 'ok');
+            $token = \Bin\Middleware\CsrfMiddleware::generateToken();
 
-        $this->assertInstanceOf(Response::class, $result);
-        $this->assertEquals(403, $result->getStatusCode());
-        $this->assertEquals('CSRF token validation failed', $result->getContent());
+            $this->assertSame($token, $session->getCsrfToken());
+            $this->assertSame($token, \Bin\Middleware\CsrfMiddleware::generateToken());
+        } finally {
+            $app->instance(SessionManager::class, $previous);
+        }
+    }
+
+    public function testCsrfMiddlewareThrowsHttpExceptionOnInvalidToken(): void
+    {
+        $app = App::getInstance();
+        $previous = $app->make(SessionManager::class);
+
+        try {
+            $session = new SessionManager();
+            $app->instance(SessionManager::class, $session);
+            $session->start();
+            $session->putCsrfToken();
+
+            $middleware = new \Bin\Middleware\CsrfMiddleware();
+            $request = new Request(
+                query: [],
+                post: ['_csrf_token' => 'wrong-token'],
+                server: ['REQUEST_METHOD' => 'POST']
+            );
+
+            $this->assertThrows(\Bin\Exception\HttpException::class, function () use ($middleware, $request) {
+                $middleware->handle($request, fn($req) => 'ok');
+            });
+        } finally {
+            $app->instance(SessionManager::class, $previous);
+        }
     }
 
     // === RateLimiter 核心逻辑 ===

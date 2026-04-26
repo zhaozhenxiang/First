@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Bin\Middleware;
 
+use Bin\App\App;
+use Bin\Exception\HttpException;
 use Bin\Request\Request;
-use Bin\Response\Response;
+use Bin\Session\SessionManager;
 
 /**
  * CSRF 防护中间件
@@ -13,7 +15,6 @@ use Bin\Response\Response;
 class CsrfMiddleware extends Middleware
 {
     private static string $tokenName = '_csrf_token';
-    private static ?string $token = null;
 
     /**
      * 处理请求
@@ -25,7 +26,7 @@ class CsrfMiddleware extends Middleware
             : strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
         // 安全方法跳过验证
-        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
+        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
             return $next($request);
         }
 
@@ -38,7 +39,7 @@ class CsrfMiddleware extends Middleware
         }
 
         if (!self::validateToken($token)) {
-            return new Response('CSRF token validation failed', 403);
+            throw new HttpException(403, 'CSRF token validation failed');
         }
 
         return $next($request);
@@ -49,16 +50,14 @@ class CsrfMiddleware extends Middleware
      */
     public static function generateToken(): string
     {
-        if (self::$token === null) {
-            if (isset($_SESSION[self::$tokenName])) {
-                self::$token = $_SESSION[self::$tokenName];
-            } else {
-                self::$token = bin2hex(random_bytes(32));
-                $_SESSION[self::$tokenName] = self::$token;
-            }
+        $session = self::session();
+        $token = $session->getCsrfToken();
+
+        if ($token === null) {
+            $token = $session->putCsrfToken();
         }
 
-        return self::$token;
+        return $token;
     }
 
     /**
@@ -66,9 +65,11 @@ class CsrfMiddleware extends Middleware
      */
     public static function validateToken(?string $token): bool
     {
-        $storedToken = $_SESSION[self::$tokenName] ?? '';
+        if ($token === null || $token === '') {
+            return false;
+        }
 
-        return hash_equals($storedToken, $token ?? '');
+        return self::session()->verifyCsrfToken($token);
     }
 
     /**
@@ -81,5 +82,13 @@ class CsrfMiddleware extends Middleware
             self::$tokenName,
             self::generateToken()
         );
+    }
+
+    private static function session(): SessionManager
+    {
+        /** @var SessionManager $session */
+        $session = App::getInstance()->make(SessionManager::class);
+
+        return $session;
     }
 }
