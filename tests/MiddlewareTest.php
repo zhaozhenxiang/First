@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\App\App;
+use Bin\Middleware\Middleware;
+use Bin\Middleware\SessionMiddleware;
 use Bin\Request\Request;
 use Bin\Response\Response;
+use Bin\Session\FileSessionHandler;
+use Bin\Session\SessionManager;
 use Bin\Testing\TestCase;
-use Bin\Middleware\Middleware;
 
 class MiddlewareTest extends TestCase
 {
@@ -63,6 +67,48 @@ class MiddlewareTest extends TestCase
 
         $result = $middleware->handle('request', fn($r) => 'hello');
         $this->assertEquals('HELLO', $result);
+    }
+
+    public function testSessionMiddlewareRestoresSessionFromRequestCookieAndQueuesResponseCookie(): void
+    {
+        $tempPath = sys_get_temp_dir() . '/session_middleware_' . uniqid();
+        mkdir($tempPath, 0777, true);
+        $app = App::getInstance();
+        $previous = $app->make(SessionManager::class);
+
+        try {
+            $seed = new SessionManager();
+            $seed->setHandler(new FileSessionHandler($tempPath));
+            $seed->start();
+            $seed->set('user_id', 7);
+            $seedId = $seed->getId();
+            $seed->save();
+
+            $bound = new SessionManager();
+            $bound->setHandler(new FileSessionHandler($tempPath));
+            $app->instance(SessionManager::class, $bound);
+
+            $request = new Request(
+                query: [],
+                post: [],
+                server: ['REQUEST_METHOD' => 'GET'],
+                cookies: [$bound->getName() => $seedId]
+            );
+
+            $middleware = new SessionMiddleware();
+
+            $response = $middleware->handle($request, function () use ($bound) {
+                return ['user_id' => $bound->get('user_id')];
+            });
+
+            $this->assertInstanceOf(Response::class, $response);
+            $this->assertSame(7, json_decode($response->getContent(), true)['user_id']);
+            $this->assertNotEmpty($response->getHeaderLines('Set-Cookie'));
+        } finally {
+            $app->instance(SessionManager::class, $previous);
+            array_map('unlink', glob($tempPath . '/sess_*') ?: []);
+            @rmdir($tempPath);
+        }
     }
 
     // === CsrfMiddleware 静态验证 ===

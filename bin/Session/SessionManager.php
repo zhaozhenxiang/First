@@ -27,6 +27,8 @@ class SessionManager implements SessionInterface
     /** @var string|null 临时 Session ID（用于测试环境） */
     private ?string $tempId = null;
 
+    private bool $expireCookieOnResponse = false;
+
     /**
      * 构造函数
      */
@@ -407,25 +409,20 @@ class SessionManager implements SessionInterface
 
         $_SESSION = [];
 
-        // 在非 CLI 环境中删除 cookie
-        if (ini_get('session.use_cookies') && PHP_SAPI !== 'cli') {
-            $params = @session_get_cookie_params();
-            if ($params) {
-                @setcookie(
-                    session_name(),
-                    '',
-                    time() - 42000,
-                    $params['path'] ?? '/',
-                    $params['domain'] ?? '',
-                    $params['secure'] ?? false,
-                    $params['httponly'] ?? true
-                );
-            }
-        }
-
         @session_destroy();
         $this->started = false;
         $this->tempId = null;
+        $this->expireCookieOnResponse = true;
+    }
+
+    public function shouldExpireCookieOnResponse(): bool
+    {
+        return $this->expireCookieOnResponse;
+    }
+
+    public function clearCookieExpirationFlag(): void
+    {
+        $this->expireCookieOnResponse = false;
     }
 
     /**

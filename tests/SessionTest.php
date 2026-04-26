@@ -252,6 +252,17 @@ class SessionTest extends TestCase
         $this->assertEquals($config['cookie']['name'], $name);
     }
 
+    public function testDestroyMarksSessionCookieForExpiration(): void
+    {
+        $this->session->destroy();
+
+        $this->assertTrue($this->session->shouldExpireCookieOnResponse());
+
+        $this->session->clearCookieExpirationFlag();
+
+        $this->assertFalse($this->session->shouldExpireCookieOnResponse());
+    }
+
     public function testIsStarted(): void
     {
         $this->assertTrue($this->session->isStarted());
