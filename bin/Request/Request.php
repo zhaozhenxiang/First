@@ -90,6 +90,26 @@ class Request implements \ArrayAccess, \Iterator
     }
 
     /**
+     * 获取 Cookie 数据（仅 $_COOKIE）
+     */
+    public function cookie(?string $key = null, mixed $default = null): mixed
+    {
+        if ($key === null) {
+            return $this->cookies;
+        }
+
+        return data_get($this->cookies, $key, $default);
+    }
+
+    /**
+     * 检查 Cookie 键是否存在
+     */
+    public function hasCookie(string $key): bool
+    {
+        return data_has($this->cookies, $key);
+    }
+
+    /**
      * 获取输入值（合并 body + query，body 优先）
      *
      * 支持 JSON body 自动解析和点号嵌套访问

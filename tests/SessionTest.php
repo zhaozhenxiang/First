@@ -247,8 +247,9 @@ class SessionTest extends TestCase
     public function testSessionName(): void
     {
         $name = $this->session->getName();
+        $config = require config_path('session.php');
 
-        $this->assertEquals('PHPSESSID', $name);
+        $this->assertEquals($config['cookie']['name'], $name);
     }
 
     public function testIsStarted(): void

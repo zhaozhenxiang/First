@@ -6,6 +6,7 @@ use Bin\Middleware\AuthMiddleware;
 use Bin\Middleware\CsrfMiddleware;
 use Bin\Middleware\GuestMiddleware;
 use Bin\Middleware\RateLimitMiddleware;
+use Bin\Middleware\SessionMiddleware;
 
 /**
  * 中间件配置
@@ -37,6 +38,7 @@ return [
     */
     'groups' => [
         'web' => [
+            SessionMiddleware::class,
             CsrfMiddleware::class,
         ],
 
@@ -56,6 +58,7 @@ return [
     |
     */
     'aliases' => [
+        'session' => SessionMiddleware::class,
         'auth' => AuthMiddleware::class,
         'guest' => GuestMiddleware::class,
         'csrf' => CsrfMiddleware::class,
@@ -72,9 +75,10 @@ return [
     |
     */
     'priority' => [
-        'csrf' => 10,
-        'auth' => 20,
-        'throttle' => 30,
+        'session' => 30,
+        'csrf' => 20,
+        'auth' => 10,
+        'throttle' => 0,
     ],
 
 ];

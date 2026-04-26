@@ -140,6 +140,21 @@ class RequestTest extends TestCase
         $this->assertNull($request->input('session_id'));
     }
 
+    public function testCookieAccessorReturnsSingleCookie(): void
+    {
+        $request = $this->makeRequest(cookies: ['session' => 'abc123', 'theme' => 'dark']);
+
+        $this->assertSame('abc123', $request->cookie('session'));
+        $this->assertNull($request->cookie('missing'));
+    }
+
+    public function testCookieAccessorReturnsAllCookies(): void
+    {
+        $request = $this->makeRequest(cookies: ['session' => 'abc123', 'theme' => 'dark']);
+
+        $this->assertSame(['session' => 'abc123', 'theme' => 'dark'], $request->cookie());
+    }
+
     // =====================================================================
     // JSON body 解析
     // =====================================================================

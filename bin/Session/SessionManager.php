@@ -37,6 +37,7 @@ class SessionManager implements SessionInterface
             $this->lifetime = (int) config('session.lifetime', 7200);
         }
         $this->configure();
+        $this->configureDefaultHandler();
     }
 
     /**
@@ -46,12 +47,20 @@ class SessionManager implements SessionInterface
     {
         $cookieConfig = function_exists('config') ? config('session.cookie', []) : [];
 
+        @session_name((string) ($cookieConfig['name'] ?? 'first_session'));
+        @ini_set('session.cookie_path', (string) ($cookieConfig['path'] ?? '/'));
+
+        if (($domain = $cookieConfig['domain'] ?? null) !== null) {
+            @ini_set('session.cookie_domain', (string) $domain);
+        }
+
         // 静默设置 Session 参数（如果 headers 已发送，忽略警告）
         $options = [
             'session.use_cookies' => '1',
             'session.use_only_cookies' => '1',
             'session.cookie_httponly' => ($cookieConfig['http_only'] ?? true) ? '1' : '0',
             'session.use_strict_mode' => '1',
+            'session.cookie_lifetime' => (string) $this->lifetime,
         ];
 
         foreach ($options as $key => $value) {
@@ -66,6 +75,25 @@ class SessionManager implements SessionInterface
         if ($secure || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on')) {
             @ini_set('session.cookie_secure', '1');
         }
+    }
+
+    /**
+     * 根据 session 配置注册默认文件处理器
+     */
+    private function configureDefaultHandler(): void
+    {
+        if ($this->handler !== null || !function_exists('config')) {
+            return;
+        }
+
+        if ((string) config('session.driver', 'file') !== 'file') {
+            return;
+        }
+
+        $path = (string) config('session.files', storage_path('sessions'));
+        $minutes = (int) ceil($this->lifetime / 60);
+
+        $this->handler = new FileSessionHandler($path, $minutes);
     }
 
     /**

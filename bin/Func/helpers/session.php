@@ -18,13 +18,7 @@ if (!function_exists('session_manager')) {
      */
     function session_manager(): \Bin\Session\SessionManager
     {
-        static $manager = null;
-
-        if ($manager === null) {
-            $manager = new \Bin\Session\SessionManager();
-        }
-
-        return $manager;
+        return \Bin\App\App::getInstance()->make(\Bin\Session\SessionManager::class);
     }
 }
 

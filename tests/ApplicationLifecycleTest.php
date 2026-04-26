@@ -19,6 +19,7 @@ use Bin\Foundation\Contracts\Bootstrapper;
 use Bin\Middleware\AuthMiddleware;
 use Bin\Middleware\CsrfMiddleware;
 use Bin\Middleware\MiddlewareStack;
+use Bin\Middleware\SessionMiddleware;
 use Bin\Response\Response;
 use Bin\Route\RouteCollection as Route;
 use Bin\Testing\TestCase;
@@ -357,6 +358,21 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertSame('/bootstrap/test-route', $routes[0]->getPath());
         $this->assertSame(AuthMiddleware::class, $stack->getAliases()['auth']);
         $this->assertContains(CsrfMiddleware::class, $stack->getGroup('web'));
+    }
+
+    public function testHttpBootstrapLoadsSessionBeforeCsrfInWebGroup(): void
+    {
+        $app = App::getInstance();
+        $http = new HttpKernel($app);
+
+        $reflection = new \ReflectionMethod(HttpKernel::class, 'bootstrap');
+        $reflection->invoke($http);
+
+        $stack = MiddlewareStack::getInstance();
+
+        $this->assertSame(SessionMiddleware::class, $stack->getGroup('web')[0]);
+        $this->assertSame(CsrfMiddleware::class, $stack->getGroup('web')[1]);
+        $this->assertSame(SessionMiddleware::class, $stack->getAliases()['session']);
     }
 
     public function testBootstrapWithPartialPipeline(): void
