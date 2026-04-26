@@ -2,8 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **Status:** Not completed as of 2026-04-23.
-> This plan has no completion marker or closure document yet, and its implementation steps are still tracked as open in this file.
+> **Status:** Completed on 2026-04-26 in branch `m2a-web-state-foundation`.
+> Final verification: `php test` completed with `Tests: 1812, S 36 skipped, ✓ 1776 passed`; existing PHP 8.5 deprecation warnings are still emitted by unrelated code.
 
 **Goal:** Build request-scoped session startup, queued cookie writeback, and session-backed CSRF protection for the `web` middleware group.
 
@@ -55,7 +55,7 @@
 - Test: `tests/ApplicationLifecycleTest.php`
 - Test: `tests/SessionTest.php`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add these methods to `tests/RequestTest.php`:
 
@@ -109,7 +109,7 @@ public function testSessionName(): void
 }
 ```
 
-- [ ] **Step 2: Run the focused tests to verify they fail**
+- [x] **Step 2: Run the focused tests to verify they fail**
 
 Run: `php test tests/RequestTest.php tests/ApplicationLifecycleTest.php tests/SessionTest.php`
 
@@ -121,7 +121,7 @@ Failed asserting that two strings are identical
 Failed asserting that 'PHPSESSID' matches configured session cookie name
 ```
 
-- [ ] **Step 3: Implement the request/session entry-point changes**
+- [x] **Step 3: Implement the request/session entry-point changes**
 
 In `bin/Request/Request.php`, add explicit cookie accessors near the other input-source methods:
 
@@ -252,13 +252,13 @@ use Bin\Middleware\SessionMiddleware;
 ],
 ```
 
-- [ ] **Step 4: Run the focused tests again**
+- [x] **Step 4: Run the focused tests again**
 
 Run: `php test tests/RequestTest.php tests/ApplicationLifecycleTest.php tests/SessionTest.php`
 
 Expected: PASS with `Failed: 0`.
 
-- [ ] **Step 5: Commit the entry-point changes**
+- [x] **Step 5: Commit the entry-point changes**
 
 ```bash
 git add bin/Request/Request.php bin/Session/SessionManager.php bin/Func/helpers/session.php config/middleware.php tests/RequestTest.php tests/ApplicationLifecycleTest.php tests/SessionTest.php
@@ -273,7 +273,7 @@ git commit -m "feat: wire session entry points into web middleware"
 - Test: `tests/CookieUploadTest.php`
 - Test: `tests/ResponseTest.php`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add these methods to `tests/ResponseTest.php`:
 
@@ -326,7 +326,7 @@ public function testCookieForgetQueuesExpiredHeader(): void
 }
 ```
 
-- [ ] **Step 2: Run the cookie/response tests to verify they fail**
+- [x] **Step 2: Run the cookie/response tests to verify they fail**
 
 Run: `php test tests/CookieUploadTest.php tests/ResponseTest.php`
 
@@ -338,7 +338,7 @@ Call to undefined method Bin\Response\Response::getHeaderLines()
 Call to undefined method Bin\Cookie\CookieManager::drainQueue()
 ```
 
-- [ ] **Step 3: Implement queued cookie headers and multi-value response headers**
+- [x] **Step 3: Implement queued cookie headers and multi-value response headers**
 
 In `bin/Cookie/CookieManager.php`, replace direct `setcookie()` writes with a drainable queue:
 
@@ -508,13 +508,13 @@ public function send(): void
 }
 ```
 
-- [ ] **Step 4: Run the cookie/response tests again**
+- [x] **Step 4: Run the cookie/response tests again**
 
 Run: `php test tests/CookieUploadTest.php tests/ResponseTest.php`
 
 Expected: PASS with `Failed: 0`, and no new CLI `setcookie()` warnings during these tests.
 
-- [ ] **Step 5: Commit the cookie queue changes**
+- [x] **Step 5: Commit the cookie queue changes**
 
 ```bash
 git add bin/Cookie/CookieManager.php bin/Response/Response.php tests/CookieUploadTest.php tests/ResponseTest.php
@@ -529,7 +529,7 @@ git commit -m "feat: queue cookies onto responses"
 - Test: `tests/MiddlewareTest.php`
 - Test: `tests/SessionTest.php`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add `use Bin\App\App;`, `use Bin\Middleware\SessionMiddleware;`, `use Bin\Session\FileSessionHandler;`, and `use Bin\Session\SessionManager;` to `tests/MiddlewareTest.php`, then add:
 
@@ -592,7 +592,7 @@ public function testDestroyMarksSessionCookieForExpiration(): void
 }
 ```
 
-- [ ] **Step 2: Run the middleware/session tests to verify they fail**
+- [x] **Step 2: Run the middleware/session tests to verify they fail**
 
 Run: `php test tests/MiddlewareTest.php tests/SessionTest.php`
 
@@ -603,7 +603,7 @@ Class "Bin\Middleware\SessionMiddleware" not found
 Call to undefined method Bin\Session\SessionManager::shouldExpireCookieOnResponse()
 ```
 
-- [ ] **Step 3: Implement SessionMiddleware and session cookie state**
+- [x] **Step 3: Implement SessionMiddleware and session cookie state**
 
 In `bin/Session/SessionManager.php`, add the response-expiration flag and remove direct cookie deletion from `destroy()`:
 
@@ -718,13 +718,13 @@ class SessionMiddleware extends Middleware
 }
 ```
 
-- [ ] **Step 4: Run the middleware/session tests again**
+- [x] **Step 4: Run the middleware/session tests again**
 
 Run: `php test tests/MiddlewareTest.php tests/SessionTest.php`
 
 Expected: PASS with `Failed: 0`.
 
-- [ ] **Step 5: Commit the session middleware changes**
+- [x] **Step 5: Commit the session middleware changes**
 
 ```bash
 git add bin/Middleware/SessionMiddleware.php bin/Session/SessionManager.php tests/MiddlewareTest.php tests/SessionTest.php
@@ -737,7 +737,7 @@ git commit -m "feat: add session middleware and session cookie writeback"
 - Modify: `bin/Middleware/CsrfMiddleware.php`
 - Test: `tests/MiddlewareTest.php`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add these methods to `tests/MiddlewareTest.php`:
 
@@ -791,13 +791,13 @@ Delete the old response-based invalid-token assertion block from `tests/Middlewa
 
 Remove the existing `testCsrfMiddlewareReturnsResponseOnInvalidToken()` method entirely, because the new behavior is exception-based and should not keep the old response assertion around.
 
-- [ ] **Step 2: Run the CSRF tests to verify they fail**
+- [x] **Step 2: Run the CSRF tests to verify they fail**
 
 Run: `php test tests/MiddlewareTest.php`
 
 Expected: FAIL because `CsrfMiddleware` still reads `$_SESSION` directly and still returns a `Response` on invalid token instead of throwing `HttpException`.
 
-- [ ] **Step 3: Implement session-backed CSRF token storage and failure behavior**
+- [x] **Step 3: Implement session-backed CSRF token storage and failure behavior**
 
 In `bin/Middleware/CsrfMiddleware.php`, import `App` and `HttpException`, remove the static `$token` cache, and route all token access through the singleton `SessionManager`:
 
@@ -862,13 +862,13 @@ private static function session(): \Bin\Session\SessionManager
 }
 ```
 
-- [ ] **Step 4: Run the CSRF tests again**
+- [x] **Step 4: Run the CSRF tests again**
 
 Run: `php test tests/MiddlewareTest.php`
 
 Expected: PASS with `Failed: 0`.
 
-- [ ] **Step 5: Commit the CSRF changes**
+- [x] **Step 5: Commit the CSRF changes**
 
 ```bash
 git add bin/Middleware/CsrfMiddleware.php tests/MiddlewareTest.php
@@ -890,23 +890,23 @@ git commit -m "feat: move csrf onto session lifecycle"
 - Verify: `tests/ExceptionHandlerTest.php`
 - Verify: `tests/BladeCompilerTest.php`
 
-- [ ] **Step 1: Run the focused web-state suite**
+- [x] **Step 1: Run the focused web-state suite**
 
 Run: `php test tests/ApplicationLifecycleTest.php tests/RequestTest.php tests/SessionTest.php tests/CookieUploadTest.php tests/MiddlewareTest.php tests/ResponseTest.php`
 
 Expected: PASS with `Failed: 0`.
 
-- [ ] **Step 2: Run the secondary affected suites**
+- [x] **Step 2: Run the secondary affected suites**
 
 Run: `php test tests/AuthTest.php tests/AuthorizationTest.php tests/ValidationTest.php tests/ExceptionHandlerTest.php tests/BladeCompilerTest.php`
 
 Expected: PASS with `Failed: 0`.
 
-- [ ] **Step 3: Check the final diff scope**
+- [x] **Step 3: Check the final diff scope**
 
-Run: `git diff --stat HEAD~4..HEAD`
+Run: `git diff --stat HEAD~5..HEAD`
 
-Expected: Only the files listed in this plan changed, plus any small import/order adjustments required by the tests.
+Expected: Only the files listed in this plan changed, plus the `tests/TestCommandScriptTest.php` assertion-count update required by the added tests.
 
 ---
 
