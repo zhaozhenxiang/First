@@ -13,7 +13,7 @@ class Response
 
     private int $statusCode = 200;
 
-    /** @var array<string, string> */
+    /** @var array<string, string|array<int, string>> */
     private array $headers = [];
 
     /**
@@ -86,7 +86,7 @@ class Response
     /**
      * 获取全部响应头
      *
-     * @return array<string, string>
+     * @return array<string, string|array<int, string>>
      */
     public function getHeaders(): array
     {
@@ -98,7 +98,29 @@ class Response
      */
     public function getHeader(string $name): ?string
     {
-        return $this->headers[$name] ?? null;
+        $value = $this->headers[$name] ?? null;
+
+        if (is_array($value)) {
+            return $value[0] ?? null;
+        }
+
+        return $value;
+    }
+
+    /**
+     * 获取同名响应头的所有行
+     *
+     * @return array<int, string>
+     */
+    public function getHeaderLines(string $name): array
+    {
+        $value = $this->headers[$name] ?? null;
+
+        if (is_array($value)) {
+            return $value;
+        }
+
+        return $value === null ? [] : [$value];
     }
 
     /**
@@ -112,6 +134,19 @@ class Response
     }
 
     /**
+     * 追加一个响应头行，适用于 Set-Cookie 等可重复 header。
+     */
+    public function appendHeader(string $name, string $value): self
+    {
+        $current = $this->headers[$name] ?? [];
+        $current = is_array($current) ? $current : [$current];
+        $current[] = $value;
+        $this->headers[$name] = $current;
+
+        return $this;
+    }
+
+    /**
      * 发送响应内容到输出缓冲区
      */
     public function send(): void
@@ -119,6 +154,13 @@ class Response
         if (!headers_sent()) {
             http_response_code($this->statusCode);
             foreach ($this->headers as $name => $value) {
+                if (is_array($value)) {
+                    foreach ($value as $line) {
+                        header("{$name}: {$line}", false);
+                    }
+                    continue;
+                }
+
                 header("{$name}: {$value}", true);
             }
         }

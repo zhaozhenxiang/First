@@ -104,6 +104,38 @@ class CookieUploadTest extends TestCase
         $this->assertTrue(true); // skip actual cookie test in CLI
     }
 
+    public function testCookieSetQueuesHeaderLine(): void
+    {
+        CookieManager::drainQueue();
+        CookieManager::setDefaults([
+            'path' => '/',
+            'same_site' => 'Lax',
+            'http_only' => true,
+        ]);
+
+        CookieManager::set($this->testCookiePrefix . 'queued', 'value', 10);
+
+        $queued = CookieManager::drainQueue();
+
+        $this->assertCount(1, $queued);
+        $this->assertStringContainsString($this->testCookiePrefix . 'queued=', $queued[0]);
+        $this->assertStringContainsString('Path=/', $queued[0]);
+        $this->assertStringContainsString('SameSite=Lax', $queued[0]);
+    }
+
+    public function testCookieForgetQueuesExpiredHeader(): void
+    {
+        CookieManager::drainQueue();
+
+        CookieManager::forget($this->testCookiePrefix . 'expired');
+
+        $queued = CookieManager::drainQueue();
+
+        $this->assertCount(1, $queued);
+        $this->assertStringContainsString($this->testCookiePrefix . 'expired=', $queued[0]);
+        $this->assertStringContainsString('Expires=', $queued[0]);
+    }
+
     public function testCookieEncryption(): void
     {
         $name = $this->testCookiePrefix . 'encrypted';

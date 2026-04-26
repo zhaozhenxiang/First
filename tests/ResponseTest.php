@@ -95,6 +95,20 @@ class ResponseTest extends TestCase
         $this->assertArrayHasKey('Content-Type', $response->getHeaders());
     }
 
+    public function testResponseAppendsMultipleSetCookieHeaders(): void
+    {
+        $response = new Response('ok');
+
+        $response->appendHeader('Set-Cookie', 'first=value; Path=/; HttpOnly');
+        $response->appendHeader('Set-Cookie', 'second=value; Path=/; HttpOnly');
+
+        $this->assertSame('first=value; Path=/; HttpOnly', $response->getHeader('Set-Cookie'));
+        $this->assertSame(
+            ['first=value; Path=/; HttpOnly', 'second=value; Path=/; HttpOnly'],
+            $response->getHeaderLines('Set-Cookie')
+        );
+    }
+
     public function testRedirectHelperReturnsResponse(): void
     {
         $response = redirect('/target');

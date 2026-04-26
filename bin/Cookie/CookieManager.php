@@ -20,6 +20,8 @@ class CookieManager
     private static bool $httpOnly = true;
     private static string $sameSite = 'Lax';
     private static ?string $encryptionKey = null;
+    /** @var array<string, string> */
+    private static array $queued = [];
 
     /**
      * 设置 Cookie
@@ -45,18 +47,20 @@ class CookieManager
             ? self::encrypt($value)
             : $value;
 
-        $expiry = $minutes > 0 ? time() + ($minutes * 60) : 0;
+        $expires = $minutes !== 0 ? time() + ($minutes * 60) : 0;
 
-        $options = [
-            'expires' => $expiry,
-            'path' => $path,
-            'domain' => $domain,
-            'secure' => $secure,
-            'httponly' => $httpOnly,
-            'samesite' => $sameSite,
-        ];
+        self::$queued[$name] = self::buildHeaderLine(
+            $name,
+            $value,
+            $expires,
+            $path,
+            $domain,
+            $secure,
+            $httpOnly,
+            $sameSite
+        );
 
-        return setcookie($name, $value, $options);
+        return true;
     }
 
     /**
@@ -119,20 +123,77 @@ class CookieManager
     public static function setDefaults(array $config): void
     {
         if (isset($config['path'])) {
-            self::$path = $config['path'];
+            self::$path = (string) $config['path'];
         }
         if (isset($config['domain'])) {
-            self::$domain = $config['domain'];
+            self::$domain = (string) $config['domain'];
         }
         if (isset($config['secure'])) {
-            self::$secure = $config['secure'];
+            self::$secure = (bool) $config['secure'];
         }
         if (isset($config['httpOnly'])) {
-            self::$httpOnly = $config['httpOnly'];
+            self::$httpOnly = (bool) $config['httpOnly'];
+        }
+        if (isset($config['http_only'])) {
+            self::$httpOnly = (bool) $config['http_only'];
         }
         if (isset($config['sameSite'])) {
-            self::$sameSite = $config['sameSite'];
+            self::$sameSite = (string) $config['sameSite'];
         }
+        if (isset($config['same_site'])) {
+            self::$sameSite = (string) $config['same_site'];
+        }
+    }
+
+    /**
+     * 取出并清空等待写入响应的 Set-Cookie header。
+     *
+     * @return array<int, string>
+     */
+    public static function drainQueue(): array
+    {
+        $queued = array_values(self::$queued);
+        self::$queued = [];
+
+        return $queued;
+    }
+
+    private static function buildHeaderLine(
+        string $name,
+        string $value,
+        int $expires,
+        string $path,
+        string $domain,
+        bool $secure,
+        bool $httpOnly,
+        string $sameSite
+    ): string {
+        $parts = [rawurlencode($name) . '=' . rawurlencode($value)];
+
+        if ($expires !== 0) {
+            $parts[] = 'Expires=' . gmdate('D, d M Y H:i:s T', $expires);
+            $parts[] = 'Max-Age=' . max(0, $expires - time());
+        }
+
+        $parts[] = 'Path=' . $path;
+
+        if ($domain !== '') {
+            $parts[] = 'Domain=' . $domain;
+        }
+
+        if ($secure) {
+            $parts[] = 'Secure';
+        }
+
+        if ($httpOnly) {
+            $parts[] = 'HttpOnly';
+        }
+
+        if ($sameSite !== '') {
+            $parts[] = 'SameSite=' . $sameSite;
+        }
+
+        return implode('; ', $parts);
     }
 
     /**
