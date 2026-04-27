@@ -525,7 +525,9 @@ HTML;
             if ($app->bound(Request::class)) {
                 $request = $app->make(Request::class);
                 if ($request instanceof Request) {
-                    return $request->expectsJson();
+                    return $request->expectsJson()
+                        || $request->isAjax()
+                        || $this->isAjax();
                 }
             }
         } catch (\Throwable) {

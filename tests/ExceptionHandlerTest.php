@@ -170,6 +170,13 @@ class ExceptionHandlerTest extends TestCase
         $this->assertEquals('Invalid email format', $e->getFirstError());
     }
 
+    public function testValidationExceptionGetFirstErrorReturnsFirstArrayMessage(): void
+    {
+        $e = new ValidationException(['email' => ['Invalid email']]);
+
+        $this->assertEquals('Invalid email', $e->getFirstError());
+    }
+
     public function testValidationExceptionGetFirstErrorEmpty(): void
     {
         $e = new ValidationException([]);
@@ -365,6 +372,40 @@ class ExceptionHandlerTest extends TestCase
             $this->assertSame(422, $payload['error']['status']);
             $this->assertSame(['email' => ['Invalid email']], $payload['error']['errors']);
         } finally {
+            $app->forget(Request::class);
+            $app->singleton(Request::class, Request::class);
+        }
+    }
+
+    public function testValidationExceptionJsonResponseForAjaxRequestWithExplicitHtmlAccept(): void
+    {
+        $app = App::getInstance();
+        $app->instance(Request::class, new Request(
+            query: [],
+            post: [],
+            server: [
+                'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+                'HTTP_ACCEPT' => 'text/html',
+            ],
+            cookies: []
+        ));
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+        $_SERVER['HTTP_ACCEPT'] = 'text/html';
+
+        try {
+            $handler = new ExceptionHandler(false);
+            $response = $handler->render(new ValidationException([
+                'email' => ['Invalid email'],
+            ]));
+
+            $payload = json_decode($response->getContent(), true);
+
+            $this->assertEquals(422, $response->getStatusCode());
+            $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+            $this->assertSame(422, $payload['error']['status']);
+            $this->assertSame(['email' => ['Invalid email']], $payload['error']['errors']);
+        } finally {
+            unset($_SERVER['HTTP_X_REQUESTED_WITH'], $_SERVER['HTTP_ACCEPT']);
             $app->forget(Request::class);
             $app->singleton(Request::class, Request::class);
         }

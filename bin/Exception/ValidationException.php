@@ -39,7 +39,13 @@ class ValidationException extends \Exception
      */
     public function getFirstError(): string
     {
-        return array_values($this->errors)[0] ?? 'Validation failed';
+        $first = array_values($this->errors)[0] ?? 'Validation failed';
+
+        if (is_array($first)) {
+            return array_values($first)[0] ?? 'Validation failed';
+        }
+
+        return $first;
     }
 
     /**
