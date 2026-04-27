@@ -117,7 +117,7 @@ class ControllerDispatcher
 
                 // 1. FormRequest 注入
                 if (class_exists($typeName) && is_subclass_of($typeName, FormRequest::class)) {
-                    $parameters[$name] = $this->resolveFormRequest($typeName);
+                    $parameters[$name] = $this->resolveFormRequest($typeName, $request);
                     continue;
                 }
 
@@ -152,16 +152,10 @@ class ControllerDispatcher
     /**
      * 创建并验证 FormRequest
      */
-    protected function resolveFormRequest(string $className): FormRequest
+    protected function resolveFormRequest(string $className, Request $request): FormRequest
     {
         /** @var FormRequest $formRequest */
-        $formRequest = new $className(
-            $_GET,
-            $_POST,
-            $_SERVER,
-            $_COOKIE
-        );
-
+        $formRequest = $className::fromBaseRequest($request);
         $formRequest->validateResolved();
 
         return $formRequest;

@@ -17,6 +17,7 @@ use Bin\Routing\ControllerDispatcher;
 use Bin\Route\Route;
 use Bin\Route\RouteAction;
 use Bin\Testing\TestCase;
+use Bin\Validation\FormRequest;
 
 /**
  * 调度器集成测试
@@ -207,6 +208,42 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertSame('private', $response->getContent());
         $this->assertTrue($resolverWasInstalled);
         $this->assertSame(7, $resolvedUserId);
+    }
+
+    public function testInjectedFormRequestUsesBoundRequestInputRouteParamsAndUserResolver(): void
+    {
+        $user = (object) ['id' => 9, 'name' => 'Ada'];
+        $request = new Request(
+            query: ['from_query' => 'yes'],
+            post: ['name' => 'Ada'],
+            server: ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/posts/42'],
+            cookies: ['theme' => 'dark']
+        );
+        $request->merge(['slug' => 'hello-world']);
+        $request->setUrlParam(['post' => '42']);
+        $request->setUserResolver(fn (): ?object => $user);
+        App::getInstance()->instance(Request::class, $request);
+
+        $closure = function (DispatcherIdentityInputRequest $form): array {
+            return [
+                'name' => $form->validated()['name'],
+                'slug' => $form->validated()['slug'],
+                'post' => $form->route('post'),
+                'user_id' => $form->user()?->id,
+                'theme' => $form->cookie('theme'),
+            ];
+        };
+
+        $route = new Route('POST', '/posts/{post}', $closure);
+
+        $result = $this->dispatcher->dispatchClosure($closure, $route);
+        $payload = json_decode($result->getContent(), true);
+
+        $this->assertSame('Ada', $payload['name']);
+        $this->assertSame('hello-world', $payload['slug']);
+        $this->assertSame('42', $payload['post']);
+        $this->assertSame(9, $payload['user_id']);
+        $this->assertSame('dark', $payload['theme']);
     }
 
     public function testHttpKernelHandleUsesCapturedRequestThroughDispatchPipeline(): void
@@ -447,6 +484,22 @@ class DispatcherIntegrationTest extends TestCase
 
         $this->assertCount(1, $instances);
         $this->assertInstanceOf(\Bin\Middleware\RateLimitMiddleware::class, $instances[0]);
+    }
+}
+
+class DispatcherIdentityInputRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user()?->id === 9 && $this->route('post') === '42';
+    }
+
+    public function rules(): array
+    {
+        return [
+            'name' => 'required|string',
+            'slug' => 'required|string',
+        ];
     }
 }
 

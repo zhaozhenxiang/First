@@ -106,6 +106,21 @@ abstract class FormRequest extends Request
         return $this;
     }
 
+    public static function fromBaseRequest(Request $request): static
+    {
+        /** @var static $formRequest */
+        $formRequest = new static(
+            $request->query(),
+            $request->post(),
+            $request->server(),
+            $request->cookie()
+        );
+
+        $request->copyRuntimeContextTo($formRequest);
+
+        return $formRequest;
+    }
+
     /**
      * 执行验证并处理结果
      *
