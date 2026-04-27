@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Bin\Request;
 
+use Bin\Auth\AuthManager;
 use Bin\Database\Collection;
 use Bin\Http\UploadedFile;
+use Closure;
 use UnitEnum;
 
 /**
@@ -32,6 +34,8 @@ class Request implements \ArrayAccess, \Iterator
     protected array $routeParams = [];
     /** @var array<string, mixed> 手动合并的输入 */
     protected array $mergedInput = [];
+    /** @var Closure|null Resolver for the current authenticated user in this request scope. */
+    protected ?Closure $userResolver = null;
     /** @var array<string, mixed> 迭代器当前位置缓存 */
     private array $iterableData = [];
     private int $iteratorPosition = 0;
@@ -99,6 +103,15 @@ class Request implements \ArrayAccess, \Iterator
         }
 
         return data_get($this->cookies, $key, $default);
+    }
+
+    public function server(?string $key = null, mixed $default = null): mixed
+    {
+        if ($key === null) {
+            return $this->server;
+        }
+
+        return data_get($this->server, $key, $default);
     }
 
     /**
@@ -415,6 +428,35 @@ class Request implements \ArrayAccess, \Iterator
             }
         }
         return $this;
+    }
+
+    public function setUserResolver(?Closure $resolver): static
+    {
+        $this->userResolver = $resolver;
+
+        return $this;
+    }
+
+    public function getUserResolver(): ?Closure
+    {
+        return $this->userResolver;
+    }
+
+    public function user(): ?object
+    {
+        if ($this->userResolver !== null) {
+            return ($this->userResolver)();
+        }
+
+        return AuthManager::user();
+    }
+
+    public function copyRuntimeContextTo(Request $target): void
+    {
+        $target->routeParams = $this->routeParams;
+        $target->mergedInput = $this->mergedInput;
+        $target->jsonPayload = $this->jsonPayload;
+        $target->userResolver = $this->userResolver;
     }
 
     // =========================================================================

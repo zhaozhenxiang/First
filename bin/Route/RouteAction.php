@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Route;
 
 use Bin\App\App;
+use Bin\Auth\AuthManager;
 use Bin\Middleware\MiddlewareNameResolver;
 use Bin\Middleware\MiddlewareStack;
 use Bin\Middleware\Pipeline;
@@ -50,6 +51,8 @@ class RouteAction
      */
     public static function dispatch(Request $request): mixed
     {
+        AuthManager::resetUser();
+        $request->setUserResolver(fn (): ?object => AuthManager::user());
         App::getInstance()->instance(Request::class, $request);
 
         $route = RouteCollection::getRoute();

@@ -7,6 +7,7 @@ namespace Tests;
 use Bin\Auth\AuthManager;
 use Bin\Auth\HashManager;
 use Bin\Auth\PasswordResetManager;
+use Bin\Request\Request;
 use Bin\Session\SessionManager;
 use Bin\Testing\TestCase;
 
@@ -187,6 +188,34 @@ class AuthTest extends TestCase
         $this->assertNotNull($authUser);
         $this->assertEquals(1, $authUser->id);
         $this->assertEquals('Test User', $authUser->name);
+    }
+
+    public function testRequestUserRestoresSessionBackedAuthAfterCacheReset(): void
+    {
+        $user = AuthManager::loginUsingId(1);
+
+        $this->assertNotNull($user);
+        AuthManager::resetUser();
+
+        $request = new Request([], [], ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/profile'], []);
+        $request->setUserResolver(fn (): ?object => AuthManager::user());
+
+        $resolved = $request->user();
+
+        $this->assertNotNull($resolved);
+        $this->assertEquals(1, $resolved->id);
+    }
+
+    public function testRequestUserIsNullAfterLogoutClearsSession(): void
+    {
+        AuthManager::loginUsingId(1);
+        AuthManager::logout();
+
+        $request = new Request([], [], ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/profile'], []);
+        $request->setUserResolver(fn (): ?object => AuthManager::user());
+
+        $this->assertNull($request->user());
+        $this->assertFalse(AuthManager::check());
     }
 
     public function testPasswordResetCreateToken(): void

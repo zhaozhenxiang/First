@@ -155,6 +155,32 @@ class RequestTest extends TestCase
         $this->assertSame(['session' => 'abc123', 'theme' => 'dark'], $request->cookie());
     }
 
+    public function testServerAccessorReturnsSingleValueAndAllValues(): void
+    {
+        $request = $this->makeRequest(server: [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/profile',
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $this->assertSame('POST', $request->server('REQUEST_METHOD'));
+        $this->assertSame('/profile', $request->server('REQUEST_URI'));
+        $this->assertSame('fallback', $request->server('MISSING_KEY', 'fallback'));
+        $this->assertSame('application/json', $request->server()['HTTP_ACCEPT']);
+    }
+
+    public function testUserResolverReturnsRequestScopedUser(): void
+    {
+        $request = $this->makeRequest();
+        $user = (object) ['id' => 77, 'name' => 'Request User'];
+
+        $returned = $request->setUserResolver(fn (): ?object => $user);
+
+        $this->assertSame($request, $returned);
+        $this->assertSame($user, $request->user());
+        $this->assertTrue(is_callable($request->getUserResolver()));
+    }
+
     // =====================================================================
     // JSON body 解析
     // =====================================================================

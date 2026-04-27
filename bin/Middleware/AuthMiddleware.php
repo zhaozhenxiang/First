@@ -6,6 +6,7 @@ namespace Bin\Middleware;
 
 use Bin\Auth\AuthManager;
 use Bin\Exception\AuthenticationException;
+use Bin\Request\Request;
 
 /**
  * 认证中间件
@@ -20,7 +21,9 @@ class AuthMiddleware extends Middleware
      */
     public function handle(mixed $request, \Closure $next): mixed
     {
-        if (!AuthManager::check()) {
+        $user = $request instanceof Request ? $request->user() : AuthManager::user();
+
+        if ($user === null) {
             throw new AuthenticationException();
         }
 
@@ -41,7 +44,9 @@ class GuestMiddleware extends Middleware
      */
     public function handle(mixed $request, \Closure $next): mixed
     {
-        if (AuthManager::check()) {
+        $user = $request instanceof Request ? $request->user() : AuthManager::user();
+
+        if ($user !== null) {
             $redirectUrl = $this->options[0] ?? '/';
             return redirect($redirectUrl);
         }

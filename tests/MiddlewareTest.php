@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\App\App;
+use Bin\Exception\AuthenticationException;
+use Bin\Middleware\AuthMiddleware;
 use Bin\Middleware\Middleware;
 use Bin\Middleware\SessionMiddleware;
 use Bin\Request\Request;
@@ -109,6 +111,30 @@ class MiddlewareTest extends TestCase
             array_map('unlink', glob($tempPath . '/sess_*') ?: []);
             @rmdir($tempPath);
         }
+    }
+
+    public function testAuthMiddlewareAllowsRequestScopedUser(): void
+    {
+        $request = new Request([], [], ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/private'], []);
+        $request->setUserResolver(fn (): ?object => (object) ['id' => 5]);
+
+        $middleware = new AuthMiddleware();
+
+        $result = $middleware->handle($request, fn (Request $request): string => 'ok');
+
+        $this->assertSame('ok', $result);
+    }
+
+    public function testAuthMiddlewareThrowsWhenRequestScopedUserMissing(): void
+    {
+        $request = new Request([], [], ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/private'], []);
+        $request->setUserResolver(fn (): ?object => null);
+
+        $middleware = new AuthMiddleware();
+
+        $this->assertThrows(AuthenticationException::class, function () use ($middleware, $request): void {
+            $middleware->handle($request, fn (Request $request): string => 'ok');
+        });
     }
 
     // === CsrfMiddleware 静态验证 ===
