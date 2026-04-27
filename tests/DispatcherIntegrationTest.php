@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\App\App;
+use Bin\Auth\AuthManager;
 use Bin\Container\Container;
 use Bin\Foundation\HttpKernel;
+use Bin\Middleware\AuthMiddleware;
 use Bin\Middleware\Middleware;
+use Bin\Middleware\MiddlewareStack;
 use Bin\Request\Request;
 use Bin\Response\Response;
 use Bin\Routing\ControllerDispatcher;
@@ -28,12 +31,18 @@ use Bin\Testing\TestCase;
 class DispatcherIntegrationTest extends TestCase
 {
     private ControllerDispatcher $dispatcher;
+    private ?string $originalProvider = null;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->dispatcher = new ControllerDispatcher();
         \Bin\Route\RouteCollection::clear();
+        $this->originalProvider = AuthManager::getProvider();
+        AuthManager::setProvider(DispatcherIntegrationAuthUser::class);
+        DispatcherIntegrationAuthUser::reset();
+        session_manager()->clear();
+        AuthManager::resetUser();
 
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
         $property->setAccessible(true);
@@ -48,6 +57,12 @@ class DispatcherIntegrationTest extends TestCase
         $app->singleton(ControllerDispatcher::class, ControllerDispatcher::class);
         $app->forget(Request::class);
         $app->singleton(Request::class, Request::class);
+        MiddlewareStack::loadFromConfig([]);
+        if ($this->originalProvider !== null) {
+            AuthManager::setProvider($this->originalProvider);
+        }
+        session_manager()->clear();
+        AuthManager::resetUser();
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
         $property->setAccessible(true);
         $property->setValue(null, null);
@@ -156,6 +171,42 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertSame($request, $resolvedRequest);
         $this->assertNotSame($staleRequest, $resolvedRequest);
         $this->assertSame($request, App::getInstance()->make(Request::class));
+    }
+
+    public function testRouteActionDispatchInstallsRequestUserResolverAndResetsAuthCache(): void
+    {
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $_SERVER['REQUEST_URI'] = '/private';
+
+        $sessionUser = AuthManager::loginUsingId(7);
+        $this->assertNotNull($sessionUser);
+        AuthManager::resetUser();
+
+        AuthManager::login(new DispatcherIntegrationAuthUser(404, 'Stale Cached User'));
+        session_manager()->set(AuthManager::getSessionKey(), 7);
+
+        MiddlewareStack::loadFromConfig([
+            'aliases' => [
+                'auth' => AuthMiddleware::class,
+            ],
+        ]);
+
+        $resolvedUserId = null;
+        $resolverWasInstalled = false;
+
+        \Bin\Route\RouteCollection::get('/private', function (Request $request) use (&$resolvedUserId, &$resolverWasInstalled): string {
+            $resolverWasInstalled = is_callable($request->getUserResolver());
+            $resolvedUserId = $request->user()?->id;
+
+            return 'private';
+        })->middleware('auth');
+
+        $response = RouteAction::dispatch(Request::capture());
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertSame('private', $response->getContent());
+        $this->assertTrue($resolverWasInstalled);
+        $this->assertSame(7, $resolvedUserId);
     }
 
     public function testHttpKernelHandleUsesCapturedRequestThroughDispatchPipeline(): void
@@ -396,5 +447,29 @@ class DispatcherIntegrationTest extends TestCase
 
         $this->assertCount(1, $instances);
         $this->assertInstanceOf(\Bin\Middleware\RateLimitMiddleware::class, $instances[0]);
+    }
+}
+
+class DispatcherIntegrationAuthUser
+{
+    /** @var array<int, self> */
+    private static array $users = [];
+
+    public function __construct(
+        public int $id,
+        public string $name,
+    ) {
+        self::$users[$id] = $this;
+    }
+
+    public static function reset(): void
+    {
+        self::$users = [];
+        new self(7, 'Session User');
+    }
+
+    public static function find(int $id): ?self
+    {
+        return self::$users[$id] ?? null;
     }
 }

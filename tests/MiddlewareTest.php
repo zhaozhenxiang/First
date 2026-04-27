@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\App\App;
+use Bin\Auth\AuthManager;
 use Bin\Exception\AuthenticationException;
 use Bin\Middleware\AuthMiddleware;
+use Bin\Middleware\GuestMiddleware;
 use Bin\Middleware\Middleware;
 use Bin\Middleware\SessionMiddleware;
 use Bin\Request\Request;
@@ -135,6 +137,54 @@ class MiddlewareTest extends TestCase
         $this->assertThrows(AuthenticationException::class, function () use ($middleware, $request): void {
             $middleware->handle($request, fn (Request $request): string => 'ok');
         });
+    }
+
+    public function testGuestMiddlewareRedirectsWhenRequestScopedUserExists(): void
+    {
+        AuthManager::logout();
+        $request = new Request([], [], ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/login'], []);
+        $request->setUserResolver(fn (): ?object => (object) ['id' => 5]);
+
+        $nextWasCalled = false;
+        $middleware = new GuestMiddleware();
+        $middleware->setOptions(['/dashboard']);
+
+        $response = $middleware->handle($request, function (Request $request) use (&$nextWasCalled): string {
+            $nextWasCalled = true;
+
+            return 'ok';
+        });
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertSame('/dashboard', $response->getHeader('Location'));
+        $this->assertFalse($nextWasCalled);
+    }
+
+    public function testGuestMiddlewareCallsNextWhenRequestScopedUserMissing(): void
+    {
+        AuthManager::login((object) ['id' => 99]);
+
+        try {
+            $request = new Request([], [], ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/login'], []);
+            $request->setUserResolver(fn (): ?object => null);
+
+            $nextWasCalled = false;
+            $middleware = new GuestMiddleware();
+
+            $result = $middleware->handle($request, function (Request $request) use (&$nextWasCalled): string {
+                $nextWasCalled = true;
+
+                return 'ok';
+            });
+
+            $this->assertSame('ok', $result);
+            $this->assertTrue($nextWasCalled);
+        } finally {
+            AuthManager::logout();
+            session_manager()->clear();
+            AuthManager::resetUser();
+        }
     }
 
     // === CsrfMiddleware 静态验证 ===
