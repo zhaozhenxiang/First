@@ -16,6 +16,7 @@ use Bin\Response\Response;
 use Bin\Routing\ControllerDispatcher;
 use Bin\Route\Route;
 use Bin\Route\RouteAction;
+use Bin\Route\RouteCollection;
 use Bin\Testing\TestCase;
 use Bin\Validation\FormRequest;
 
@@ -208,6 +209,64 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertSame('private', $response->getContent());
         $this->assertTrue($resolverWasInstalled);
         $this->assertSame(7, $resolvedUserId);
+    }
+
+    public function testProtectedRouteControllerReceivesValidatedInputAndCurrentUser(): void
+    {
+        $originalProvider = AuthManager::getProvider();
+        $originalServer = $_SERVER;
+        $originalPost = $_POST;
+
+        try {
+            IdentityInputRouteUser::reset();
+            AuthManager::setProvider(IdentityInputRouteUser::class);
+            AuthManager::loginUsingId(7);
+
+            MiddlewareStack::reset();
+            MiddlewareStack::loadFromConfig([
+                'global' => [],
+                'groups' => [],
+                'aliases' => [
+                    'auth' => AuthMiddleware::class,
+                ],
+                'priority' => [
+                    'auth' => 10,
+                    AuthMiddleware::class => 10,
+                ],
+            ]);
+
+            $_SERVER = array_merge($_SERVER, [
+                'REQUEST_METHOD' => 'POST',
+                'REQUEST_URI' => '/identity/profile',
+                'SERVER_NAME' => 'localhost',
+            ]);
+            $_POST = [
+                'name' => 'Ada',
+                'role' => 'admin',
+                'ignored' => 'not-returned',
+            ];
+
+            RouteCollection::post('/identity/profile', function (RouteIdentityInputRequest $request): array {
+                return [
+                    'validated' => $request->validated(),
+                    'user_id' => $request->user()?->id,
+                ];
+            })->middleware('auth');
+
+            $response = \Bin\Route\RouteAction::dispatch(Request::capture());
+            $payload = json_decode($response->getContent(), true);
+
+            $this->assertSame(['name' => 'Ada', 'role' => 'admin'], $payload['validated']);
+            $this->assertSame(7, $payload['user_id']);
+        } finally {
+            $_SERVER = $originalServer;
+            $_POST = $originalPost;
+            RouteCollection::clear();
+            MiddlewareStack::reset();
+            AuthManager::setProvider($originalProvider ?? 'App\\Model\\User');
+            AuthManager::resetUser();
+            session_manager()->clear();
+        }
     }
 
     public function testInjectedFormRequestUsesBoundRequestInputRouteParamsAndUserResolver(): void
@@ -500,6 +559,46 @@ class DispatcherIdentityInputRequest extends FormRequest
             'name' => 'required|string',
             'slug' => 'required|string',
         ];
+    }
+}
+
+class RouteIdentityInputRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user()?->id === 7;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'name' => 'required|string',
+            'role' => 'required|string',
+        ];
+    }
+}
+
+class IdentityInputRouteUser
+{
+    public function __construct(
+        public int $id,
+        public string $name,
+    ) {
+    }
+
+    /** @var array<int, self> */
+    private static array $users = [];
+
+    public static function reset(): void
+    {
+        self::$users = [
+            7 => new self(7, 'Route User'),
+        ];
+    }
+
+    public static function find(mixed $id): ?self
+    {
+        return self::$users[(int) $id] ?? null;
     }
 }
 
