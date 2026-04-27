@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Status:** Completed on 2026-04-26 in branch `m2a-web-state-foundation`.
-> Final verification: `php test` completed with `Tests: 1812, S 36 skipped, ✓ 1776 passed`; existing PHP 8.5 deprecation warnings are still emitted by unrelated code.
+> Final verification: `php test` completed with `Tests: 1813, S 36 skipped, ✓ 1777 passed`; existing PHP 8.5 deprecation warnings are still emitted by unrelated code.
 
 **Goal:** Build request-scoped session startup, queued cookie writeback, and session-backed CSRF protection for the `web` middleware group.
 
@@ -246,9 +246,15 @@ use Bin\Middleware\SessionMiddleware;
 
 'priority' => [
     'session' => 30,
+    SessionMiddleware::class => 30,
     'csrf' => 20,
+    CsrfMiddleware::class => 20,
     'auth' => 10,
+    AuthMiddleware::class => 10,
+    'guest' => 10,
+    GuestMiddleware::class => 10,
     'throttle' => 0,
+    RateLimitMiddleware::class => 0,
 ],
 ```
 
@@ -367,7 +373,7 @@ public static function set(
         ? self::encrypt($value)
         : $value;
 
-    $expires = $minutes > 0 ? time() + ($minutes * 60) : 0;
+    $expires = $minutes !== 0 ? time() + ($minutes * 60) : 0;
 
     self::$queued[$name] = self::buildHeaderLine(
         $name,

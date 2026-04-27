@@ -375,6 +375,24 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertSame(SessionMiddleware::class, $stack->getAliases()['session']);
     }
 
+    public function testHttpBootstrapKeepsSessionBeforeAuthForProtectedWebRoutes(): void
+    {
+        $app = App::getInstance();
+        $http = new HttpKernel($app);
+
+        $reflection = new \ReflectionMethod(HttpKernel::class, 'bootstrap');
+        $reflection->invoke($http);
+
+        $middleware = MiddlewareStack::getInstance()->collectRouteMiddleware(['auth'], ['web']);
+
+        $sessionIndex = array_search(SessionMiddleware::class, $middleware, true);
+        $authIndex = array_search('auth', $middleware, true);
+
+        $this->assertNotSame(false, $sessionIndex);
+        $this->assertNotSame(false, $authIndex);
+        $this->assertLessThan($authIndex, $sessionIndex);
+    }
+
     public function testBootstrapWithPartialPipeline(): void
     {
         $app = App::getInstance();

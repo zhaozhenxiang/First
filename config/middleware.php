@@ -76,9 +76,15 @@ return [
     */
     'priority' => [
         'session' => 30,
+        SessionMiddleware::class => 30,
         'csrf' => 20,
+        CsrfMiddleware::class => 20,
         'auth' => 10,
+        AuthMiddleware::class => 10,
+        'guest' => 10,
+        GuestMiddleware::class => 10,
         'throttle' => 0,
+        RateLimitMiddleware::class => 0,
     ],
 
 ];
