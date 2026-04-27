@@ -13,6 +13,11 @@ use Bin\Testing\TestCase;
  */
 class ValidationTest extends TestCase
 {
+    protected function assertIsArray(mixed $actual, string $message = ''): void
+    {
+        $this->assertIsType('array', $actual, $message);
+    }
+
     public function testRequiredValidation(): void
     {
         $validator = ValidationManager::make(
@@ -466,6 +471,26 @@ class ValidationTest extends TestCase
         }
 
         $this->assertTrue($exceptionThrown);
+    }
+
+    public function testValidateOrFailThrowsValidationExceptionWithMessageBagShape(): void
+    {
+        $validator = ValidationManager::make(
+            ['email' => 'not-an-email'],
+            ['email' => 'required|email']
+        );
+
+        try {
+            $validator->validateOrFail();
+            $this->fail('Expected ValidationException was not thrown');
+        } catch (ValidationException $e) {
+            $errors = $e->getErrors();
+
+            $this->assertEquals(422, $e->getCode());
+            $this->assertArrayHasKey('email', $errors);
+            $this->assertIsArray($errors['email']);
+            $this->assertNotSame('', $errors['email'][0] ?? '');
+        }
     }
 
     public function testGetFirstError(): void

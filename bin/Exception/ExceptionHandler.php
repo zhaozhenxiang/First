@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Bin\Exception;
 
+use Bin\App\App;
+use Bin\Request\Request;
 use Bin\Response\Response;
 use Bin\View\View;
 use Closure;
@@ -169,14 +171,14 @@ class ExceptionHandler
     protected function renderException(Throwable $e): Response
     {
         $status = $this->getStatus($e);
+        $expectsJson = $this->expectsJsonResponse();
 
-        // 如果是 AJAX 请求，返回 JSON
-        if ($this->isAjax()) {
+        if ($expectsJson) {
             return $this->renderJson($e, $status);
         }
 
         // Web 请求的 ValidationException：重定向回上一页并闪存错误
-        if ($e instanceof ValidationException && !$this->isAjax()) {
+        if ($e instanceof ValidationException) {
             return $this->renderValidationRedirect($e);
         }
 
@@ -514,6 +516,23 @@ HTML;
     protected function isAjax(): bool
     {
         return is_ajax();
+    }
+
+    protected function expectsJsonResponse(): bool
+    {
+        try {
+            $app = App::getInstance();
+            if ($app->bound(Request::class)) {
+                $request = $app->make(Request::class);
+                if ($request instanceof Request) {
+                    return $request->expectsJson();
+                }
+            }
+        } catch (\Throwable) {
+            return $this->isAjax();
+        }
+
+        return $this->isAjax();
     }
 
     /**

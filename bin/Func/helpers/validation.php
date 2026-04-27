@@ -9,8 +9,7 @@ if (!function_exists('validate')) {
     function validate(array $data, array $rules): array
     {
         return \Bin\Validation\ValidationManager::make($data, $rules)
-            ->throwOnFail(true)
-            ->validate();
+            ->validateOrFail();
     }
 }
 

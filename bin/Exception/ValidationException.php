@@ -9,14 +9,14 @@ namespace Bin\Exception;
  */
 class ValidationException extends \Exception
 {
-    /** @var array<string, string> */
+    /** @var array<string, string|array<string>> */
     private array $errors;
 
     /** @var string 错误袋名称 */
     private string $errorBag;
 
     /**
-     * @param array<string, string> $errors
+     * @param array<string, string|array<string>> $errors
      */
     public function __construct(array $errors, string $message = 'Validation failed', string $errorBag = 'default')
     {
@@ -27,7 +27,7 @@ class ValidationException extends \Exception
 
     /**
      * 获取所有验证错误
-     * @return array<string, string>
+     * @return array<string, string|array<string>>
      */
     public function getErrors(): array
     {

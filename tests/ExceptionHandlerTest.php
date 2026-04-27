@@ -11,6 +11,7 @@ use Bin\Exception\ExceptionHandler;
 use Bin\Exception\HttpException;
 use Bin\Exception\NotFoundHttpException;
 use Bin\Exception\ValidationException;
+use Bin\Request\Request;
 use Bin\Response\Response;
 use Bin\Response\ResponseFactory;
 use Bin\Testing\TestCase;
@@ -339,6 +340,84 @@ class ExceptionHandlerTest extends TestCase
         $this->assertInstanceOf(Response::class, $response);
         $this->assertEquals(302, $response->getStatusCode());
         $this->assertEquals('/previous', $response->getHeader('Location'));
+    }
+
+    public function testValidationExceptionJsonResponseForAcceptHeader(): void
+    {
+        $app = App::getInstance();
+        $app->instance(Request::class, new Request(
+            query: [],
+            post: [],
+            server: ['HTTP_ACCEPT' => 'application/json'],
+            cookies: []
+        ));
+
+        try {
+            $handler = new ExceptionHandler(false);
+            $response = $handler->render(new ValidationException([
+                'email' => ['Invalid email'],
+            ]));
+
+            $payload = json_decode($response->getContent(), true);
+
+            $this->assertEquals(422, $response->getStatusCode());
+            $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+            $this->assertSame(422, $payload['error']['status']);
+            $this->assertSame(['email' => ['Invalid email']], $payload['error']['errors']);
+        } finally {
+            $app->forget(Request::class);
+            $app->singleton(Request::class, Request::class);
+        }
+    }
+
+    public function testAuthenticationExceptionJsonResponseForAcceptHeader(): void
+    {
+        $app = App::getInstance();
+        $app->instance(Request::class, new Request(
+            query: [],
+            post: [],
+            server: ['HTTP_ACCEPT' => 'application/json'],
+            cookies: []
+        ));
+
+        try {
+            $handler = new ExceptionHandler(false);
+            $response = $handler->render(new AuthenticationException());
+            $payload = json_decode($response->getContent(), true);
+
+            $this->assertEquals(401, $response->getStatusCode());
+            $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+            $this->assertSame(401, $payload['error']['status']);
+            $this->assertSame('Unauthorized', $payload['error']['message']);
+        } finally {
+            $app->forget(Request::class);
+            $app->singleton(Request::class, Request::class);
+        }
+    }
+
+    public function testAuthorizationExceptionJsonResponseForAcceptHeader(): void
+    {
+        $app = App::getInstance();
+        $app->instance(Request::class, new Request(
+            query: [],
+            post: [],
+            server: ['HTTP_ACCEPT' => 'application/json'],
+            cookies: []
+        ));
+
+        try {
+            $handler = new ExceptionHandler(false);
+            $response = $handler->render(new AuthorizationException());
+            $payload = json_decode($response->getContent(), true);
+
+            $this->assertEquals(403, $response->getStatusCode());
+            $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+            $this->assertSame(403, $payload['error']['status']);
+            $this->assertSame('Forbidden', $payload['error']['message']);
+        } finally {
+            $app->forget(Request::class);
+            $app->singleton(Request::class, Request::class);
+        }
     }
 
     public function testAjaxRenderFallsBackToDirectResponseFactoryWhenContainerResolutionFails(): void

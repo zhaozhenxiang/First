@@ -736,6 +736,11 @@ class ValidationManager
         return $this;
     }
 
+    public function validateOrFail(): array
+    {
+        return $this->throwOnFail(true)->validate();
+    }
+
     /**
      * 设置 Session 管理器
      */
