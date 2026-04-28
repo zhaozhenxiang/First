@@ -861,16 +861,10 @@ class QueryBuilder
      */
     protected function hydrateModel(array $attributes): Model
     {
+        /** @var Model $model */
         $model = new $this->modelClass();
 
-        $model->setRawAttributes($attributes);
-
-        $model->exists = true;
-
-        // 触发 retrieved 事件
-        $model->fireModelEvent('retrieved');
-
-        return $model;
+        return $model->newFromBuilder($attributes);
     }
 
     /**

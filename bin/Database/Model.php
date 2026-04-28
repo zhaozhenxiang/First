@@ -495,6 +495,33 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     }
 
     /**
+     * Hydrate a model instance from trusted database attributes.
+     */
+    public function newFromBuilder(array $attributes): static
+    {
+        $model = new static();
+        $model->setRawAttributes($attributes);
+        $model->exists = true;
+        $model->wasRecentlyCreated = false;
+        $model->fireModelEvent('retrieved');
+
+        return $model;
+    }
+
+    /**
+     * Hydrate a collection of model instances from trusted database rows.
+     */
+    public static function hydrate(array $items): Collection
+    {
+        $instance = new static();
+
+        return new Collection(array_map(
+            fn (array $attributes): static => $instance->newFromBuilder($attributes),
+            $items
+        ));
+    }
+
+    /**
      * 保存模型
      */
     public function save(): bool

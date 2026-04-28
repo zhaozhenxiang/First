@@ -114,6 +114,41 @@ class OrmLifecycleTest extends TestCase
         $this->assertTrue($token->isClean());
         $this->assertSame('Third token', OrmLifecycleToken::find('tok_3')->label);
     }
+
+    public function testHydrateBypassesMassAssignmentAndSynchronizesOriginal(): void
+    {
+        $models = OrmLifecycleGuardedToken::hydrate([
+            ['uuid' => 'raw_1', 'label' => 'Raw guarded token', 'active' => 1],
+        ]);
+
+        $this->assertInstanceOf(Collection::class, $models);
+        $this->assertCount(1, $models);
+
+        $model = $models->first();
+
+        $this->assertInstanceOf(OrmLifecycleGuardedToken::class, $model);
+        $this->assertTrue($model->exists);
+        $this->assertFalse($model->wasRecentlyCreated());
+        $this->assertSame('raw_1', $model->uuid);
+        $this->assertSame('Raw guarded token', $model->label);
+        $this->assertSame($model->getAttributes(), $model->getOriginal());
+        $this->assertTrue($model->isClean());
+    }
+
+    public function testQueryHydrationUsesModelLifecycleAndFiresRetrievedOnce(): void
+    {
+        $retrieved = [];
+        OrmLifecycleToken::retrieved(function (OrmLifecycleToken $token) use (&$retrieved): void {
+            $retrieved[] = $token->uuid;
+        });
+
+        $token = OrmLifecycleToken::where('uuid', 'tok_1')->first();
+
+        $this->assertInstanceOf(OrmLifecycleToken::class, $token);
+        $this->assertSame(['tok_1'], $retrieved);
+        $this->assertTrue($token->exists);
+        $this->assertTrue($token->isClean());
+    }
 }
 
 class OrmLifecycleToken extends Model
@@ -124,6 +159,11 @@ class OrmLifecycleToken extends Model
     protected bool $incrementing = false;
     protected bool $timestamps = false;
     protected array $guarded = [];
+}
+
+class OrmLifecycleGuardedToken extends OrmLifecycleToken
+{
+    protected array $guarded = ['*'];
 }
 
 return new OrmLifecycleTest();
