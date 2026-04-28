@@ -327,6 +327,7 @@ class OrmLifecycleTest extends TestCase
         $this->assertTrue($created->isDirty('label'));
         $this->assertTrue($created->save());
         $this->assertTrue($created->isClean());
+        $this->assertSame('Updated locally', OrmLifecycleToken::findOrFail('tok_e2e')->label);
 
         $this->connection->exec("UPDATE orm_lifecycle_tokens SET label = 'Externally updated' WHERE uuid = 'tok_e2e'");
         $created->refreshOrFail();
