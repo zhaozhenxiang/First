@@ -67,6 +67,29 @@ class OrmLifecycleTest extends TestCase
         $this->assertSame(['tok_1', 'tok_2'], $tokens->pluck('uuid'));
     }
 
+    public function testFindOrReturnsModelForStringPrimaryKey(): void
+    {
+        $token = OrmLifecycleToken::findOr('tok_1', fn() => 'fallback');
+
+        $this->assertInstanceOf(OrmLifecycleToken::class, $token);
+        $this->assertSame('tok_1', $token->uuid);
+    }
+
+    public function testFindOrReturnsFallbackForMissingStringPrimaryKey(): void
+    {
+        $result = OrmLifecycleToken::findOr('missing', fn() => 'fallback');
+
+        $this->assertSame('fallback', $result);
+    }
+
+    public function testQueryBuilderFindOrFailUsesStringPrimaryKey(): void
+    {
+        $token = OrmLifecycleToken::query()->findOrFail('tok_1');
+
+        $this->assertInstanceOf(OrmLifecycleToken::class, $token);
+        $this->assertSame('tok_1', $token->uuid);
+    }
+
     public function testNonIncrementingSavePreservesCallerProvidedPrimaryKey(): void
     {
         $token = new OrmLifecycleToken([

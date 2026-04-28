@@ -418,7 +418,7 @@ class QueryBuilder
     /**
      * 查找或执行回调
      */
-    public function findOr(int $id, callable $callback): mixed
+    public function findOr(mixed $id, callable $callback): mixed
     {
         $result = $this->find($id);
         return $result !== null ? $result : $callback();
@@ -427,7 +427,7 @@ class QueryBuilder
     /**
      * 查找或抛出异常
      */
-    public function findOrFail(int $id): mixed
+    public function findOrFail(mixed $id): mixed
     {
         $result = $this->find($id);
 
