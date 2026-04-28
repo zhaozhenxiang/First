@@ -299,6 +299,43 @@ class OrmLifecycleTest extends TestCase
         $this->assertSame('Updated through helper', $token->label);
         $this->assertSame(1, $token->active);
     }
+
+    public function testM2cDataAccessMainLifecycleIsStableEndToEnd(): void
+    {
+        $created = new OrmLifecycleToken([
+            'uuid' => 'tok_e2e',
+            'label' => 'Created token',
+            'active' => 1,
+        ]);
+
+        $this->assertTrue($created->save());
+        $this->assertTrue($created->exists);
+        $this->assertTrue($created->wasRecentlyCreated());
+        $this->assertTrue($created->isClean());
+
+        $queried = OrmLifecycleToken::where('active', 1)
+            ->whereIn('uuid', ['tok_1', 'tok_e2e'])
+            ->orderBy('uuid')
+            ->get();
+
+        $this->assertCount(2, $queried);
+        $this->assertContains('tok_e2e', $queried->pluck('uuid'));
+        $this->assertContains('tok_1', $queried->pluck('uuid'));
+        $this->assertInstanceOf(OrmLifecycleToken::class, $queried->first());
+
+        $created->label = 'Updated locally';
+        $this->assertTrue($created->isDirty('label'));
+        $this->assertTrue($created->save());
+        $this->assertTrue($created->isClean());
+
+        $this->connection->exec("UPDATE orm_lifecycle_tokens SET label = 'Externally updated' WHERE uuid = 'tok_e2e'");
+        $created->refreshOrFail();
+
+        $this->assertSame('Externally updated', $created->label);
+        $this->assertTrue($created->delete());
+        $this->assertFalse($created->exists);
+        $this->assertNull(OrmLifecycleToken::find('tok_e2e'));
+    }
 }
 
 class OrmLifecycleToken extends Model
