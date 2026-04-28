@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\App\App;
 use Bin\Database\Collection;
 use Bin\Database\Model;
+use Bin\Database\ModelNotFoundException;
+use Bin\Exception\ExceptionHandler;
+use Bin\Exception\NotFoundHttpException;
+use Bin\Request\Request;
+use Bin\Route\RouteBinding;
 use Bin\Testing\TestCase;
 use PDO;
 
@@ -148,6 +154,68 @@ class OrmLifecycleTest extends TestCase
         $this->assertSame(['tok_1'], $retrieved);
         $this->assertTrue($token->exists);
         $this->assertTrue($token->isClean());
+    }
+
+    public function testFindOrFailThrowsModelNotFoundExceptionWithModelAndIds(): void
+    {
+        try {
+            OrmLifecycleToken::findOrFail('missing_token');
+            $this->fail('Expected ModelNotFoundException was not thrown');
+        } catch (ModelNotFoundException $e) {
+            $this->assertSame(OrmLifecycleToken::class, $e->getModel());
+            $this->assertSame(['missing_token'], $e->getIds());
+            $this->assertStringContainsString(OrmLifecycleToken::class, $e->getMessage());
+            $this->assertStringContainsString('missing_token', $e->getMessage());
+        }
+    }
+
+    public function testQueryBuilderFindOrFailThrowsModelNotFoundException(): void
+    {
+        try {
+            OrmLifecycleToken::query()->findOrFail('missing_token');
+            $this->fail('Expected ModelNotFoundException was not thrown');
+        } catch (ModelNotFoundException $e) {
+            $this->assertSame(OrmLifecycleToken::class, $e->getModel());
+            $this->assertSame(['missing_token'], $e->getIds());
+        }
+    }
+
+    public function testRouteBindingTranslatesModelNotFoundExceptionToHttp404(): void
+    {
+        RouteBinding::model('token', OrmLifecycleToken::class);
+
+        try {
+            RouteBinding::resolve('token', 'missing_token');
+            $this->fail('Expected NotFoundHttpException was not thrown');
+        } catch (NotFoundHttpException $e) {
+            $this->assertStringContainsString(OrmLifecycleToken::class, $e->getMessage());
+        } finally {
+            RouteBinding::clear();
+        }
+    }
+
+    public function testExceptionHandlerRendersModelNotFoundAsJson404(): void
+    {
+        $app = App::getInstance();
+        $app->instance(Request::class, new Request(
+            query: [],
+            post: [],
+            server: ['HTTP_ACCEPT' => 'application/json'],
+            cookies: []
+        ));
+
+        try {
+            $handler = new ExceptionHandler(false);
+            $response = $handler->render(new ModelNotFoundException(OrmLifecycleToken::class, ['missing_token']));
+
+            $this->assertEquals(404, $response->getStatusCode());
+            $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+            $this->assertStringContainsString('"status":404', (string) $response);
+            $this->assertStringContainsString('Not Found', (string) $response);
+        } finally {
+            $app->forget(Request::class);
+            $app->singleton(Request::class, Request::class);
+        }
     }
 }
 

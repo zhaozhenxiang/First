@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Exception;
 
 use Bin\App\App;
+use Bin\Database\ModelNotFoundException;
 use Bin\Request\Request;
 use Bin\Response\Response;
 use Bin\View\View;
@@ -51,6 +52,7 @@ class ExceptionHandler
             AuthenticationException::class,
             ValidationException::class,
             NotFoundHttpException::class,
+            ModelNotFoundException::class,
         ];
     }
 
@@ -404,6 +406,10 @@ HTML;
      */
     protected function getStatus(Throwable $e): int
     {
+        if ($e instanceof ModelNotFoundException) {
+            return 404;
+        }
+
         if ($e instanceof NotFoundHttpException) {
             return 404;
         }

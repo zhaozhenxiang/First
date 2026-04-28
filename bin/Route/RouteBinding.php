@@ -83,6 +83,8 @@ class RouteBinding
 
             try {
                 return $class::findOrFail($value);
+            } catch (\Bin\Database\ModelNotFoundException $e) {
+                throw new \Bin\Exception\NotFoundHttpException($e->getMessage(), $e);
             } catch (\InvalidArgumentException $e) {
                 static::throwIfNotFound($e);
                 throw $e;
@@ -109,6 +111,8 @@ class RouteBinding
 
         try {
             $result = $callback($value);
+        } catch (\Bin\Database\ModelNotFoundException $e) {
+            throw new \Bin\Exception\NotFoundHttpException($e->getMessage(), $e);
         } catch (\InvalidArgumentException $e) {
             static::throwIfNotFound($e);
             throw $e;

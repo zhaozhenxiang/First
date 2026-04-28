@@ -432,7 +432,7 @@ class QueryBuilder
         $result = $this->find($id);
 
         if ($result === null) {
-            throw new InvalidArgumentException("No query results for model [{$id}]");
+            throw new ModelNotFoundException($this->modelClass ?: Model::class, [$id]);
         }
 
         return $result;

@@ -327,7 +327,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         $result = static::find($id);
 
         if ($result === null) {
-            throw new InvalidArgumentException("No query results for model [{$id}]");
+            throw new ModelNotFoundException(static::class, [$id]);
         }
 
         return $result;
