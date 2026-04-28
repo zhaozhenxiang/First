@@ -471,7 +471,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     /**
      * 更新记录
      */
-    public static function updateWhere(array $values, array $where): int
+    public static function updateWhere(array $where, array $values): int
     {
         return static::query()->where($where)->update($values);
     }
@@ -710,6 +710,25 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
             $this->attributes = $fresh->attributes;
             $this->original = $fresh->original;
         }
+
+        return $this;
+    }
+
+    public function refreshOrFail(): self
+    {
+        if (!$this->exists) {
+            throw new ModelNotFoundException(static::class, [$this->getKey()]);
+        }
+
+        $fresh = $this->fresh();
+
+        if ($fresh === null) {
+            throw new ModelNotFoundException(static::class, [$this->getKey()]);
+        }
+
+        $this->attributes = $fresh->getAttributes();
+        $this->original = $fresh->getOriginal();
+        $this->changes = [];
 
         return $this;
     }

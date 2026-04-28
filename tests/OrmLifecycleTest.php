@@ -256,6 +256,49 @@ class OrmLifecycleTest extends TestCase
             $app->singleton(Request::class, Request::class);
         }
     }
+
+    public function testRefreshOrFailThrowsWhenPersistedRowDisappears(): void
+    {
+        $token = OrmLifecycleToken::findOrFail('tok_1');
+        $this->connection->exec("DELETE FROM orm_lifecycle_tokens WHERE uuid = 'tok_1'");
+
+        try {
+            $token->refreshOrFail();
+            $this->fail('Expected ModelNotFoundException was not thrown');
+        } catch (ModelNotFoundException $e) {
+            $this->assertSame(OrmLifecycleToken::class, $e->getModel());
+            $this->assertSame(['tok_1'], $e->getIds());
+        }
+    }
+
+    public function testRefreshOrFailReloadsDatabaseStateAndClearsDirtyAttributes(): void
+    {
+        $token = OrmLifecycleToken::findOrFail('tok_1');
+        $token->label = 'Dirty local label';
+        $this->assertTrue($token->isDirty('label'));
+
+        $this->connection->exec("UPDATE orm_lifecycle_tokens SET label = 'Reloaded token' WHERE uuid = 'tok_1'");
+
+        $same = $token->refreshOrFail();
+
+        $this->assertSame($token, $same);
+        $this->assertSame('Reloaded token', $token->label);
+        $this->assertTrue($token->isClean());
+    }
+
+    public function testUpdateWhereTreatsFirstArgumentAsConditionsAndSecondAsValues(): void
+    {
+        $affected = OrmLifecycleToken::updateWhere(
+            ['uuid' => 'tok_2'],
+            ['label' => 'Updated through helper', 'active' => 1]
+        );
+
+        $this->assertSame(1, $affected);
+
+        $token = OrmLifecycleToken::findOrFail('tok_2');
+        $this->assertSame('Updated through helper', $token->label);
+        $this->assertSame(1, $token->active);
+    }
 }
 
 class OrmLifecycleToken extends Model
