@@ -441,21 +441,32 @@ class QueryBuilder
     /**
      * 根据 ID 查找
      */
-    public function find(int $id): mixed
+    public function find(mixed $id, ?string $column = null): mixed
     {
-        return $this->where('id', $id)->first();
+        return $this->where($column ?? $this->getModelKeyName(), $id)->first();
     }
 
     /**
      * 根据 ID 数组查找
      */
-    public function findMany(array $ids): Collection
+    public function findMany(array $ids, ?string $column = null): Collection
     {
         if (empty($ids)) {
             return new Collection();
         }
 
-        return $this->whereIn('id', $ids)->get();
+        return $this->whereIn($column ?? $this->getModelKeyName(), $ids)->get();
+    }
+
+    private function getModelKeyName(): string
+    {
+        if ($this->modelClass !== '' && is_subclass_of($this->modelClass, Model::class)) {
+            /** @var Model $model */
+            $model = new $this->modelClass();
+            return $model->getKeyName();
+        }
+
+        return 'id';
     }
 
     /**

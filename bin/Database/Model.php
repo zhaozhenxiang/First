@@ -306,7 +306,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     /**
      * 根据 ID 查找
      */
-    public static function find(int $id): ?self
+    public static function find(mixed $id): ?self
     {
         return static::query()->find($id);
     }
@@ -322,7 +322,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     /**
      * 查找或失败
      */
-    public static function findOrFail(int $id): self
+    public static function findOrFail(mixed $id): self
     {
         $result = static::find($id);
 
@@ -336,7 +336,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     /**
      * 根据 ID 查找或创建
      */
-    public static function findOrNew(int $id): self
+    public static function findOrNew(mixed $id): self
     {
         return static::find($id) ?? new static();
     }
@@ -540,9 +540,12 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
         $attributes = $this->getAttributes();
 
-        $id = $query->insertGetId($attributes);
-
-        $this->setAttribute($this->getKeyName(), $id);
+        if ($this->getIncrementing()) {
+            $id = $query->insertGetId($attributes);
+            $this->setAttribute($this->getKeyName(), $id);
+        } else {
+            $query->insert($attributes);
+        }
 
         $this->exists = true;
         $this->wasRecentlyCreated = true;
