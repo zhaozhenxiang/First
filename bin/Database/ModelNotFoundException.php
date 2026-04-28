@@ -48,7 +48,19 @@ class ModelNotFoundException extends InvalidArgumentException
             return 'null';
         }
 
-        if (is_scalar($id)) {
+        if (is_bool($id)) {
+            return $id ? 'true' : 'false';
+        }
+
+        if ($id === '') {
+            return '""';
+        }
+
+        if (is_int($id) || is_float($id) || is_string($id)) {
+            return (string) $id;
+        }
+
+        if ($id instanceof \Stringable) {
             return (string) $id;
         }
 

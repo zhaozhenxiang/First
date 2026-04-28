@@ -190,6 +190,24 @@ class OrmLifecycleTest extends TestCase
         $this->assertStringContainsString('null', $exception->getMessage());
     }
 
+    public function testModelNotFoundExceptionFormatsAmbiguousScalarAndStringableIds(): void
+    {
+        $stringable = new class {
+            public function __toString(): string
+            {
+                return 'stringable-id';
+            }
+        };
+        $ids = [false, '', $stringable];
+
+        $exception = new ModelNotFoundException(OrmLifecycleToken::class, $ids);
+
+        $this->assertSame($ids, $exception->getIds());
+        $this->assertStringContainsString('false', $exception->getMessage());
+        $this->assertStringContainsString('""', $exception->getMessage());
+        $this->assertStringContainsString('stringable-id', $exception->getMessage());
+    }
+
     public function testQueryBuilderFindOrFailThrowsModelNotFoundException(): void
     {
         try {
