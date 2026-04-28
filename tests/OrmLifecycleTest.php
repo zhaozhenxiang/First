@@ -90,6 +90,12 @@ class OrmLifecycleTest extends TestCase
         $this->assertSame('tok_1', $token->uuid);
     }
 
+    public function testDestroyPreservesStringPrimaryKey(): void
+    {
+        $this->assertSame(1, OrmLifecycleToken::destroy('tok_1'));
+        $this->assertNull(OrmLifecycleToken::find('tok_1'));
+    }
+
     public function testNonIncrementingSavePreservesCallerProvidedPrimaryKey(): void
     {
         $token = new OrmLifecycleToken([

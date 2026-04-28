@@ -630,7 +630,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         $count = 0;
 
         foreach ($ids as $id) {
-            $model = static::find((int) $id);
+            $model = static::find($id);
 
             if ($model !== null && $model->delete()) {
                 $count++;
