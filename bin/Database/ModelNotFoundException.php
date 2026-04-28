@@ -36,9 +36,30 @@ class ModelNotFoundException extends InvalidArgumentException
         $message = "No query results for model [{$this->model}]";
 
         if ($this->ids !== []) {
-            $message .= ' ' . implode(', ', array_map(static fn(mixed $id): string => (string) $id, $this->ids));
+            $message .= ' ' . implode(', ', array_map(static fn(mixed $id): string => self::formatId($id), $this->ids));
         }
 
         return $message;
+    }
+
+    protected static function formatId(mixed $id): string
+    {
+        if ($id === null) {
+            return 'null';
+        }
+
+        if (is_scalar($id)) {
+            return (string) $id;
+        }
+
+        if (is_array($id) || is_object($id)) {
+            $encoded = json_encode($id, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            if (is_string($encoded)) {
+                return $encoded;
+            }
+        }
+
+        return get_debug_type($id);
     }
 }

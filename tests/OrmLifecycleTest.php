@@ -169,6 +169,27 @@ class OrmLifecycleTest extends TestCase
         }
     }
 
+    public function testModelNotFoundExceptionFormatsComplexIdsWithoutWarnings(): void
+    {
+        $ids = [['tenant' => 'acme', 'uuid' => 'missing'], null];
+
+        set_error_handler(static function (int $severity, string $message, string $file, int $line): bool {
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
+
+        try {
+            $exception = new ModelNotFoundException(OrmLifecycleToken::class, $ids);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertInstanceOf(ModelNotFoundException::class, $exception);
+        $this->assertSame($ids, $exception->getIds());
+        $this->assertStringContainsString('"tenant":"acme"', $exception->getMessage());
+        $this->assertStringContainsString('"uuid":"missing"', $exception->getMessage());
+        $this->assertStringContainsString('null', $exception->getMessage());
+    }
+
     public function testQueryBuilderFindOrFailThrowsModelNotFoundException(): void
     {
         try {
