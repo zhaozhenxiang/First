@@ -8,7 +8,10 @@
 
 - `M1` 已于 `2026-04-18` 完成验收并关账
 - `M2` 已拆分为 `M2-A / M2-B / M2-C`
-- 当前只建立规划入口，实施附录还没有展开为 `tasks / order / tests / closure`
+- `M2` 文档拆分 plan 已完成，索引和三份子 spec 已落地
+- `M2-A` Web 状态基础 plan 已完成
+- `M2-B` 身份与输入链路 plan 已建立，是当前身份链路执行入口
+- `M2-C` ORM 生命周期 plan 已建立，是后续数据层执行入口
 
 适用场景：
 
@@ -33,6 +36,17 @@
 - 再补 Web 状态基础
 - 再补身份与输入链路
 - 最后补数据访问生命周期
+
+---
+
+## 实施计划入口
+
+如果目标是执行而不是只阅读 spec，按下面顺序进入 plan：
+
+1. [M2 文档拆分 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-18-m2-doc-split.md) - 已完成，用于追溯索引和三份子 spec 的拆分来源
+2. [M2-A Web 状态基础 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-18-m2a-web-state-foundation.md) - 已完成，用于追溯 `Session / Cookie / CSRF` 的实施闭环
+3. [M2-B 身份与输入链路 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-28-m2b-identity-and-input.md) - 当前身份链路执行入口
+4. [M2-C ORM 生命周期 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-28-m2c-orm-lifecycle.md) - 数据层执行入口，排在 `M2-B` 之后
 
 ---
 
@@ -99,7 +113,8 @@
 如果你是做阶段规划，可以这样看：
 
 - 先读三份 `M2` 子 spec 的 `范围`、`Out of Scope` 和 `验收标准`
-- 再决定是否要为某一段补 `tasks / order / tests`
+- 再看 `实施计划入口`，确认对应 plan 是否已经存在
+- 如果继续推进实施，优先执行 `M2-B`，再进入 `M2-C`
 
 如果你是做 code review，可以这样看：
 
@@ -111,12 +126,12 @@
 
 ## 当前推荐入口
 
-如果现在要从 `M1` 进入下一阶段，建议从这里开始：
+如果现在要从 `M1` 进入或继续推进 `M2`，建议从这里开始：
 
 1. 先读 [M1 Closure](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m1-runtime-skeleton-closure.md)，确认 `M1` 不再继续扩写
-2. 再读 [M2-A Web 状态基础](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2a-web-state-foundation-spec.md) 的 `目标`、`范围` 和 `验收标准`
-3. 接着读 [M2-B 身份与输入链路](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2b-identity-and-input-spec.md)，明确它依赖 `M2-A`
-4. 最后读 [M2-C ORM 生命周期](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2c-orm-lifecycle-spec.md)，确认数据层是最后一段而不是并行展开
+2. 再读 [M2-A Web 状态基础](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2a-web-state-foundation-spec.md)，把已完成的 Web 状态基础作为后续依赖背景
+3. 如果执行身份链路，进入 [M2-B 身份与输入链路 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-28-m2b-identity-and-input.md)
+4. 如果执行数据层，确认 `M2-B` 已完成后再进入 [M2-C ORM 生命周期 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-28-m2c-orm-lifecycle.md)
 
 ---
 
@@ -126,3 +141,5 @@
 - 看 Web 状态基础： [M2-A Web 状态基础](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2a-web-state-foundation-spec.md)
 - 看身份与输入链路： [M2-B 身份与输入链路](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2b-identity-and-input-spec.md)
 - 看 ORM 生命周期： [M2-C ORM 生命周期](/home/x/src/install/php/First/docs/superpowers/specs/2026-04-18-m2c-orm-lifecycle-spec.md)
+- 执行身份链路： [M2-B 身份与输入链路 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-28-m2b-identity-and-input.md)
+- 执行 ORM 生命周期： [M2-C ORM 生命周期 plan](/home/x/src/install/php/First/docs/superpowers/plans/2026-04-28-m2c-orm-lifecycle.md)
