@@ -8,6 +8,7 @@ use Bin\Console\Command;
 use Bin\Queue\Drivers\DatabaseQueue;
 use Bin\Queue\QueueManager;
 use DateTimeImmutable;
+use Throwable;
 
 class QueueFailedCommand extends Command
 {
@@ -46,7 +47,12 @@ class QueueFailedCommand extends Command
     private function databaseQueue(): ?DatabaseQueue
     {
         $connection = (string) ($this->argument('connection') ?: $this->defaultConnection());
-        $queue = QueueManager::getInstance()->connection($connection);
+        try {
+            $queue = QueueManager::getInstance()->connection($connection);
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+            return null;
+        }
 
         if (!$queue instanceof DatabaseQueue) {
             $this->error("Queue connection [{$connection}] does not support failed jobs.");
@@ -59,16 +65,14 @@ class QueueFailedCommand extends Command
     private function displayName(string $payload): string
     {
         $data = json_decode($payload, true);
-        if (!is_array($data) || !isset($data['job'])) {
-            return 'Unknown';
+        if (is_array($data) && isset($data['displayName'])) {
+            $displayName = trim((string) $data['displayName']);
+            if ($displayName !== '') {
+                return $displayName;
+            }
         }
 
-        $job = @unserialize((string) $data['job'], ['allowed_classes' => true]);
-        if (is_object($job) && method_exists($job, 'displayName')) {
-            return (string) $job->displayName();
-        }
-
-        return is_object($job) ? $job::class : 'Unknown';
+        return 'raw payload';
     }
 
     private function formatFailedAt(int $timestamp): string

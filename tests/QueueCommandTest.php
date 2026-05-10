@@ -152,6 +152,67 @@ class QueueCommandTest extends TestCase
         $this->assertSame([], $this->queue->getFailedJobs());
     }
 
+    public function testFailedJobCommandsReturnFailureForMissingConnection(): void
+    {
+        $commands = [
+            ['queue:failed', ['missing']],
+            ['queue:retry', ['1', 'missing']],
+            ['queue:forget', ['1', 'missing']],
+            ['queue:flush', ['missing', '--force' => true]],
+        ];
+
+        foreach ($commands as [$command, $arguments]) {
+            $exitCode = Kernel::callSilent($command, $arguments);
+
+            $this->assertSame(1, $exitCode, "{$command} should fail without throwing.");
+        }
+    }
+
+    public function testFailedJobCommandsReturnFailureForNonDatabaseConnection(): void
+    {
+        QueueManager::getInstance()->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+            'sync' => ['driver' => 'sync'],
+        ]);
+
+        $commands = [
+            ['queue:failed', ['sync']],
+            ['queue:retry', ['1', 'sync']],
+            ['queue:forget', ['1', 'sync']],
+            ['queue:flush', ['sync', '--force' => true]],
+        ];
+
+        foreach ($commands as [$command, $arguments]) {
+            $exitCode = Kernel::callSilent($command, $arguments);
+
+            $this->assertSame(1, $exitCode, "{$command} should reject non-database queues.");
+        }
+    }
+
+    public function testQueueFailedUsesStoredDisplayNameWithoutUnserializingJob(): void
+    {
+        $this->insertFailedJob(json_encode([
+            'displayName' => 'Stored Display Name',
+            'job' => 'invalid serialized data',
+        ], JSON_THROW_ON_ERROR));
+
+        [$exitCode, $output] = $this->runCommandWithOutput('queue:failed', ['database']);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('Stored Display Name', $output);
+        $this->assertStringNotContainsString('Unknown', $output);
+    }
+
+    public function testQueueFailedShowsRawPayloadForMalformedPayload(): void
+    {
+        $this->insertFailedJob('{not-json');
+
+        [$exitCode, $output] = $this->runCommandWithOutput('queue:failed', ['database']);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('raw payload', $output);
+    }
+
     private function createQueueTables(): void
     {
         $this->pdo->exec("
@@ -176,6 +237,14 @@ class QueueCommandTest extends TestCase
                 failed_at INTEGER NOT NULL
             )
         ");
+    }
+
+    private function insertFailedJob(string $payload): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO failed_jobs (connection, queue, payload, exception, failed_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        $stmt->execute(['database', 'default', $payload, 'RuntimeException: boom', time()]);
     }
 
     /**

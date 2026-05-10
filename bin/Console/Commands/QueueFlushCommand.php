@@ -7,6 +7,7 @@ namespace Bin\Console\Commands;
 use Bin\Console\Command;
 use Bin\Queue\Drivers\DatabaseQueue;
 use Bin\Queue\QueueManager;
+use Throwable;
 
 class QueueFlushCommand extends Command
 {
@@ -22,10 +23,8 @@ class QueueFlushCommand extends Command
         }
 
         $connection = (string) ($this->argument('connection') ?: $this->defaultConnection());
-        $queue = QueueManager::getInstance()->connection($connection);
-
+        $queue = $this->databaseQueue($connection);
         if (!$queue instanceof DatabaseQueue) {
-            $this->error("Queue connection [{$connection}] does not support failed jobs.");
             return 1;
         }
 
@@ -33,6 +32,23 @@ class QueueFlushCommand extends Command
         $this->info("Flushed {$count} failed jobs.");
 
         return 0;
+    }
+
+    private function databaseQueue(string $connection): ?DatabaseQueue
+    {
+        try {
+            $queue = QueueManager::getInstance()->connection($connection);
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+            return null;
+        }
+
+        if (!$queue instanceof DatabaseQueue) {
+            $this->error("Queue connection [{$connection}] does not support failed jobs.");
+            return null;
+        }
+
+        return $queue;
     }
 
     private function defaultConnection(): string
