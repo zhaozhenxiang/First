@@ -747,6 +747,26 @@ class QueueTest extends TestCase
         $this->assertEquals(1, $dbQueue->size('default'));
     }
 
+    public function testBadPayloadIsMovedToFailedJobsAndRemovedFromQueue(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setConnection('database', $dbQueue);
+
+        $dbQueue->pushRaw('{"job":"not a serialized job"}', 'default');
+
+        $worker = new Worker($manager);
+        $processed = $worker->runNextJob('database', ['default'], 3);
+
+        $this->assertTrue($processed);
+        $this->assertEquals(1, $worker->getFailed());
+        $this->assertEquals(0, $dbQueue->size('default'));
+        $this->assertCount(1, $dbQueue->getFailedJobs());
+    }
+
     public function testWorkerInvokesJobHandleThroughContainer(): void
     {
         App::getInstance()->instance(\QueueTest_InjectedDependency::class, new \QueueTest_InjectedDependency('from container'));
