@@ -64,6 +64,8 @@ class PendingDispatch
             return $this;
         }
 
+        $this->dispatched = true;
+
         $connection = QueueManager::getInstance()->connection($this->connection);
 
         if ($this->job->delay > 0) {
@@ -71,8 +73,6 @@ class PendingDispatch
         } else {
             $connection->push($this->job, $this->job->getQueue());
         }
-
-        $this->dispatched = true;
 
         return $this;
     }

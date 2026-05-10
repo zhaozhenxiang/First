@@ -833,6 +833,30 @@ class QueueTest extends TestCase
 
         $this->assertEquals(1, $dbQueue->size('default'));
     }
+
+    public function testPendingDispatchDoesNotRetryInDestructorWhenExplicitSyncDispatchThrows(): void
+    {
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'sync' => ['driver' => 'sync'],
+        ]);
+        $manager->setDefaultConnection('sync');
+
+        $pending = new \Bin\Queue\PendingDispatch(new \QueueTest_FinallyFailingJob());
+
+        $thrown = false;
+        try {
+            $pending->dispatch();
+        } catch (\RuntimeException $e) {
+            $thrown = true;
+        }
+
+        $this->assertTrue($thrown, 'Expected sync dispatch to throw');
+
+        unset($pending);
+
+        $this->assertEquals(1, \QueueTest_FinallyFailingJob::$handleCount);
+    }
 }
 
 class QueueTest_StaleReservationPdo extends PDO
