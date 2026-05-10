@@ -6,6 +6,7 @@ namespace Bin\Queue\Drivers;
 
 use Bin\Database\ConnectionManager;
 use Bin\Queue\Contracts\QueueInterface;
+use Bin\Queue\InvalidPayloadException;
 use Bin\Queue\Job;
 use PDO;
 
@@ -125,7 +126,17 @@ class DatabaseQueue implements QueueInterface
             throw $e;
         }
 
-        return $this->hydrateJob($record, true);
+        $job = $this->hydrateJob($record, true);
+
+        if ($job === null) {
+            $exception = new InvalidPayloadException((int) $record['id'], $queue, (string) $record['payload']);
+            $this->logFailedPayload($this->connectionName, $queue, (string) $record['payload'], $exception);
+            $this->deleteById((int) $record['id']);
+
+            throw $exception;
+        }
+
+        return $job;
     }
 
     public function delete(mixed $job): bool
@@ -228,6 +239,35 @@ class DatabaseQueue implements QueueInterface
         return true;
     }
 
+    public function forgetFailedJob(int $id): bool
+    {
+        $sql = "DELETE FROM `{$this->failedTable}` WHERE id = :id";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':id' => $id]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    public function flushFailedJobs(): int
+    {
+        $sql = "DELETE FROM `{$this->failedTable}`";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute();
+
+        return $stmt->rowCount();
+    }
+
+    public function findFailedJob(int $id): ?array
+    {
+        $sql = "SELECT * FROM `{$this->failedTable}` WHERE id = :id";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':id' => $id]);
+
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $record !== false ? $record : null;
+    }
+
     /**
      * 创建 Job payload
      */
@@ -291,6 +331,30 @@ class DatabaseQueue implements QueueInterface
     {
         $this->failedTable = $this->sanitizeIdentifier($table);
         return $this;
+    }
+
+    protected function logFailedPayload(string $connection, string $queue, string $payload, \Throwable $exception): bool
+    {
+        $sql = "INSERT INTO `{$this->failedTable}` (connection, queue, payload, exception, failed_at)
+                VALUES (:connection, :queue, :payload, :exception, :failed_at)";
+
+        $stmt = $this->pdo->prepare($sql);
+
+        return $stmt->execute([
+            ':connection' => $connection,
+            ':queue' => $queue,
+            ':payload' => $payload,
+            ':exception' => (string) $exception,
+            ':failed_at' => time(),
+        ]);
+    }
+
+    protected function deleteById(int $id): bool
+    {
+        $sql = "DELETE FROM `{$this->table}` WHERE id = :id";
+        $stmt = $this->pdo->prepare($sql);
+
+        return $stmt->execute([':id' => $id]);
     }
 
     /**

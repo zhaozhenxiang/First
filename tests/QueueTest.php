@@ -202,6 +202,66 @@ class QueueTest extends TestCase
         $this->assertNotNull($rePopped);
     }
 
+    public function testDatabaseQueueReleaseDoesNotIncrementAttemptsUntilNextPop(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->push(new \QueueTest_TestJob('released once'), 'default');
+
+        $job = $queue->pop('default');
+        $this->assertNotNull($job);
+        $this->assertEquals(1, $job->getAttempts());
+
+        $this->assertTrue($queue->release($job, 0));
+
+        $stmt = $this->pdo->query('SELECT attempts, reserved_at FROM jobs LIMIT 1');
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertEquals(1, (int) $record['attempts']);
+        $this->assertNull($record['reserved_at']);
+
+        $rePopped = $queue->pop('default');
+        $this->assertNotNull($rePopped);
+        $this->assertEquals(2, $rePopped->getAttempts());
+    }
+
+    public function testDatabaseQueueCanForgetFailedJob(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->logFailedJob('database', 'default', new \QueueTest_TestJob('failed'), new \RuntimeException('boom'));
+
+        $failed = $queue->getFailedJobs();
+        $this->assertCount(1, $failed);
+
+        $this->assertTrue($queue->forgetFailedJob((int) $failed[0]['id']));
+        $this->assertSame([], $queue->getFailedJobs());
+    }
+
+    public function testDatabaseQueueCanFlushFailedJobs(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->logFailedJob('database', 'default', new \QueueTest_TestJob('failed one'), new \RuntimeException('one'));
+        $queue->logFailedJob('database', 'default', new \QueueTest_TestJob('failed two'), new \RuntimeException('two'));
+
+        $this->assertCount(2, $queue->getFailedJobs());
+        $this->assertEquals(2, $queue->flushFailedJobs());
+        $this->assertSame([], $queue->getFailedJobs());
+    }
+
+    public function testQueueManagerCanInjectResolvedConnectionForTests(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+
+        $returned = $manager->setConnection('database', $dbQueue);
+
+        $this->assertSame($manager, $returned);
+        $this->assertSame($dbQueue, $manager->connection('database'));
+    }
+
     public function testDatabaseQueueSize(): void
     {
         $queue = new DatabaseQueue('default', $this->pdo);

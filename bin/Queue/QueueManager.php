@@ -74,6 +74,13 @@ class QueueManager
         return $this;
     }
 
+    public function setConnection(string $name, QueueInterface $connection): static
+    {
+        $this->connections[$name] = $connection;
+
+        return $this;
+    }
+
     /**
      * 获取连接实例
      */
