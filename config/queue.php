@@ -27,6 +27,7 @@ return [
             'connection' => 'default',
             'table' => 'jobs',
             'failed_table' => 'failed_jobs',
+            'retry_after' => 90,
         ],
 
     ],

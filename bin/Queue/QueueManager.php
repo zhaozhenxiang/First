@@ -129,7 +129,7 @@ class QueueManager
     protected function createDatabaseDriver(array $config): DatabaseQueue
     {
         $connectionName = $config['connection'] ?? 'default';
-        $queue = new DatabaseQueue($connectionName);
+        $queue = new DatabaseQueue($connectionName, null, (int) ($config['retry_after'] ?? 90));
 
         if (isset($config['table'])) {
             $queue->setTable($config['table']);

@@ -9,6 +9,8 @@ use Bin\Queue\Contracts\QueueInterface;
 use Bin\Queue\InvalidPayloadException;
 use Bin\Queue\Job;
 use PDO;
+use PDOStatement;
+use RuntimeException;
 
 /**
  * 数据库队列驱动
@@ -23,7 +25,8 @@ class DatabaseQueue implements QueueInterface
 
     public function __construct(
         protected string $connectionName = 'default',
-        ?PDO $pdo = null
+        ?PDO $pdo = null,
+        protected int $retryAfter = 90
     ) {
         $this->pdo = $pdo ?? ConnectionManager::getConnection($connectionName);
     }
@@ -36,13 +39,13 @@ class DatabaseQueue implements QueueInterface
         $sql = "INSERT INTO `{$this->table}` (queue, payload, attempts, reserved_at, available_at, created_at)
                 VALUES (:queue, :payload, 0, NULL, :available, :created)";
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([
+        $stmt = $this->prepareOrFail($sql, "prepare insert into {$this->table}");
+        $this->executeOrFail($stmt, [
             ':queue' => $queue,
             ':payload' => $payload,
             ':available' => $now,
             ':created' => $now,
-        ]);
+        ], "insert into {$this->table}");
 
         return (int) $this->pdo->lastInsertId();
     }
@@ -54,13 +57,13 @@ class DatabaseQueue implements QueueInterface
         $sql = "INSERT INTO `{$this->table}` (queue, payload, attempts, reserved_at, available_at, created_at)
                 VALUES (:queue, :payload, 0, NULL, :available, :created)";
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([
+        $stmt = $this->prepareOrFail($sql, "prepare insert into {$this->table}");
+        $this->executeOrFail($stmt, [
             ':queue' => $queue,
             ':payload' => $payload,
             ':available' => $now,
             ':created' => $now,
-        ]);
+        ], "insert into {$this->table}");
 
         return (int) $this->pdo->lastInsertId();
     }
@@ -74,13 +77,13 @@ class DatabaseQueue implements QueueInterface
         $sql = "INSERT INTO `{$this->table}` (queue, payload, attempts, reserved_at, available_at, created_at)
                 VALUES (:queue, :payload, 0, NULL, :available, :created)";
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([
+        $stmt = $this->prepareOrFail($sql, "prepare insert into {$this->table}");
+        $this->executeOrFail($stmt, [
             ':queue' => $queue,
             ':payload' => $payload,
             ':available' => $availableAt,
             ':created' => $now,
-        ]);
+        ], "insert into {$this->table}");
 
         return (int) $this->pdo->lastInsertId();
     }
@@ -88,6 +91,7 @@ class DatabaseQueue implements QueueInterface
     public function pop(string $queue = 'default'): ?Job
     {
         $now = time();
+        $expiredAt = $now - $this->retryAfter;
 
         // 原子操作：查询可用任务并标记保留
         $this->pdo->beginTransaction();
@@ -95,13 +99,13 @@ class DatabaseQueue implements QueueInterface
         try {
             $sql = "SELECT * FROM `{$this->table}`
                     WHERE queue = :queue
-                      AND reserved_at IS NULL
+                      AND (reserved_at IS NULL OR reserved_at <= :expired)
                       AND available_at <= :now
                     ORDER BY id ASC
                     LIMIT 1";
 
-            $stmt = $this->pdo->prepare($sql);
-            $stmt->execute([':queue' => $queue, ':now' => $now]);
+            $stmt = $this->prepareOrFail($sql, "prepare select from {$this->table}");
+            $this->executeOrFail($stmt, [':queue' => $queue, ':expired' => $expiredAt, ':now' => $now], "select from {$this->table}");
             $record = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($record === false) {
@@ -114,16 +118,17 @@ class DatabaseQueue implements QueueInterface
                           SET reserved_at = :reserved, attempts = attempts + 1
                           WHERE id = :id
                             AND queue = :queue
-                            AND reserved_at IS NULL
+                            AND (reserved_at IS NULL OR reserved_at <= :expired)
                             AND available_at <= :now";
 
-            $updateStmt = $this->pdo->prepare($updateSql);
-            $updateStmt->execute([
+            $updateStmt = $this->prepareOrFail($updateSql, "prepare reserve {$this->table}");
+            $this->executeOrFail($updateStmt, [
                 ':reserved' => $now,
                 ':id' => $record['id'],
                 ':queue' => $queue,
+                ':expired' => $expiredAt,
                 ':now' => $now,
-            ]);
+            ], "reserve {$this->table}");
 
             if ($updateStmt->rowCount() === 0) {
                 $this->pdo->rollBack();
@@ -135,7 +140,9 @@ class DatabaseQueue implements QueueInterface
             if ($job === null) {
                 $exception = new InvalidPayloadException((int) $record['id'], $queue, (string) $record['payload']);
                 $this->logFailedPayload($this->connectionName, $queue, (string) $record['payload'], $exception);
-                $this->deleteById((int) $record['id']);
+                if (!$this->deleteById((int) $record['id'])) {
+                    throw new RuntimeException("Failed to delete invalid payload from {$this->table}.");
+                }
 
                 $this->pdo->commit();
                 throw $exception;
@@ -161,9 +168,10 @@ class DatabaseQueue implements QueueInterface
         }
 
         $sql = "DELETE FROM `{$this->table}` WHERE id = :id";
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->prepareOrFail($sql, "prepare delete from {$this->table}");
+        $this->executeOrFail($stmt, [':id' => $id], "delete from {$this->table}");
 
-        return $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() > 0;
     }
 
     public function release(mixed $job, int $delay = 0): bool
@@ -180,9 +188,10 @@ class DatabaseQueue implements QueueInterface
                 SET reserved_at = NULL, available_at = :available
                 WHERE id = :id";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->prepareOrFail($sql, "prepare release {$this->table}");
+        $this->executeOrFail($stmt, [':available' => $availableAt, ':id' => $id], "release {$this->table}");
 
-        return $stmt->execute([':available' => $availableAt, ':id' => $id]);
+        return $stmt->rowCount() > 0;
     }
 
     public function size(string $queue = 'default'): int
@@ -190,8 +199,8 @@ class DatabaseQueue implements QueueInterface
         $sql = "SELECT COUNT(*) FROM `{$this->table}`
                 WHERE queue = :queue AND reserved_at IS NULL AND available_at <= :now";
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':queue' => $queue, ':now' => time()]);
+        $stmt = $this->prepareOrFail($sql, "prepare count {$this->table}");
+        $this->executeOrFail($stmt, [':queue' => $queue, ':now' => time()], "count {$this->table}");
 
         return (int) $stmt->fetchColumn();
     }
@@ -204,14 +213,39 @@ class DatabaseQueue implements QueueInterface
         $sql = "INSERT INTO `{$this->failedTable}` (connection, queue, payload, exception, failed_at)
                 VALUES (:connection, :queue, :payload, :exception, :failed_at)";
 
-        $stmt = $this->pdo->prepare($sql);
-        return $stmt->execute([
+        $stmt = $this->prepareOrFail($sql, "prepare insert into {$this->failedTable}");
+        $this->executeOrFail($stmt, [
             ':connection' => $connection,
             ':queue' => $queue,
             ':payload' => $this->createPayload($job),
             ':exception' => (string) $exception,
             ':failed_at' => time(),
-        ]);
+        ], "insert into {$this->failedTable}");
+
+        return true;
+    }
+
+    public function failJob(string $connection, string $queue, Job $job, \Throwable $exception): bool
+    {
+        $this->pdo->beginTransaction();
+
+        try {
+            $this->logFailedJob($connection, $queue, $job, $exception);
+
+            if (!$this->delete($job)) {
+                throw new RuntimeException("Failed to delete job from {$this->table}.");
+            }
+
+            $this->pdo->commit();
+
+            return true;
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+
+            throw $e;
+        }
     }
 
     /**
@@ -233,30 +267,46 @@ class DatabaseQueue implements QueueInterface
     public function retryFailedJob(int $id): bool
     {
         $sql = "SELECT * FROM `{$this->failedTable}` WHERE id = :id";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':id' => $id]);
+        $this->pdo->beginTransaction();
 
-        $record = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($record === false) {
-            return false;
+        try {
+            $stmt = $this->prepareOrFail($sql, "prepare select from {$this->failedTable}");
+            $this->executeOrFail($stmt, [':id' => $id], "select from {$this->failedTable}");
+
+            $record = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($record === false) {
+                $this->pdo->commit();
+                return false;
+            }
+
+            $deleteSql = "DELETE FROM `{$this->failedTable}` WHERE id = :id";
+            $deleteStmt = $this->prepareOrFail($deleteSql, "prepare delete from {$this->failedTable}");
+            $this->executeOrFail($deleteStmt, [':id' => $id], "delete from {$this->failedTable}");
+
+            if ($deleteStmt->rowCount() === 0) {
+                $this->pdo->rollBack();
+                return false;
+            }
+
+            $this->pushRaw((string) $record['payload'], (string) $record['queue']);
+
+            $this->pdo->commit();
+
+            return true;
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+
+            throw $e;
         }
-
-        // 重新入队
-        $this->pushRaw($record['payload'], $record['queue']);
-
-        // 删除失败记录
-        $deleteSql = "DELETE FROM `{$this->failedTable}` WHERE id = :id";
-        $deleteStmt = $this->pdo->prepare($deleteSql);
-        $deleteStmt->execute([':id' => $id]);
-
-        return true;
     }
 
     public function forgetFailedJob(int $id): bool
     {
         $sql = "DELETE FROM `{$this->failedTable}` WHERE id = :id";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':id' => $id]);
+        $stmt = $this->prepareOrFail($sql, "prepare delete from {$this->failedTable}");
+        $this->executeOrFail($stmt, [':id' => $id], "delete from {$this->failedTable}");
 
         return $stmt->rowCount() > 0;
     }
@@ -264,8 +314,8 @@ class DatabaseQueue implements QueueInterface
     public function flushFailedJobs(): int
     {
         $sql = "DELETE FROM `{$this->failedTable}`";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute();
+        $stmt = $this->prepareOrFail($sql, "prepare flush {$this->failedTable}");
+        $this->executeOrFail($stmt, null, "flush {$this->failedTable}");
 
         return $stmt->rowCount();
     }
@@ -273,8 +323,8 @@ class DatabaseQueue implements QueueInterface
     public function findFailedJob(int $id): ?array
     {
         $sql = "SELECT * FROM `{$this->failedTable}` WHERE id = :id";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':id' => $id]);
+        $stmt = $this->prepareOrFail($sql, "prepare select from {$this->failedTable}");
+        $this->executeOrFail($stmt, [':id' => $id], "select from {$this->failedTable}");
 
         $record = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -346,28 +396,55 @@ class DatabaseQueue implements QueueInterface
         return $this;
     }
 
+    public function setRetryAfter(int $seconds): static
+    {
+        $this->retryAfter = max(0, $seconds);
+        return $this;
+    }
+
     protected function logFailedPayload(string $connection, string $queue, string $payload, \Throwable $exception): bool
     {
         $sql = "INSERT INTO `{$this->failedTable}` (connection, queue, payload, exception, failed_at)
                 VALUES (:connection, :queue, :payload, :exception, :failed_at)";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->prepareOrFail($sql, "prepare insert into {$this->failedTable}");
 
-        return $stmt->execute([
+        $this->executeOrFail($stmt, [
             ':connection' => $connection,
             ':queue' => $queue,
             ':payload' => $payload,
             ':exception' => (string) $exception,
             ':failed_at' => time(),
-        ]);
+        ], "insert into {$this->failedTable}");
+
+        return true;
     }
 
     protected function deleteById(int $id): bool
     {
         $sql = "DELETE FROM `{$this->table}` WHERE id = :id";
+        $stmt = $this->prepareOrFail($sql, "prepare delete from {$this->table}");
+        $this->executeOrFail($stmt, [':id' => $id], "delete from {$this->table}");
+
+        return $stmt->rowCount() > 0;
+    }
+
+    protected function prepareOrFail(string $sql, string $context): PDOStatement
+    {
         $stmt = $this->pdo->prepare($sql);
 
-        return $stmt->execute([':id' => $id]);
+        if (!$stmt instanceof PDOStatement) {
+            throw new RuntimeException("Failed to {$context}.");
+        }
+
+        return $stmt;
+    }
+
+    protected function executeOrFail(PDOStatement $stmt, ?array $params, string $context): void
+    {
+        if (!$stmt->execute($params)) {
+            throw new RuntimeException("Failed to {$context}.");
+        }
     }
 
     /**

@@ -179,6 +179,25 @@ class QueueTest extends TestCase
         $this->assertNull($queue->pop('default'));
     }
 
+    public function testDatabaseQueuePopCanRetryExpiredReservedJob(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo, 1);
+        $queue->push(new \QueueTest_TestJob('reserved'), 'default');
+
+        $first = $queue->pop('default');
+        $this->assertNotNull($first);
+        $this->assertEquals(1, $first->getAttempts());
+
+        $this->assertNull($queue->pop('default'));
+
+        $this->pdo->exec('UPDATE jobs SET reserved_at = ' . (time() - 2));
+
+        $second = $queue->pop('default');
+        $this->assertNotNull($second);
+        $this->assertEquals($first->getJobId(), $second->getJobId());
+        $this->assertEquals(2, $second->getAttempts());
+    }
+
     public function testDatabaseQueueDoesNotReturnStaleSelectedJobWhenReservationLost(): void
     {
         $this->pdo = new QueueTest_StaleReservationPdo('sqlite::memory:');
@@ -355,6 +374,32 @@ class QueueTest extends TestCase
         $this->assertNull($record['reserved_at']);
     }
 
+    public function testDatabaseQueueRollsBackInvalidPayloadReservationWhenFailureLoggingReturnsFalse(): void
+    {
+        $this->pdo = new QueueTest_FailingStatementPdo('sqlite::memory:');
+        $this->createJobsTable();
+
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->pushRaw('not-json', 'default');
+        $this->pdo->failExecuteFor('INSERT INTO failed_jobs');
+
+        $thrown = false;
+        try {
+            $queue->pop('default');
+        } catch (\RuntimeException $e) {
+            $thrown = true;
+            $this->assertStringContainsString('failed_jobs', $e->getMessage());
+        }
+
+        $this->assertTrue($thrown, 'Expected failed payload logging to throw');
+
+        $stmt = $this->pdo->query('SELECT attempts, reserved_at FROM jobs LIMIT 1');
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertEquals(0, (int) $record['attempts']);
+        $this->assertNull($record['reserved_at']);
+    }
+
     public function testQueueManagerCanInjectResolvedConnectionForTests(): void
     {
         $dbQueue = new DatabaseQueue('default', $this->pdo);
@@ -409,6 +454,32 @@ class QueueTest extends TestCase
         $this->assertCount(1, $records);
         $this->assertEquals('database', $records[0]['connection']);
         $this->assertStringContainsString('test error', $records[0]['exception']);
+    }
+
+    public function testDatabaseQueueRetryFailedJobKeepsFailedRecordWhenRequeueReturnsFalse(): void
+    {
+        $this->pdo = new QueueTest_FailingStatementPdo('sqlite::memory:');
+        $this->createJobsTable();
+
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->logFailedJob('database', 'default', new \QueueTest_TestJob('retry'), new \RuntimeException('boom'));
+        $failed = $queue->getFailedJobs();
+
+        $this->pdo->failExecuteFor('INSERT INTO jobs');
+
+        $thrown = false;
+        try {
+            $queue->retryFailedJob((int) $failed[0]['id']);
+        } catch (\RuntimeException $e) {
+            $thrown = true;
+            $this->assertStringContainsString('jobs', $e->getMessage());
+        }
+
+        $this->assertTrue($thrown, 'Expected retry requeue failure to throw');
+        $this->assertCount(1, $queue->getFailedJobs());
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM jobs');
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
     }
 
     public function testDatabaseQueuePopAndExecute(): void
@@ -674,6 +745,38 @@ class QueueTest extends TestCase
         $this->assertEquals(0, $worker->getFailed());
     }
 
+    public function testWorkerProcessThrowsAndKeepsLiveJobWhenFinalFailureLoggingReturnsFalse(): void
+    {
+        $this->pdo = new QueueTest_FailingStatementPdo('sqlite::memory:');
+        $this->createJobsTable();
+
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setConnection('database', $dbQueue);
+
+        $dbQueue->push(new \QueueTest_FinallyFailingJob(), 'default');
+        $job = $dbQueue->pop('default');
+        $this->assertNotNull($job);
+        $this->pdo->failExecuteFor('INSERT INTO failed_jobs');
+
+        $worker = new Worker($manager);
+        $thrown = false;
+        try {
+            $worker->process($job, 'database', 'default', 1);
+        } catch (\RuntimeException $e) {
+            $thrown = true;
+            $this->assertStringContainsString('failed_jobs', $e->getMessage());
+        }
+
+        $this->assertTrue($thrown, 'Expected final failure logging to throw');
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM jobs');
+        $this->assertEquals(1, (int) $stmt->fetchColumn());
+    }
+
     public function testWorkerOnlyCallsFailedCallbackOnFinalFailure(): void
     {
         $dbQueue = new DatabaseQueue('default', $this->pdo);
@@ -923,5 +1026,58 @@ class QueueTest_StaleReservationStatement extends PDOStatement
         }
 
         return $record;
+    }
+}
+
+class QueueTest_FailingStatementPdo extends PDO
+{
+    /** @var list<string> */
+    private array $failingExecutePatterns = [];
+
+    public function __construct(string $dsn)
+    {
+        parent::__construct($dsn);
+
+        $this->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->setAttribute(PDO::ATTR_STATEMENT_CLASS, [QueueTest_FailingStatement::class, [$this]]);
+    }
+
+    public function failExecuteFor(string $sqlPattern): void
+    {
+        $this->failingExecutePatterns[] = $this->normalizeSql($sqlPattern);
+    }
+
+    public function shouldFailExecute(string $sql): bool
+    {
+        $normalizedSql = $this->normalizeSql($sql);
+
+        foreach ($this->failingExecutePatterns as $pattern) {
+            if (str_contains($normalizedSql, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeSql(string $sql): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', str_replace('`', '', $sql)));
+    }
+}
+
+class QueueTest_FailingStatement extends PDOStatement
+{
+    protected function __construct(private QueueTest_FailingStatementPdo $pdo)
+    {
+    }
+
+    public function execute(?array $params = null): bool
+    {
+        if ($this->pdo->shouldFailExecute($this->queryString)) {
+            return false;
+        }
+
+        return parent::execute($params);
     }
 }

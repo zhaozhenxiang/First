@@ -125,8 +125,14 @@ class Worker
 
         if ($job->getAttempts() >= $effectiveMaxTries || $job->hasExceededMaxTries()) {
             $job->failed($exception);
-            $this->logFailedJob($connection, $queue, $job, $exception);
-            $this->manager->connection($connection)->delete($job);
+
+            $queueDriver = $this->manager->connection($connection);
+            if ($queueDriver instanceof DatabaseQueue) {
+                $queueDriver->failJob($connection, $queue, $job, $exception);
+            } else {
+                $queueDriver->delete($job);
+            }
+
             $this->failed++;
 
             return;
