@@ -23,6 +23,7 @@ class DatabaseQueue implements QueueInterface
     protected PDO $pdo;
     protected string $table = 'jobs';
     protected string $failedTable = 'failed_jobs';
+    protected ?string $queueConnectionName = null;
 
     public function __construct(
         protected string $connectionName = 'default',
@@ -140,7 +141,7 @@ class DatabaseQueue implements QueueInterface
 
             if ($job === null) {
                 $exception = new InvalidPayloadException((int) $record['id'], $queue, (string) $record['payload']);
-                $this->logFailedPayload($this->connectionName, $queue, (string) $record['payload'], $exception);
+                $this->logFailedPayload($this->getQueueConnectionName(), $queue, (string) $record['payload'], $exception);
                 if (!$this->deleteById((int) $record['id'])) {
                     throw new RuntimeException("Failed to delete invalid payload from {$this->table}.");
                 }
@@ -479,6 +480,17 @@ class DatabaseQueue implements QueueInterface
     {
         $this->retryAfter = max(0, $seconds);
         return $this;
+    }
+
+    public function setQueueConnectionName(string $name): static
+    {
+        $this->queueConnectionName = $name;
+        return $this;
+    }
+
+    protected function getQueueConnectionName(): string
+    {
+        return $this->queueConnectionName ?? $this->connectionName;
     }
 
     protected function logFailedPayload(string $connection, string $queue, string $payload, \Throwable $exception): bool

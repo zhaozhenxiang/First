@@ -76,6 +76,10 @@ class QueueManager
 
     public function setConnection(string $name, QueueInterface $connection): static
     {
+        if ($connection instanceof DatabaseQueue) {
+            $connection->setQueueConnectionName($name);
+        }
+
         $this->connections[$name] = $connection;
 
         return $this;
@@ -110,7 +114,7 @@ class QueueManager
 
         return match ($driver) {
             'sync' => $this->createSyncDriver($config),
-            'database' => $this->createDatabaseDriver($config),
+            'database' => $this->createDatabaseDriver($name, $config),
             default => throw new RuntimeException("Unsupported queue driver: {$driver}"),
         };
     }
@@ -126,10 +130,11 @@ class QueueManager
     /**
      * 创建 database 驱动
      */
-    protected function createDatabaseDriver(array $config): DatabaseQueue
+    protected function createDatabaseDriver(string $name, array $config): DatabaseQueue
     {
         $connectionName = $config['connection'] ?? 'default';
         $queue = new DatabaseQueue($connectionName, null, (int) ($config['retry_after'] ?? 90));
+        $queue->setQueueConnectionName($name);
 
         if (isset($config['table'])) {
             $queue->setTable($config['table']);

@@ -360,6 +360,62 @@ class MailTest extends TestCase
         $this->assertEquals(['ada@example.com'], $messages[0]->getTo());
     }
 
+    public function testDirectMailableQueueBuildsOnlyWhenWorkerSends(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->createQueueTables($pdo);
+
+        $queue = new DatabaseQueue('default', $pdo);
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('database');
+        $manager->setConnection('database', $queue);
+
+        $transport = new ArrayTransport();
+        Mailer::getInstance()->setTransport($transport);
+
+        $id = (new MailTest_QueuedMailable())->queue();
+        $this->assertGreaterThan(0, $id);
+
+        $worker = new Worker($manager);
+        $this->assertTrue($worker->runNextJob('database', ['default'], 1));
+
+        $messages = $transport->getSentMessages();
+        $this->assertCount(1, $messages);
+        $this->assertEquals(['queued@example.com'], $messages[0]->getTo());
+    }
+
+    public function testDirectMailableLaterBuildsOnlyWhenWorkerSends(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->createQueueTables($pdo);
+
+        $queue = new DatabaseQueue('default', $pdo);
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('database');
+        $manager->setConnection('database', $queue);
+
+        $transport = new ArrayTransport();
+        Mailer::getInstance()->setTransport($transport);
+
+        $id = (new MailTest_QueuedMailable())->later(0);
+        $this->assertGreaterThan(0, $id);
+
+        $worker = new Worker($manager);
+        $this->assertTrue($worker->runNextJob('database', ['default'], 1));
+
+        $messages = $transport->getSentMessages();
+        $this->assertCount(1, $messages);
+        $this->assertEquals(['queued@example.com'], $messages[0]->getTo());
+    }
+
     // ─── MailManager 测试 ───
 
     public function testMailManagerSingleton(): void

@@ -422,6 +422,29 @@ class QueueTest extends TestCase
         $this->assertEquals('valid after invalid', $job->result);
     }
 
+    public function testWorkerLogsInvalidPayloadWithQueueConnectionName(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->pushRaw('not-json', 'default');
+
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('database');
+        $manager->setConnection('database', $queue);
+
+        $worker = new Worker($manager);
+        $this->assertTrue($worker->runNextJob('database', ['default'], 3));
+
+        $stmt = $this->pdo->query('SELECT * FROM failed_jobs');
+        $failed = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertTrue($failed !== false);
+        $this->assertEquals('database', $failed['connection']);
+        $this->assertEquals('not-json', $failed['payload']);
+    }
+
     public function testDatabaseQueueRemovesInvalidPayloadFromJobsTable(): void
     {
         $queue = new DatabaseQueue('default', $this->pdo);

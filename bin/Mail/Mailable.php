@@ -223,8 +223,6 @@ abstract class Mailable
      */
     public function queue(?Mailer $mailer = null): mixed
     {
-        $this->build();
-
         $mailer = $mailer ?? Mailer::getInstance();
         return $mailer->queue($this);
     }
@@ -234,8 +232,6 @@ abstract class Mailable
      */
     public function later(int $delay, ?Mailer $mailer = null): mixed
     {
-        $this->build();
-
         $mailer = $mailer ?? Mailer::getInstance();
         return $mailer->later($delay, $this);
     }
