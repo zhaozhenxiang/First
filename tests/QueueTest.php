@@ -749,6 +749,7 @@ class QueueTest extends TestCase
 
     public function testBadPayloadIsMovedToFailedJobsAndRemovedFromQueue(): void
     {
+        $payload = '{"job":"not a serialized job"}';
         $dbQueue = new DatabaseQueue('default', $this->pdo);
         $manager = new QueueManager();
         $manager->setConfig([
@@ -756,15 +757,21 @@ class QueueTest extends TestCase
         ]);
         $manager->setConnection('database', $dbQueue);
 
-        $dbQueue->pushRaw('{"job":"not a serialized job"}', 'default');
+        $dbQueue->pushRaw($payload, 'default');
 
         $worker = new Worker($manager);
         $processed = $worker->runNextJob('database', ['default'], 3);
 
         $this->assertTrue($processed);
         $this->assertEquals(1, $worker->getFailed());
-        $this->assertEquals(0, $dbQueue->size('default'));
-        $this->assertCount(1, $dbQueue->getFailedJobs());
+
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM jobs WHERE queue = :queue');
+        $stmt->execute([':queue' => 'default']);
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
+
+        $failedJobs = $dbQueue->getFailedJobs();
+        $this->assertCount(1, $failedJobs);
+        $this->assertEquals($payload, $failedJobs[0]['payload']);
     }
 
     public function testWorkerInvokesJobHandleThroughContainer(): void
