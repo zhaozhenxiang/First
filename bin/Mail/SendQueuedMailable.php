@@ -8,12 +8,20 @@ use Bin\Queue\Job;
 
 class SendQueuedMailable extends Job
 {
-    public function __construct(protected Mailable $mailable)
+    public function __construct(
+        protected Mailable $mailable,
+        protected ?string $mailer = null
+    )
     {
     }
 
     public function handle(): void
     {
+        if ($this->mailer !== null) {
+            MailManager::getInstance()->mailer($this->mailer)->send($this->mailable);
+            return;
+        }
+
         Mailer::getInstance()->send($this->mailable);
     }
 }

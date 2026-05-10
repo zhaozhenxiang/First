@@ -16,6 +16,7 @@ class Mailer
 {
     protected TransportInterface $transport;
     protected array $failures = [];
+    protected ?string $name;
 
     /** @var array 收件人覆盖 */
     protected array $toOverride = [];
@@ -23,9 +24,10 @@ class Mailer
     /** @var self|null 单例 */
     private static ?self $instance = null;
 
-    public function __construct(?TransportInterface $transport = null)
+    public function __construct(?TransportInterface $transport = null, ?string $name = null)
     {
         $this->transport = $transport ?? new \Bin\Mail\Transport\ArrayTransport();
+        $this->name = $name;
     }
 
     /**
@@ -101,7 +103,7 @@ class Mailer
         if ($mailable instanceof ShouldQueue) {
             // 利用 QueueManager 入队
             if (class_exists(\Bin\Queue\QueueManager::class)) {
-                return \Bin\Queue\QueueManager::getInstance()->push(new SendQueuedMailable($mailable));
+                return \Bin\Queue\QueueManager::getInstance()->push(new SendQueuedMailable($mailable, $this->name));
             }
         }
 
@@ -117,7 +119,7 @@ class Mailer
     {
         if ($mailable instanceof ShouldQueue) {
             if (class_exists(\Bin\Queue\QueueManager::class)) {
-                return \Bin\Queue\QueueManager::getInstance()->later($delay, new SendQueuedMailable($mailable));
+                return \Bin\Queue\QueueManager::getInstance()->later($delay, new SendQueuedMailable($mailable, $this->name));
             }
         }
 

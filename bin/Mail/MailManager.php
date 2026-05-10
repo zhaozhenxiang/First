@@ -105,7 +105,7 @@ class MailManager
         $driver = $config['driver'] ?? 'array';
         $transport = $this->createTransport($driver, $config);
 
-        return new Mailer($transport);
+        return new Mailer($transport, $name);
     }
 
     /**

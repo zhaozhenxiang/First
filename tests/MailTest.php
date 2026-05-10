@@ -295,6 +295,71 @@ class MailTest extends TestCase
         $this->assertEquals(0, $queue->size('default'));
     }
 
+    public function testMailManagerQueuedMailableUsesConfiguredMailer(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->createQueueTables($pdo);
+
+        $queue = new DatabaseQueue('default', $pdo);
+        $queueManager = QueueManager::getInstance();
+        $queueManager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $queueManager->setDefaultConnection('database');
+        $queueManager->setConnection('database', $queue);
+
+        $manager = MailManager::getInstance();
+        $manager->setConfig([
+            'configured' => ['driver' => 'array'],
+        ]);
+        $manager->setDefaultMailer('configured');
+
+        $configuredTransport = $manager->getArrayTransport();
+        $this->assertNotNull($configuredTransport);
+
+        $singletonTransport = new ArrayTransport();
+        Mailer::getInstance()->setTransport($singletonTransport);
+
+        $id = $manager->queue(new MailTest_QueuedMailable());
+        $this->assertGreaterThan(0, $id);
+
+        $worker = new Worker($queueManager);
+        $this->assertTrue($worker->runNextJob('database', ['default'], 1));
+
+        $this->assertEquals(1, $configuredTransport->count());
+        $this->assertEquals(0, $singletonTransport->count());
+    }
+
+    public function testQueuedMailablePreservesConstructorStateAfterDatabaseSerialization(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->createQueueTables($pdo);
+
+        $queue = new DatabaseQueue('default', $pdo);
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('database');
+        $manager->setConnection('database', $queue);
+
+        $transport = new ArrayTransport();
+        Mailer::getInstance()->setTransport($transport);
+
+        $id = Mailer::getInstance()->queue(new MailTest_StatefulQueuedMailable('Ada'));
+        $this->assertGreaterThan(0, $id);
+
+        $worker = new Worker($manager);
+        $this->assertTrue($worker->runNextJob('database', ['default'], 1));
+
+        $messages = $transport->getSentMessages();
+        $this->assertCount(1, $messages);
+        $this->assertEquals('Hello Ada', $messages[0]->getSubject());
+        $this->assertEquals(['ada@example.com'], $messages[0]->getTo());
+    }
+
     // ─── MailManager 测试 ───
 
     public function testMailManagerSingleton(): void
@@ -465,5 +530,19 @@ class MailTest_QueuedMailable extends Mailable implements ShouldQueue
     public function build(): void
     {
         $this->to('queued@example.com')->subject('Queued')->html('Queued body');
+    }
+}
+
+class MailTest_StatefulQueuedMailable extends Mailable implements ShouldQueue
+{
+    public function __construct(private string $name)
+    {
+    }
+
+    public function build(): void
+    {
+        $this->to(strtolower($this->name) . '@example.com')
+            ->subject('Hello ' . $this->name)
+            ->html('Queued for ' . $this->name);
     }
 }

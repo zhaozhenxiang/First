@@ -23,6 +23,20 @@ use Bin\Queue\ShouldQueue;
  */
 abstract class Mailable
 {
+    private const SERIALIZED_BASE_PROPERTIES = [
+        'subjectValue' => true,
+        'fromAddress' => true,
+        'toAddresses' => true,
+        'ccAddresses' => true,
+        'bccAddresses' => true,
+        'replyToAddresses' => true,
+        'attachments' => true,
+        'htmlContent' => true,
+        'textContent' => true,
+        'viewName' => true,
+        'viewData' => true,
+    ];
+
     protected string $subjectValue = '';
     protected array $fromAddress = [];
     protected array $toAddresses = [];
@@ -252,8 +266,12 @@ abstract class Mailable
             'cc' => $this->ccAddresses,
             'bcc' => $this->bccAddresses,
             'replyTo' => $this->replyToAddresses,
+            'attachments' => $this->attachments,
             'html' => $this->htmlContent,
             'text' => $this->textContent,
+            'view' => $this->viewName,
+            'viewData' => $this->viewData,
+            'state' => $this->serializeCustomState(),
         ];
     }
 
@@ -265,7 +283,82 @@ abstract class Mailable
         $this->ccAddresses = $data['cc'] ?? [];
         $this->bccAddresses = $data['bcc'] ?? [];
         $this->replyToAddresses = $data['replyTo'] ?? [];
+        $this->attachments = $data['attachments'] ?? [];
         $this->htmlContent = $data['html'] ?? '';
         $this->textContent = $data['text'] ?? '';
+        $this->viewName = $data['view'] ?? '';
+        $this->viewData = $data['viewData'] ?? [];
+
+        $this->restoreCustomState($data['state'] ?? []);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function serializeCustomState(): array
+    {
+        $state = [];
+        $reflection = new \ReflectionObject($this);
+
+        do {
+            foreach ($reflection->getProperties() as $property) {
+                if ($property->getDeclaringClass()->getName() !== $reflection->getName()) {
+                    continue;
+                }
+
+                if ($property->isStatic()) {
+                    continue;
+                }
+
+                if (
+                    $property->getDeclaringClass()->getName() === self::class
+                    && isset(self::SERIALIZED_BASE_PROPERTIES[$property->getName()])
+                ) {
+                    continue;
+                }
+
+                if (!$property->isInitialized($this)) {
+                    continue;
+                }
+
+                if (PHP_VERSION_ID < 80100) {
+                    $property->setAccessible(true);
+                }
+                $state[$property->getDeclaringClass()->getName()][$property->getName()] = $property->getValue($this);
+            }
+        } while (($reflection = $reflection->getParentClass()) !== false);
+
+        return $state;
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $state
+     */
+    private function restoreCustomState(array $state): void
+    {
+        foreach ($state as $class => $properties) {
+            if (!is_string($class) || !is_array($properties) || !class_exists($class)) {
+                continue;
+            }
+
+            $reflection = new \ReflectionClass($class);
+
+            foreach ($properties as $name => $value) {
+                if (!is_string($name) || !$reflection->hasProperty($name)) {
+                    continue;
+                }
+
+                $property = $reflection->getProperty($name);
+
+                if ($property->isStatic()) {
+                    continue;
+                }
+
+                if (PHP_VERSION_ID < 80100) {
+                    $property->setAccessible(true);
+                }
+                $property->setValue($this, $value);
+            }
+        }
     }
 }
