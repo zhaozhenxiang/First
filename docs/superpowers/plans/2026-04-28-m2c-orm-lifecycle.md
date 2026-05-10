@@ -17,7 +17,7 @@
 - Base: `c916fe4 test: strengthen protected identity input chain coverage`
 - Spec: `docs/superpowers/specs/2026-04-18-m2c-orm-lifecycle-spec.md`
 - Baseline verification already run in this worktree: `php test` passed with `1832` tests, `36` skipped, `1796` passed.
-- The project AGENTS instructions require code-review-graph/GitNexus first. MCP resources were unavailable when this plan was written. Before editing any symbol, implementers must try the relevant GitNexus impact command if available; if unavailable, record that in the task summary and continue with local graph/report/file context.
+- The project AGENTS instructions require code-review-graph first. MCP resources were unavailable when this plan was written. Before editing shared symbols, inspect available graph context when possible; if unavailable, record that in the task summary and continue with local graph/report/file context.
 - Do not delete any existing worktree. The user explicitly requested preserving worktrees.
 - Use TDD. For every production code change below, write the failing test first and verify the expected failure before implementation.
 
@@ -45,18 +45,15 @@
 - Modify: `bin/Database/Model.php`
 - Modify: `bin/Database/QueryBuilder.php`
 
-- [ ] **Step 1: Run impact analysis for edited symbols**
+- [ ] **Step 1: Review local impact context for edited symbols**
 
-Run if GitNexus MCP is available:
+Run:
 
-```text
-gitnexus_impact({target: "Bin\\Database\\Model::find", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Database\\Model::performInsert", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Database\\QueryBuilder::find", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Database\\QueryBuilder::findMany", direction: "upstream"})
+```bash
+rg -n "find\\(|findMany\\(|performInsert" bin tests docs
 ```
 
-Expected: direct callers include ORM tests, route binding/model consumers, and static model forwarding. If GitNexus is unavailable, state that in the task summary and rely on local `rg` plus focused tests.
+Expected: direct references include ORM tests, route binding/model consumers, and static model forwarding. Record the relevant direct callers in the task summary before editing.
 
 - [ ] **Step 2: Write failing custom primary-key lifecycle tests**
 
@@ -317,16 +314,15 @@ git commit -m "feat: stabilize orm primary key lifecycle"
 - Modify: `bin/Database/Model.php`
 - Modify: `bin/Database/QueryBuilder.php`
 
-- [ ] **Step 1: Run impact analysis for hydration symbols**
+- [ ] **Step 1: Review local impact context for hydration symbols**
 
-Run if GitNexus MCP is available:
+Run:
 
-```text
-gitnexus_impact({target: "Bin\\Database\\QueryBuilder::hydrateModel", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Database\\Model", direction: "upstream"})
+```bash
+rg -n "hydrateModel|newFromBuilder|hydrate\\(" bin tests docs
 ```
 
-Expected: affected callers include query result hydration, eager loading paths, aggregate hydration paths, and model tests.
+Expected: references include query result hydration, eager loading paths, aggregate hydration paths, and model tests.
 
 - [ ] **Step 2: Add failing hydration lifecycle tests**
 
@@ -477,18 +473,15 @@ git commit -m "feat: expose orm hydration lifecycle"
 - Modify: `bin/Exception/ExceptionHandler.php`
 - Modify: `bin/Route/RouteBinding.php`
 
-- [ ] **Step 1: Run impact analysis for exception boundary symbols**
+- [ ] **Step 1: Review local impact context for exception boundary symbols**
 
-Run if GitNexus MCP is available:
+Run:
 
-```text
-gitnexus_impact({target: "Bin\\Database\\Model::findOrFail", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Database\\QueryBuilder::findOrFail", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Exception\\ExceptionHandler::getStatus", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Route\\RouteBinding::resolveFromClass", direction: "upstream"})
+```bash
+rg -n "findOrFail|getStatus|resolveFromClass|ModelNotFoundException" bin tests docs
 ```
 
-Expected: affected callers include route model binding, exception rendering, existing finder tests, and M2-B controller dispatch integration.
+Expected: references include route model binding, exception rendering, existing finder tests, and M2-B controller dispatch integration.
 
 - [ ] **Step 2: Add failing typed not-found tests**
 
@@ -745,16 +738,15 @@ git commit -m "feat: add typed orm not found boundary"
 - Modify: `tests/OrmLifecycleTest.php`
 - Modify: `bin/Database/Model.php`
 
-- [ ] **Step 1: Run impact analysis for refresh and update helper symbols**
+- [ ] **Step 1: Review local impact context for refresh and update helper symbols**
 
-Run if GitNexus MCP is available:
+Run:
 
-```text
-gitnexus_impact({target: "Bin\\Database\\Model::refresh", direction: "upstream"})
-gitnexus_impact({target: "Bin\\Database\\Model::updateWhere", direction: "upstream"})
+```bash
+rg -n "refresh\\(|updateWhere" bin tests docs
 ```
 
-Expected: affected callers include ORM tests and any static data-access helper usage. Local `rg "updateWhere"` should show no production callers beyond docs before changing semantics.
+Expected: references include ORM tests and any static data-access helper usage. `updateWhere` should show no production callers beyond docs before changing semantics.
 
 - [ ] **Step 2: Add failing refresh and helper semantics tests**
 

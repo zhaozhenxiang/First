@@ -15,7 +15,7 @@
 - Do not expand token/API auth, OAuth, remember-me, password reset, policy/gate matrices, or ORM behavior in this stage.
 - Do not add a new auth manager/driver/facade layer.
 - Use the existing `SessionManager`, `AuthManager`, `ValidationManager`, `FormRequest`, and `ExceptionHandler` boundaries.
-- Before implementation edits, use GitNexus/code-review graph impact tools if they are available in that session. If MCP resources are still unavailable, state that and continue with local context.
+- Before implementation edits, use available code-review graph impact tools if they are available in that session. If MCP resources are still unavailable, state that and continue with local context.
 - Preserve existing worktrees. Do not delete `.worktrees/m2a-web-state-foundation` or this plan worktree.
 
 ## File Structure
@@ -928,7 +928,7 @@ git status --short
 
 Expected: only the M2-B files listed in this plan are modified.
 
-If GitNexus MCP tools are available, run change detection for the staged or working tree scope before final completion. If they are unavailable, record that in the final handoff.
+If code-review graph MCP tools are available, run change detection for the staged or working tree scope before final completion. If they are unavailable, record that in the final handoff.
 
 - [ ] **Step 3: Refresh graphify after code changes**
 

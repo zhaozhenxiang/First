@@ -12,7 +12,7 @@
 
 ## Context and Constraints
 
-- GitNexus/code-review-graph MCP resources and templates were unavailable when this plan was written: `list_mcp_resources` returned `[]` and `list_mcp_resource_templates` returned `[]`.
+- Code-review-graph MCP resources and templates were unavailable when this plan was written: `list_mcp_resources` returned `[]` and `list_mcp_resource_templates` returned `[]`.
 - `graphify-out/GRAPH_REPORT.md` was checked before local document reads. The graph corpus exists and covers this repository, but the requested change is documentation-only.
 - Do not create a replacement for `docs/superpowers/plans/2026-04-18-m2-doc-split.md`; that plan is complete and already covers creating the M2 index plus split specs.
 - Do not create new M2 implementation plans for `M2-A`, `M2-B`, or `M2-C`; these already exist.
