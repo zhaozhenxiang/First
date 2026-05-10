@@ -1,6 +1,8 @@
 # M2-B Identity and Input Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Status:** Completed in repository history through commit `c916fe4` (`test: strengthen protected identity input chain coverage`) on `2026-04-28`.
 
 **Goal:** Make validation, `FormRequest`, session-backed auth, request-scoped current user access, auth middleware, and exception rendering work as one request chain.
 

@@ -1,6 +1,8 @@
 # M2-C ORM Lifecycle Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Status:** Completed in repository history through commit `d4e57a4` (`test: assert m2c lifecycle update persistence`) on `2026-04-28`.
 
 **Goal:** Stabilize the ORM data-access lifecycle for model lookup, hydration, persistence, explicit not-found failures, refresh failures, and query helper semantics.
 
