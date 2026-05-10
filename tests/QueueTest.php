@@ -8,6 +8,7 @@ require_once __DIR__ . '/QueueTestHelpers.php';
 
 use Bin\Queue\Drivers\DatabaseQueue;
 use Bin\Queue\Drivers\SyncQueue;
+use Bin\Queue\InvalidPayloadException;
 use Bin\Queue\Job;
 use Bin\Queue\QueueManager;
 use Bin\Queue\Worker;
@@ -245,6 +246,95 @@ class QueueTest extends TestCase
         $this->assertCount(2, $queue->getFailedJobs());
         $this->assertEquals(2, $queue->flushFailedJobs());
         $this->assertSame([], $queue->getFailedJobs());
+    }
+
+    public function testDatabaseQueueCanFindFailedJob(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->logFailedJob('database', 'default', new \QueueTest_TestJob('failed'), new \RuntimeException('boom'));
+
+        $failed = $queue->getFailedJobs();
+        $this->assertCount(1, $failed);
+
+        $found = $queue->findFailedJob((int) $failed[0]['id']);
+        $this->assertNotNull($found);
+        $this->assertEquals($failed[0]['id'], $found['id']);
+        $this->assertNull($queue->findFailedJob(999));
+    }
+
+    public function testDatabaseQueueMovesInvalidPayloadToFailedJobsAndContinues(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->pushRaw('not-json', 'default');
+        $queue->push(new \QueueTest_TestJob('valid after invalid'), 'default');
+
+        $thrown = false;
+        try {
+            $queue->pop('default');
+        } catch (InvalidPayloadException $e) {
+            $thrown = true;
+            $this->assertEquals('not-json', $e->getPayload());
+        }
+
+        $this->assertTrue($thrown, 'Expected InvalidPayloadException');
+
+        $stmt = $this->pdo->query("SELECT COUNT(*) FROM jobs WHERE payload = 'not-json'");
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
+
+        $stmt = $this->pdo->query('SELECT * FROM failed_jobs');
+        $failed = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->assertCount(1, $failed);
+        $this->assertEquals('not-json', $failed[0]['payload']);
+
+        $job = $queue->pop('default');
+        $this->assertNotNull($job);
+        $this->assertEquals('valid after invalid', $job->result);
+    }
+
+    public function testDatabaseQueueRemovesInvalidPayloadFromJobsTable(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->pushRaw('not-json', 'default');
+
+        $thrown = false;
+        try {
+            $queue->pop('default');
+        } catch (InvalidPayloadException $e) {
+            $thrown = true;
+            $this->assertEquals('not-json', $e->getPayload());
+        }
+
+        $this->assertTrue($thrown, 'Expected InvalidPayloadException');
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM jobs');
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
+
+        $stmt = $this->pdo->query('SELECT * FROM failed_jobs');
+        $failed = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->assertCount(1, $failed);
+        $this->assertEquals('not-json', $failed[0]['payload']);
+    }
+
+    public function testDatabaseQueueRollsBackInvalidPayloadReservationWhenFailureLoggingFails(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->pushRaw('not-json', 'default');
+        $this->pdo->exec('DROP TABLE failed_jobs');
+
+        $thrown = false;
+        try {
+            $queue->pop('default');
+        } catch (\Throwable $e) {
+            $thrown = true;
+        }
+
+        $this->assertTrue($thrown, 'Expected failed job logging to throw');
+
+        $stmt = $this->pdo->query('SELECT attempts, reserved_at FROM jobs LIMIT 1');
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertEquals(0, (int) $record['attempts']);
+        $this->assertNull($record['reserved_at']);
     }
 
     public function testQueueManagerCanInjectResolvedConnectionForTests(): void
@@ -553,9 +643,7 @@ class QueueTest extends TestCase
             'database' => ['driver' => 'database', 'connection' => 'default'],
         ]);
 
-        $ref = new \ReflectionProperty($manager, 'connections');
-        $ref->setAccessible(true);
-        $ref->setValue($manager, ['database' => $dbQueue]);
+        $manager->setConnection('database', $dbQueue);
 
         $dbQueue->push(new \QueueTest_FailingJob(), 'default');
 

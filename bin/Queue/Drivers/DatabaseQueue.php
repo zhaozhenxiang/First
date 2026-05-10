@@ -120,23 +120,26 @@ class DatabaseQueue implements QueueInterface
                 ':id' => $record['id'],
             ]);
 
+            $job = $this->hydrateJob($record, true);
+
+            if ($job === null) {
+                $exception = new InvalidPayloadException((int) $record['id'], $queue, (string) $record['payload']);
+                $this->logFailedPayload($this->connectionName, $queue, (string) $record['payload'], $exception);
+                $this->deleteById((int) $record['id']);
+
+                $this->pdo->commit();
+                throw $exception;
+            }
+
             $this->pdo->commit();
+
+            return $job;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $e;
         }
-
-        $job = $this->hydrateJob($record, true);
-
-        if ($job === null) {
-            $exception = new InvalidPayloadException((int) $record['id'], $queue, (string) $record['payload']);
-            $this->logFailedPayload($this->connectionName, $queue, (string) $record['payload'], $exception);
-            $this->deleteById((int) $record['id']);
-
-            throw $exception;
-        }
-
-        return $job;
     }
 
     public function delete(mixed $job): bool
