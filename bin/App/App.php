@@ -8,6 +8,8 @@ use Bin\Container\Container;
 use Bin\Container\ContextualBindingBuilder;
 use Bin\Contracts\ContainerInterface;
 use Bin\Facade\Facade;
+use Bin\Foundation\ApplicationBuilder;
+use Bin\Foundation\ApplicationConfiguration;
 use Bin\Providers\ProviderRepository;
 use Bin\Providers\ServiceProvider;
 use Bin\Response\Response;
@@ -30,6 +32,8 @@ class App implements ContainerInterface
      * 应用根路径
      */
     private ?string $basePath = null;
+
+    private ?ApplicationConfiguration $applicationConfiguration = null;
 
     /**
      * 底层容器实例
@@ -128,6 +132,34 @@ class App implements ContainerInterface
         }
 
         return $this->basePath;
+    }
+
+    public static function configure(?string $basePath = null): ApplicationBuilder
+    {
+        return new ApplicationBuilder($basePath);
+    }
+
+    public function setBasePath(string $basePath): static
+    {
+        $this->basePath = rtrim($basePath, '/');
+
+        return $this;
+    }
+
+    public function setApplicationConfiguration(ApplicationConfiguration $configuration): static
+    {
+        $this->applicationConfiguration = $configuration;
+
+        return $this;
+    }
+
+    public function getApplicationConfiguration(): ApplicationConfiguration
+    {
+        if ($this->applicationConfiguration === null) {
+            $this->applicationConfiguration = new ApplicationConfiguration($this->basePath());
+        }
+
+        return $this->applicationConfiguration;
     }
 
     /**

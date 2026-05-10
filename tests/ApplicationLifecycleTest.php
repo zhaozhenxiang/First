@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\App\App;
+use Bin\Foundation\ApplicationConfiguration;
 use Bin\Foundation\ConsoleKernel;
 use Bin\Foundation\HttpKernel;
 use Bin\Foundation\Bootstrap\LoadEnvironmentVariables;
@@ -16,9 +17,11 @@ use Bin\Foundation\Bootstrap\SetRequestContext;
 use Bin\Foundation\Bootstrap\RegisterProviders;
 use Bin\Foundation\Bootstrap\BootProviders;
 use Bin\Foundation\Contracts\Bootstrapper;
+use Bin\Foundation\Configuration\MiddlewareConfigurator;
 use Bin\Middleware\AuthMiddleware;
 use Bin\Middleware\CsrfMiddleware;
 use Bin\Middleware\MiddlewareStack;
+use Bin\Middleware\RateLimitMiddleware;
 use Bin\Middleware\SessionMiddleware;
 use Bin\Response\Response;
 use Bin\Route\RouteCollection as Route;
@@ -78,6 +81,57 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertTrue(str_ends_with($app->configPath('app.php'), '/config/app.php'));
         $this->assertTrue(str_ends_with($app->bootstrapPath('app.php'), '/bootstrap/app.php'));
         $this->assertTrue(str_ends_with($app->storagePath('logs'), '/storage/logs'));
+    }
+
+    public function testApplicationBuilderAttachesConfiguration(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+        mkdir($basePath . '/routes', 0777, true);
+
+        $webRoute = $basePath . '/routes/web.php';
+        $apiRoute = $basePath . '/routes/api.php';
+        file_put_contents($webRoute, "<?php\n");
+        file_put_contents($apiRoute, "<?php\n");
+
+        $app = App::configure($basePath)
+            ->withProviders([\Bin\Providers\RequestServiceProvider::class])
+            ->withRouting(web: $webRoute, api: $apiRoute)
+            ->withMiddleware(function (MiddlewareConfigurator $middleware): void {
+                $middleware->append(SessionMiddleware::class);
+                $middleware->group('web', [SessionMiddleware::class, CsrfMiddleware::class]);
+                $middleware->alias('throttle', RateLimitMiddleware::class);
+                $middleware->priority([SessionMiddleware::class => 50]);
+            })
+            ->create();
+
+        $configuration = $app->getApplicationConfiguration();
+
+        $this->assertInstanceOf(ApplicationConfiguration::class, $configuration);
+        $this->assertEquals($basePath, $app->basePath());
+        $this->assertEquals($basePath, $configuration->basePath());
+        $this->assertContains(\Bin\Providers\RequestServiceProvider::class, $configuration->providers());
+        $this->assertEquals([$webRoute, $apiRoute], $configuration->routeFiles());
+        $this->assertTrue($configuration->hasRouteConfiguration());
+
+        $middleware = $configuration->middleware();
+        $this->assertEquals([SessionMiddleware::class], $middleware['global']);
+        $this->assertEquals([SessionMiddleware::class, CsrfMiddleware::class], $middleware['groups']['web']);
+        $this->assertEquals(RateLimitMiddleware::class, $middleware['aliases']['throttle']);
+        $this->assertEquals(50, $middleware['priority'][SessionMiddleware::class]);
+    }
+
+    public function testApplicationBuilderWithRoutingDefaultsToLegacyFallbackWhenRoutesDirectoryIsAbsent(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+
+        $app = App::configure($basePath)
+            ->withRouting()
+            ->create();
+
+        $configuration = $app->getApplicationConfiguration();
+
+        $this->assertSame([], $configuration->routeFiles());
+        $this->assertFalse($configuration->hasRouteConfiguration());
     }
 
     public function testAppExposesHttpKernel(): void
