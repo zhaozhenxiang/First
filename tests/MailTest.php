@@ -9,7 +9,12 @@ use Bin\Mail\MailManager;
 use Bin\Mail\Mailer;
 use Bin\Mail\Transport\ArrayTransport;
 use Bin\Mail\Transport\SmtpTransport;
+use Bin\Queue\Drivers\DatabaseQueue;
+use Bin\Queue\QueueManager;
+use Bin\Queue\ShouldQueue;
+use Bin\Queue\Worker;
 use Bin\Testing\TestCase;
+use PDO;
 
 /**
  * 邮件系统测试
@@ -21,6 +26,7 @@ class MailTest extends TestCase
         parent::setUp();
         MailManager::resetInstance();
         Mailer::resetInstance();
+        QueueManager::resetInstance();
     }
 
     protected function tearDown(): void
@@ -28,6 +34,7 @@ class MailTest extends TestCase
         parent::tearDown();
         MailManager::resetInstance();
         Mailer::resetInstance();
+        QueueManager::resetInstance();
     }
 
     // ─── Mailable 测试 ───
@@ -260,6 +267,34 @@ class MailTest extends TestCase
         $this->assertNotSame($a, $b);
     }
 
+    public function testQueuedMailableIsWrappedInJobForDatabaseQueue(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->createQueueTables($pdo);
+
+        $queue = new DatabaseQueue('default', $pdo);
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('database');
+        $manager->setConnection('database', $queue);
+
+        $transport = new ArrayTransport();
+        Mailer::getInstance()->setTransport($transport);
+
+        $id = Mailer::getInstance()->queue(new MailTest_QueuedMailable());
+        $this->assertGreaterThan(0, $id);
+        $this->assertEquals(0, $transport->count());
+
+        $worker = new Worker($manager);
+        $this->assertTrue($worker->runNextJob('database', ['default'], 1));
+
+        $this->assertEquals(1, $transport->count());
+        $this->assertEquals(0, $queue->size('default'));
+    }
+
     // ─── MailManager 测试 ───
 
     public function testMailManagerSingleton(): void
@@ -396,5 +431,39 @@ class MailTest extends TestCase
         ]);
 
         $this->assertInstanceOf(SmtpTransport::class, $transport);
+    }
+
+    private function createQueueTables(PDO $pdo): void
+    {
+        $pdo->exec("
+            CREATE TABLE jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                queue VARCHAR(255) NOT NULL,
+                payload TEXT NOT NULL,
+                attempts INTEGER DEFAULT 0,
+                reserved_at INTEGER DEFAULT NULL,
+                available_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        ");
+
+        $pdo->exec("
+            CREATE TABLE failed_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                connection VARCHAR(255) NOT NULL,
+                queue VARCHAR(255) NOT NULL,
+                payload TEXT NOT NULL,
+                exception TEXT NOT NULL,
+                failed_at INTEGER NOT NULL
+            )
+        ");
+    }
+}
+
+class MailTest_QueuedMailable extends Mailable implements ShouldQueue
+{
+    public function build(): void
+    {
+        $this->to('queued@example.com')->subject('Queued')->html('Queued body');
     }
 }

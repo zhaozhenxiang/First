@@ -101,7 +101,7 @@ class Mailer
         if ($mailable instanceof ShouldQueue) {
             // 利用 QueueManager 入队
             if (class_exists(\Bin\Queue\QueueManager::class)) {
-                return \Bin\Queue\QueueManager::getInstance()->push($mailable);
+                return \Bin\Queue\QueueManager::getInstance()->push(new SendQueuedMailable($mailable));
             }
         }
 
@@ -117,7 +117,7 @@ class Mailer
     {
         if ($mailable instanceof ShouldQueue) {
             if (class_exists(\Bin\Queue\QueueManager::class)) {
-                return \Bin\Queue\QueueManager::getInstance()->later($delay, $mailable);
+                return \Bin\Queue\QueueManager::getInstance()->later($delay, new SendQueuedMailable($mailable));
             }
         }
 

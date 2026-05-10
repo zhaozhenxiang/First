@@ -140,6 +140,24 @@ class QueueTest extends TestCase
         $this->assertNull($record['reserved_at']);
     }
 
+    public function testDatabaseQueueRejectsNonJobPayloadsAtEnqueueTime(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo);
+
+        $thrown = false;
+        try {
+            $queue->push(new \stdClass(), 'default');
+        } catch (\InvalidArgumentException $e) {
+            $thrown = true;
+            $this->assertStringContainsString('Job', $e->getMessage());
+        }
+
+        $this->assertTrue($thrown, 'Expected database queue to reject non-Job payloads');
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM jobs');
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
+    }
+
     public function testDatabaseQueueLater(): void
     {
         $queue = new DatabaseQueue('default', $this->pdo);
@@ -1033,6 +1051,17 @@ class QueueTest extends TestCase
         \QueueTest_DispatchableJob::dispatchSync();
 
         $this->assertTrue(\QueueTest_DispatchableJob::$dispatched);
+    }
+
+    public function testDispatchSyncInvokesJobHandleThroughContainer(): void
+    {
+        App::getInstance()->instance(\QueueTest_InjectedDependency::class, new \QueueTest_InjectedDependency('from dispatch sync'));
+
+        \QueueTest_InjectedJob::dispatchSync();
+
+        $this->assertEquals('from dispatch sync', \QueueTest_InjectedJob::$value);
+
+        App::getInstance()->getContainer()->forget(\QueueTest_InjectedDependency::class);
     }
 
     public function testPendingDispatchExplicitDispatchUsesSelectedConnectionQueueAndDelay(): void

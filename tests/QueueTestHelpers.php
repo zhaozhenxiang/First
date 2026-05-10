@@ -124,6 +124,8 @@ class QueueTest_InjectedDependency
 
 class QueueTest_InjectedJob extends Job
 {
+    use Dispatchable;
+
     public static string $value = '';
 
     public function handle(?QueueTest_InjectedDependency $dependency = null): void

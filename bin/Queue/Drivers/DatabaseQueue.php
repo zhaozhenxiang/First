@@ -8,6 +8,7 @@ use Bin\Database\ConnectionManager;
 use Bin\Queue\Contracts\QueueInterface;
 use Bin\Queue\InvalidPayloadException;
 use Bin\Queue\Job;
+use InvalidArgumentException;
 use PDO;
 use PDOStatement;
 use RuntimeException;
@@ -360,7 +361,7 @@ class DatabaseQueue implements QueueInterface
             return $job->toJson();
         }
 
-        return json_encode(['job' => serialize($job)]) ?: '{}';
+        throw new InvalidArgumentException('Database queue payloads must be instances of ' . Job::class . '.');
     }
 
     /**
