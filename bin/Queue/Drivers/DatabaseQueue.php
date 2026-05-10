@@ -112,13 +112,23 @@ class DatabaseQueue implements QueueInterface
             // 标记保留
             $updateSql = "UPDATE `{$this->table}`
                           SET reserved_at = :reserved, attempts = attempts + 1
-                          WHERE id = :id";
+                          WHERE id = :id
+                            AND queue = :queue
+                            AND reserved_at IS NULL
+                            AND available_at <= :now";
 
             $updateStmt = $this->pdo->prepare($updateSql);
             $updateStmt->execute([
                 ':reserved' => $now,
                 ':id' => $record['id'],
+                ':queue' => $queue,
+                ':now' => $now,
             ]);
+
+            if ($updateStmt->rowCount() === 0) {
+                $this->pdo->rollBack();
+                return null;
+            }
 
             $job = $this->hydrateJob($record, true);
 

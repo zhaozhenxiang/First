@@ -14,6 +14,7 @@ use Bin\Queue\QueueManager;
 use Bin\Queue\Worker;
 use Bin\Testing\TestCase;
 use PDO;
+use PDOStatement;
 
 /**
  * 队列系统测试
@@ -173,6 +174,20 @@ class QueueTest extends TestCase
         $queue->later(3600, new \QueueTest_TestJob('delayed'), 'default');
 
         $this->assertNull($queue->pop('default'));
+    }
+
+    public function testDatabaseQueueDoesNotReturnStaleSelectedJobWhenReservationLost(): void
+    {
+        $this->pdo = new QueueTest_StaleReservationPdo('sqlite::memory:');
+        $this->createJobsTable();
+
+        $queue = new DatabaseQueue('default', $this->pdo);
+        $queue->push(new \QueueTest_TestJob('stale'), 'default');
+
+        $this->pdo->simulateStaleReservation = true;
+
+        $this->assertNull($queue->pop('default'));
+        $this->assertTrue($this->pdo->didSimulateStaleReservation);
     }
 
     public function testDatabaseQueueDelete(): void
@@ -675,5 +690,45 @@ class QueueTest extends TestCase
         \QueueTest_DispatchableJob::dispatchSync();
 
         $this->assertTrue(\QueueTest_DispatchableJob::$dispatched);
+    }
+}
+
+class QueueTest_StaleReservationPdo extends PDO
+{
+    public bool $simulateStaleReservation = false;
+    public bool $didSimulateStaleReservation = false;
+
+    public function __construct(string $dsn)
+    {
+        parent::__construct($dsn);
+
+        $this->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->setAttribute(PDO::ATTR_STATEMENT_CLASS, [QueueTest_StaleReservationStatement::class, [$this]]);
+    }
+}
+
+class QueueTest_StaleReservationStatement extends PDOStatement
+{
+    protected function __construct(private QueueTest_StaleReservationPdo $pdo)
+    {
+    }
+
+    public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
+    {
+        $record = parent::fetch($mode, $cursorOrientation, $cursorOffset);
+
+        if (
+            $record !== false
+            && $this->pdo->simulateStaleReservation
+            && !$this->pdo->didSimulateStaleReservation
+            && is_array($record)
+            && array_key_exists('payload', $record)
+        ) {
+            $this->pdo->didSimulateStaleReservation = true;
+            $stmt = $this->pdo->prepare('UPDATE jobs SET reserved_at = :reserved WHERE id = :id');
+            $stmt->execute([':reserved' => time(), ':id' => $record['id']]);
+        }
+
+        return $record;
     }
 }
