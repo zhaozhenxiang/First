@@ -124,13 +124,19 @@ class Worker
         $effectiveMaxTries = $maxTries > 0 ? min($maxTries, $job->maxTries) : $job->maxTries;
 
         if ($job->getAttempts() >= $effectiveMaxTries || $job->hasExceededMaxTries()) {
-            $job->failed($exception);
-
             $queueDriver = $this->manager->connection($connection);
             if ($queueDriver instanceof DatabaseQueue) {
-                $queueDriver->failJob($connection, $queue, $job, $exception);
+                if (!$queueDriver->failJob($connection, $queue, $job, $exception)) {
+                    return;
+                }
             } else {
                 $queueDriver->delete($job);
+            }
+
+            try {
+                $job->failed($exception);
+            } catch (\Throwable) {
+                // User failure callbacks must not undo durable failure handling.
             }
 
             $this->failed++;

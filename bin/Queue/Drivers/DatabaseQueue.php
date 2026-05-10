@@ -135,7 +135,7 @@ class DatabaseQueue implements QueueInterface
                 return null;
             }
 
-            $job = $this->hydrateJob($record, true);
+            $job = $this->hydrateJob($record, true, $now);
 
             if ($job === null) {
                 $exception = new InvalidPayloadException((int) $record['id'], $queue, (string) $record['payload']);
@@ -161,24 +161,20 @@ class DatabaseQueue implements QueueInterface
 
     public function delete(mixed $job): bool
     {
-        $id = $this->getJobDatabaseId($job);
+        $ownership = $this->getJobReservationOwnership($job);
 
-        if ($id === null) {
+        if ($ownership === null) {
             return false;
         }
 
-        $sql = "DELETE FROM `{$this->table}` WHERE id = :id";
-        $stmt = $this->prepareOrFail($sql, "prepare delete from {$this->table}");
-        $this->executeOrFail($stmt, [':id' => $id], "delete from {$this->table}");
-
-        return $stmt->rowCount() > 0;
+        return $this->deleteOwnedJob($ownership['id'], $ownership['attempts'], $ownership['reserved_at']);
     }
 
     public function release(mixed $job, int $delay = 0): bool
     {
-        $id = $this->getJobDatabaseId($job);
+        $ownership = $this->getJobReservationOwnership($job);
 
-        if ($id === null) {
+        if ($ownership === null) {
             return false;
         }
 
@@ -186,21 +182,33 @@ class DatabaseQueue implements QueueInterface
 
         $sql = "UPDATE `{$this->table}`
                 SET reserved_at = NULL, available_at = :available
-                WHERE id = :id";
+                WHERE id = :id
+                  AND attempts = :attempts
+                  AND reserved_at = :reserved";
 
         $stmt = $this->prepareOrFail($sql, "prepare release {$this->table}");
-        $this->executeOrFail($stmt, [':available' => $availableAt, ':id' => $id], "release {$this->table}");
+        $this->executeOrFail($stmt, [
+            ':available' => $availableAt,
+            ':id' => $ownership['id'],
+            ':attempts' => $ownership['attempts'],
+            ':reserved' => $ownership['reserved_at'],
+        ], "release {$this->table}");
 
         return $stmt->rowCount() > 0;
     }
 
     public function size(string $queue = 'default'): int
     {
+        $now = time();
+        $expiredAt = $now - $this->retryAfter;
+
         $sql = "SELECT COUNT(*) FROM `{$this->table}`
-                WHERE queue = :queue AND reserved_at IS NULL AND available_at <= :now";
+                WHERE queue = :queue
+                  AND (reserved_at IS NULL OR reserved_at <= :expired)
+                  AND available_at <= :now";
 
         $stmt = $this->prepareOrFail($sql, "prepare count {$this->table}");
-        $this->executeOrFail($stmt, [':queue' => $queue, ':now' => time()], "count {$this->table}");
+        $this->executeOrFail($stmt, [':queue' => $queue, ':expired' => $expiredAt, ':now' => $now], "count {$this->table}");
 
         return (int) $stmt->fetchColumn();
     }
@@ -227,13 +235,25 @@ class DatabaseQueue implements QueueInterface
 
     public function failJob(string $connection, string $queue, Job $job, \Throwable $exception): bool
     {
+        $ownership = $this->getJobReservationOwnership($job);
+
+        if ($ownership === null) {
+            return false;
+        }
+
         $this->pdo->beginTransaction();
 
         try {
+            if (!$this->ownsReservedJob($ownership['id'], $ownership['attempts'], $ownership['reserved_at'])) {
+                $this->pdo->commit();
+                return false;
+            }
+
             $this->logFailedJob($connection, $queue, $job, $exception);
 
-            if (!$this->delete($job)) {
-                throw new RuntimeException("Failed to delete job from {$this->table}.");
+            if (!$this->deleteOwnedJob($ownership['id'], $ownership['attempts'], $ownership['reserved_at'])) {
+                $this->pdo->rollBack();
+                return false;
             }
 
             $this->pdo->commit();
@@ -346,7 +366,7 @@ class DatabaseQueue implements QueueInterface
     /**
      * 从数据库记录还原 Job
      */
-    protected function hydrateJob(array $record, bool $incremented = false): ?Job
+    protected function hydrateJob(array $record, bool $incremented = false, ?int $reservedAt = null): ?Job
     {
         $data = json_decode($record['payload'], true);
         if ($data === null || !isset($data['job'])) {
@@ -361,6 +381,7 @@ class DatabaseQueue implements QueueInterface
         $job->setJobId((string) $record['id']);
         $attempts = (int) $record['attempts'];
         $job->setAttempts($incremented ? $attempts + 1 : $attempts);
+        $job->setReservedAt($reservedAt ?? ($record['reserved_at'] !== null ? (int) $record['reserved_at'] : null));
 
         return $job;
     }
@@ -376,6 +397,63 @@ class DatabaseQueue implements QueueInterface
         }
 
         return null;
+    }
+
+    /**
+     * @return array{id:int,attempts:int,reserved_at:int}|null
+     */
+    protected function getJobReservationOwnership(mixed $job): ?array
+    {
+        if (!$job instanceof Job) {
+            return null;
+        }
+
+        $id = $this->getJobDatabaseId($job);
+        $reservedAt = $job->getReservedAt();
+
+        if ($id === null || $reservedAt === null) {
+            return null;
+        }
+
+        return [
+            'id' => $id,
+            'attempts' => $job->getAttempts(),
+            'reserved_at' => $reservedAt,
+        ];
+    }
+
+    protected function ownsReservedJob(int $id, int $attempts, int $reservedAt): bool
+    {
+        $sql = "SELECT COUNT(*) FROM `{$this->table}`
+                WHERE id = :id
+                  AND attempts = :attempts
+                  AND reserved_at = :reserved";
+
+        $stmt = $this->prepareOrFail($sql, "prepare ownership check {$this->table}");
+        $this->executeOrFail($stmt, [
+            ':id' => $id,
+            ':attempts' => $attempts,
+            ':reserved' => $reservedAt,
+        ], "ownership check {$this->table}");
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
+    protected function deleteOwnedJob(int $id, int $attempts, int $reservedAt): bool
+    {
+        $sql = "DELETE FROM `{$this->table}`
+                WHERE id = :id
+                  AND attempts = :attempts
+                  AND reserved_at = :reserved";
+
+        $stmt = $this->prepareOrFail($sql, "prepare delete from {$this->table}");
+        $this->executeOrFail($stmt, [
+            ':id' => $id,
+            ':attempts' => $attempts,
+            ':reserved' => $reservedAt,
+        ], "delete from {$this->table}");
+
+        return $stmt->rowCount() > 0;
     }
 
     /**

@@ -90,6 +90,31 @@ class QueueTest_FinallyFailingJob extends Job
     }
 }
 
+class QueueTest_FailedCallbackThrowingJob extends Job
+{
+    public static int $handleCount = 0;
+    public static int $failedCount = 0;
+    public int $retryAfter = 0;
+
+    public function handle(): void
+    {
+        self::$handleCount++;
+        throw new \RuntimeException('Handle failed before callback');
+    }
+
+    public function failed(\Throwable $e): void
+    {
+        self::$failedCount++;
+        throw new \RuntimeException('Failed callback threw');
+    }
+
+    public static function resetState(): void
+    {
+        self::$handleCount = 0;
+        self::$failedCount = 0;
+    }
+}
+
 class QueueTest_InjectedDependency
 {
     public function __construct(public string $value = 'injected')

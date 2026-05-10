@@ -32,6 +32,7 @@ class QueueTest extends TestCase
         \QueueTest_FailingJob::resetState();
         \QueueTest_DispatchableJob::resetState();
         \QueueTest_FinallyFailingJob::resetState();
+        \QueueTest_FailedCallbackThrowingJob::resetState();
         \QueueTest_InjectedJob::resetState();
 
         $this->pdo = new PDO('sqlite::memory:');
@@ -262,6 +263,81 @@ class QueueTest extends TestCase
         $this->assertEquals(2, $rePopped->getAttempts());
     }
 
+    public function testDatabaseQueueStaleOwnerDeleteCannotDeleteNewerReservation(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo, 1);
+        $queue->push(new \QueueTest_TestJob('stale delete'), 'default');
+
+        $first = $queue->pop('default');
+        $this->assertNotNull($first);
+
+        $this->pdo->exec('UPDATE jobs SET reserved_at = ' . (time() - 2));
+
+        $second = $queue->pop('default');
+        $this->assertNotNull($second);
+        $this->assertEquals(2, $second->getAttempts());
+
+        $this->assertFalse($queue->delete($first));
+
+        $stmt = $this->pdo->query('SELECT attempts, reserved_at FROM jobs LIMIT 1');
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertTrue($record !== false);
+        $this->assertEquals(2, (int) $record['attempts']);
+        $this->assertNotNull($record['reserved_at']);
+    }
+
+    public function testDatabaseQueueStaleOwnerReleaseCannotReleaseNewerReservation(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo, 1);
+        $queue->push(new \QueueTest_TestJob('stale release'), 'default');
+
+        $first = $queue->pop('default');
+        $this->assertNotNull($first);
+
+        $this->pdo->exec('UPDATE jobs SET reserved_at = ' . (time() - 2));
+
+        $second = $queue->pop('default');
+        $this->assertNotNull($second);
+        $this->assertEquals(2, $second->getAttempts());
+
+        $this->assertFalse($queue->release($first, 0));
+
+        $stmt = $this->pdo->query('SELECT attempts, reserved_at FROM jobs LIMIT 1');
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertTrue($record !== false);
+        $this->assertEquals(2, (int) $record['attempts']);
+        $this->assertNotNull($record['reserved_at']);
+    }
+
+    public function testDatabaseQueueStaleOwnerFinalFailCannotDeleteNewerReservation(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo, 1);
+        $queue->push(new \QueueTest_TestJob('stale fail'), 'default');
+
+        $first = $queue->pop('default');
+        $this->assertNotNull($first);
+
+        $this->pdo->exec('UPDATE jobs SET reserved_at = ' . (time() - 2));
+
+        $second = $queue->pop('default');
+        $this->assertNotNull($second);
+        $this->assertEquals(2, $second->getAttempts());
+
+        $this->assertFalse($queue->failJob('database', 'default', $first, new \RuntimeException('stale')));
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM failed_jobs');
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
+
+        $stmt = $this->pdo->query('SELECT attempts, reserved_at FROM jobs LIMIT 1');
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertTrue($record !== false);
+        $this->assertEquals(2, (int) $record['attempts']);
+        $this->assertNotNull($record['reserved_at']);
+    }
+
     public function testDatabaseQueueCanForgetFailedJob(): void
     {
         $queue = new DatabaseQueue('default', $this->pdo);
@@ -426,6 +502,24 @@ class QueueTest extends TestCase
 
         $queue->push(new \QueueTest_TestJob(), 'default');
         $this->assertEquals(2, $queue->size('default'));
+    }
+
+    public function testDatabaseQueueSizeIncludesExpiredReservedJobsButNotFreshReservedJobs(): void
+    {
+        $queue = new DatabaseQueue('default', $this->pdo, 1);
+        $queue->push(new \QueueTest_TestJob('size'), 'default');
+
+        $fresh = $queue->pop('default');
+        $this->assertNotNull($fresh);
+        $this->assertEquals(0, $queue->size('default'));
+
+        $this->pdo->exec('UPDATE jobs SET reserved_at = ' . (time() - 2));
+
+        $this->assertEquals(1, $queue->size('default'));
+
+        $expired = $queue->pop('default');
+        $this->assertNotNull($expired);
+        $this->assertEquals(0, $queue->size('default'));
     }
 
     public function testDatabaseQueueDifferentQueues(): void
@@ -775,6 +869,32 @@ class QueueTest extends TestCase
 
         $stmt = $this->pdo->query('SELECT COUNT(*) FROM jobs');
         $this->assertEquals(1, (int) $stmt->fetchColumn());
+    }
+
+    public function testWorkerPersistsFinalFailureWhenFailedCallbackThrows(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setConnection('database', $dbQueue);
+
+        $dbQueue->push(new \QueueTest_FailedCallbackThrowingJob(), 'default');
+        $job = $dbQueue->pop('default');
+        $this->assertNotNull($job);
+
+        $worker = new Worker($manager);
+        $worker->process($job, 'database', 'default', 1);
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM failed_jobs');
+        $this->assertEquals(1, (int) $stmt->fetchColumn());
+
+        $stmt = $this->pdo->query('SELECT COUNT(*) FROM jobs');
+        $this->assertEquals(0, (int) $stmt->fetchColumn());
+
+        $this->assertEquals(1, $worker->getFailed());
+        $this->assertEquals(1, \QueueTest_FailedCallbackThrowingJob::$failedCount);
     }
 
     public function testWorkerOnlyCallsFailedCallbackOnFinalFailure(): void

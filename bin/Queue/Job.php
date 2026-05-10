@@ -32,6 +32,9 @@ abstract class Job
     /** @var string 任务标识 */
     protected string $jobId = '';
 
+    /** @var int|null 当前数据库保留时间 */
+    protected ?int $reservedAt = null;
+
     /**
      * 执行任务
      */
@@ -76,6 +79,17 @@ abstract class Job
     public function setJobId(string $id): static
     {
         $this->jobId = $id;
+        return $this;
+    }
+
+    public function getReservedAt(): ?int
+    {
+        return $this->reservedAt;
+    }
+
+    public function setReservedAt(?int $reservedAt): static
+    {
+        $this->reservedAt = $reservedAt;
         return $this;
     }
 
