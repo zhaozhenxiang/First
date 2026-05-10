@@ -726,6 +726,27 @@ class QueueTest extends TestCase
         $this->assertEquals('high first', \QueueTest_TestJob::$lastResult);
     }
 
+    public function testWorkerRunDoesNotProcessJobWhenAlreadyStopped(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setConnection('database', $dbQueue);
+
+        $dbQueue->push(new \QueueTest_TestJob('should not run'), 'default');
+
+        $worker = new Worker($manager);
+        $worker->stop();
+
+        $exitCode = $worker->run('database', ['default'], 3, 1, true);
+
+        $this->assertEquals(0, $exitCode);
+        $this->assertEquals('', \QueueTest_TestJob::$lastResult);
+        $this->assertEquals(1, $dbQueue->size('default'));
+    }
+
     public function testWorkerInvokesJobHandleThroughContainer(): void
     {
         App::getInstance()->instance(\QueueTest_InjectedDependency::class, new \QueueTest_InjectedDependency('from container'));
@@ -739,6 +760,8 @@ class QueueTest extends TestCase
         $worker->process(new \QueueTest_InjectedJob(), 'sync', 'default', 3);
 
         $this->assertEquals('from container', \QueueTest_InjectedJob::$value);
+
+        App::getInstance()->getContainer()->forget(\QueueTest_InjectedDependency::class);
     }
 
     public function testWorkerStop(): void

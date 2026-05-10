@@ -44,7 +44,7 @@ class Worker
         int $sleep = 1,
         bool $once = false
     ): int {
-        do {
+        while (!$this->shouldQuit) {
             $processed = $this->runNextJob($connection, $queues, $tries);
 
             if ($once) {
@@ -58,7 +58,7 @@ class Worker
             if (function_exists('pcntl_signal_dispatch')) {
                 pcntl_signal_dispatch();
             }
-        } while (!$this->shouldQuit);
+        }
 
         return 0;
     }
