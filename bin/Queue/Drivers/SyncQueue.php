@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bin\Queue\Drivers;
 
+use Bin\App\App;
 use Bin\Queue\Contracts\QueueInterface;
 use Bin\Queue\Job;
 
@@ -18,7 +19,7 @@ class SyncQueue implements QueueInterface
     {
         if ($job instanceof Job) {
             $job->setAttempts($job->getAttempts() + 1);
-            $job->handle();
+            App::getInstance()->getContainer()->call([$job, 'handle']);
         }
 
         return true;

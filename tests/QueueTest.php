@@ -6,6 +6,7 @@ namespace Tests;
 
 require_once __DIR__ . '/QueueTestHelpers.php';
 
+use Bin\App\App;
 use Bin\Queue\Drivers\DatabaseQueue;
 use Bin\Queue\Drivers\SyncQueue;
 use Bin\Queue\InvalidPayloadException;
@@ -30,6 +31,8 @@ class QueueTest extends TestCase
         \QueueTest_TestJob::resetState();
         \QueueTest_FailingJob::resetState();
         \QueueTest_DispatchableJob::resetState();
+        \QueueTest_FinallyFailingJob::resetState();
+        \QueueTest_InjectedJob::resetState();
 
         $this->pdo = new PDO('sqlite::memory:');
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -669,6 +672,73 @@ class QueueTest extends TestCase
         $worker->process($job, 'database', 'default', 3);
 
         $this->assertEquals(0, $worker->getFailed());
+    }
+
+    public function testWorkerOnlyCallsFailedCallbackOnFinalFailure(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setConnection('database', $dbQueue);
+
+        $dbQueue->push(new \QueueTest_FinallyFailingJob(), 'default');
+
+        $worker = new Worker($manager);
+        $firstJob = $dbQueue->pop('default');
+        $this->assertNotNull($firstJob);
+
+        $worker->process($firstJob, 'database', 'default', 3);
+
+        $this->assertEquals(0, \QueueTest_FinallyFailingJob::$failedCount);
+        $this->assertEquals(0, $worker->getFailed());
+
+        $secondJob = $dbQueue->pop('default');
+        $this->assertNotNull($secondJob);
+        $worker->process($secondJob, 'database', 'default', 3);
+
+        $thirdJob = $dbQueue->pop('default');
+        $this->assertNotNull($thirdJob);
+        $worker->process($thirdJob, 'database', 'default', 3);
+
+        $this->assertEquals(1, \QueueTest_FinallyFailingJob::$failedCount);
+        $this->assertEquals(1, $worker->getFailed());
+        $this->assertCount(1, $dbQueue->getFailedJobs());
+    }
+
+    public function testWorkerProcessesQueuesByPriorityOrder(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setConnection('database', $dbQueue);
+
+        $dbQueue->push(new \QueueTest_TestJob('default first'), 'default');
+        $dbQueue->push(new \QueueTest_TestJob('high first'), 'high');
+
+        $worker = new Worker($manager);
+        $processed = $worker->runNextJob('database', ['high', 'default'], 3);
+
+        $this->assertTrue($processed);
+        $this->assertEquals('high first', \QueueTest_TestJob::$lastResult);
+    }
+
+    public function testWorkerInvokesJobHandleThroughContainer(): void
+    {
+        App::getInstance()->instance(\QueueTest_InjectedDependency::class, new \QueueTest_InjectedDependency('from container'));
+
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'sync' => ['driver' => 'sync'],
+        ]);
+
+        $worker = new Worker($manager);
+        $worker->process(new \QueueTest_InjectedJob(), 'sync', 'default', 3);
+
+        $this->assertEquals('from container', \QueueTest_InjectedJob::$value);
     }
 
     public function testWorkerStop(): void
