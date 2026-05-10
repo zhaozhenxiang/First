@@ -12,6 +12,8 @@ namespace Bin\Queue;
 class PendingDispatch
 {
     protected Job $job;
+    protected ?string $connection = null;
+    protected bool $dispatched = false;
 
     public function __construct(Job $job)
     {
@@ -24,6 +26,15 @@ class PendingDispatch
     public function onQueue(string $queue): static
     {
         $this->job->onQueue($queue);
+        return $this;
+    }
+
+    /**
+     * 设置目标连接
+     */
+    public function onConnection(string $connection): static
+    {
+        $this->connection = $connection;
         return $this;
     }
 
@@ -47,14 +58,22 @@ class PendingDispatch
     /**
      * 执行分发
      */
-    protected function dispatch(): void
+    public function dispatch(): static
     {
-        $manager = QueueManager::getInstance();
+        if ($this->dispatched) {
+            return $this;
+        }
+
+        $connection = QueueManager::getInstance()->connection($this->connection);
 
         if ($this->job->delay > 0) {
-            $manager->later($this->job->delay, $this->job, $this->job->getQueue());
+            $connection->later($this->job->delay, $this->job, $this->job->getQueue());
         } else {
-            $manager->push($this->job, $this->job->getQueue());
+            $connection->push($this->job, $this->job->getQueue());
         }
+
+        $this->dispatched = true;
+
+        return $this;
     }
 }

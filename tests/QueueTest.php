@@ -784,6 +784,55 @@ class QueueTest extends TestCase
 
         $this->assertTrue(\QueueTest_DispatchableJob::$dispatched);
     }
+
+    public function testPendingDispatchExplicitDispatchUsesSelectedConnectionQueueAndDelay(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'sync' => ['driver' => 'sync'],
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('sync');
+        $manager->setConnection('database', $dbQueue);
+
+        $beforeTime = time() + 55;
+        $pending = \QueueTest_DispatchableJob::dispatch()
+            ->onConnection('database')
+            ->onQueue('emails')
+            ->delay(60);
+
+        $returned = $pending->dispatch();
+        $afterTime = time() + 65;
+
+        $this->assertSame($pending, $returned);
+        $this->assertFalse(\QueueTest_DispatchableJob::$dispatched);
+
+        $stmt = $this->pdo->query("SELECT queue, available_at FROM jobs");
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $this->assertEquals('emails', $record['queue']);
+        $this->assertTrue(
+            (int) $record['available_at'] >= $beforeTime && (int) $record['available_at'] <= $afterTime
+        );
+    }
+
+    public function testPendingDispatchExplicitDispatchThenDestructorDoesNotDispatchTwice(): void
+    {
+        $dbQueue = new DatabaseQueue('default', $this->pdo);
+        $manager = QueueManager::getInstance();
+        $manager->setConfig([
+            'database' => ['driver' => 'database', 'connection' => 'default'],
+        ]);
+        $manager->setDefaultConnection('database');
+        $manager->setConnection('database', $dbQueue);
+
+        $pending = \QueueTest_DispatchableJob::dispatch()->onConnection('database');
+        $pending->dispatch();
+        unset($pending);
+
+        $this->assertEquals(1, $dbQueue->size('default'));
+    }
 }
 
 class QueueTest_StaleReservationPdo extends PDO
