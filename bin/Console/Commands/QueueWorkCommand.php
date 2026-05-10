@@ -43,6 +43,6 @@ class QueueWorkCommand extends Command
 
     private function defaultConnection(): string
     {
-        return function_exists('config') ? (string) config('queue.default', 'sync') : 'sync';
+        return function_exists('config') ? (string) (config('queue.default') ?? 'sync') : 'sync';
     }
 }

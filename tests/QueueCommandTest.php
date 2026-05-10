@@ -72,6 +72,19 @@ class QueueCommandTest extends TestCase
         $this->assertSame(0, $this->queue->size('default'));
     }
 
+    public function testQueueWorkOnceUsesConfiguredDefaultConnection(): void
+    {
+        config(['queue.default' => 'database']);
+        $this->queue->push(new \QueueTest_TestJob('worked from default connection'), 'default');
+
+        $exitCode = Kernel::callSilent('queue:work', ['--once' => true]);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame('worked from default connection', \QueueTest_TestJob::$lastResult);
+        $this->assertSame(1, \QueueTest_TestJob::$handleCount);
+        $this->assertSame(0, $this->queue->size('default'));
+    }
+
     public function testQueueFailedListsFailedJobs(): void
     {
         $this->queue->logFailedJob(
@@ -100,6 +113,24 @@ class QueueCommandTest extends TestCase
         $failed = $this->queue->getFailedJobs();
 
         $exitCode = Kernel::callSilent('queue:retry', [(string) $failed[0]['id'], 'database']);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame([], $this->queue->getFailedJobs());
+        $this->assertSame(1, $this->queue->size('default'));
+    }
+
+    public function testQueueRetryUsesConfiguredDefaultConnection(): void
+    {
+        config(['queue.default' => 'database']);
+        $this->queue->logFailedJob(
+            'database',
+            'default',
+            new \QueueTest_TestJob('retry from default connection'),
+            new \RuntimeException('boom')
+        );
+        $failed = $this->queue->getFailedJobs();
+
+        $exitCode = Kernel::callSilent('queue:retry', [(string) $failed[0]['id']]);
 
         $this->assertSame(0, $exitCode);
         $this->assertSame([], $this->queue->getFailedJobs());
