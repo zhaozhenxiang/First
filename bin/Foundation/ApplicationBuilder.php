@@ -24,7 +24,7 @@ class ApplicationBuilder
      */
     public function withProviders(array|string|null $providers = null, ?string $path = null): static
     {
-        $providerPath = $path ?? $this->basePath . '/bootstrap/providers.php';
+        $providerPath = $path ?? $this->joinBasePath('bootstrap/providers.php');
         $this->configuration->addProviderFile($providerPath);
 
         if (is_string($providers)) {
@@ -46,8 +46,8 @@ class ApplicationBuilder
         $routing = new RoutingConfigurator();
 
         if ($web === null && $api === null && $then === []) {
-            $defaultWeb = $this->basePath . '/routes/web.php';
-            $defaultApi = $this->basePath . '/routes/api.php';
+            $defaultWeb = $this->joinBasePath('routes/web.php');
+            $defaultApi = $this->joinBasePath('routes/api.php');
 
             if (is_file($defaultWeb)) {
                 $routing->add($defaultWeb);
@@ -104,5 +104,12 @@ class ApplicationBuilder
         $basePath = rtrim($basePath, '/');
 
         return $basePath === '' ? '/' : $basePath;
+    }
+
+    private function joinBasePath(string $path): string
+    {
+        $basePath = $this->basePath === '/' ? '' : $this->basePath;
+
+        return $basePath . '/' . ltrim($path, '/');
     }
 }

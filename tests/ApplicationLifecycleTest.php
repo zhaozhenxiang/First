@@ -155,6 +155,38 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertSame('/', $configuration->basePath());
     }
 
+    public function testApplicationBuilderUsesCanonicalRootPathHelpers(): void
+    {
+        $app = App::configure('/')->create();
+
+        $this->assertSame('/bootstrap', $app->bootstrapPath());
+        $this->assertSame('/config/app.php', $app->configPath('app.php'));
+        $this->assertSame('/database/migrations', $app->databasePath('migrations'));
+        $this->assertSame('/storage/logs', $app->storagePath('logs'));
+        $this->assertSame('/public/index.php', $app->publicPath('index.php'));
+    }
+
+    public function testApplicationBuilderUsesCanonicalRootProviderPath(): void
+    {
+        $app = App::configure('/')
+            ->withProviders()
+            ->create();
+
+        $this->assertSame(['/bootstrap/providers.php'], $app->getApplicationConfiguration()->providerFiles());
+    }
+
+    public function testApplicationBuilderPreservesExplicitAbsoluteRootRoutePaths(): void
+    {
+        $app = App::configure('/')
+            ->withRouting(web: '/routes/web.php', api: '/routes/api.php')
+            ->create();
+
+        $this->assertSame(
+            ['/routes/web.php', '/routes/api.php'],
+            $app->getApplicationConfiguration()->routeFiles()
+        );
+    }
+
     public function testAppExposesHttpKernel(): void
     {
         $app = App::getInstance();

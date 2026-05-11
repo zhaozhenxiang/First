@@ -174,7 +174,7 @@ class App implements ContainerInterface
      */
     public function bootstrapPath(string $path = ''): string
     {
-        return $this->basePath() . '/bootstrap' . ($path !== '' ? '/' . $path : '');
+        return $this->joinBasePath('bootstrap', $path);
     }
 
     /**
@@ -182,7 +182,7 @@ class App implements ContainerInterface
      */
     public function configPath(string $path = ''): string
     {
-        return $this->basePath() . '/config' . ($path !== '' ? '/' . $path : '');
+        return $this->joinBasePath('config', $path);
     }
 
     /**
@@ -190,7 +190,7 @@ class App implements ContainerInterface
      */
     public function databasePath(string $path = ''): string
     {
-        return $this->basePath() . '/database' . ($path !== '' ? '/' . $path : '');
+        return $this->joinBasePath('database', $path);
     }
 
     /**
@@ -198,7 +198,7 @@ class App implements ContainerInterface
      */
     public function storagePath(string $path = ''): string
     {
-        return $this->basePath() . '/storage' . ($path !== '' ? '/' . $path : '');
+        return $this->joinBasePath('storage', $path);
     }
 
     /**
@@ -206,7 +206,19 @@ class App implements ContainerInterface
      */
     public function publicPath(string $path = ''): string
     {
-        return $this->basePath() . '/public' . ($path !== '' ? '/' . $path : '');
+        return $this->joinBasePath('public', $path);
+    }
+
+    private function joinBasePath(string $directory, string $path = ''): string
+    {
+        $basePath = $this->basePath() === '/' ? '' : $this->basePath();
+        $joined = $basePath . '/' . trim($directory, '/');
+
+        if ($path !== '') {
+            $joined .= '/' . ltrim($path, '/');
+        }
+
+        return $joined;
     }
 
     /**
