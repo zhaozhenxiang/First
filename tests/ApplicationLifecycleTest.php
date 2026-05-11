@@ -662,6 +662,54 @@ PHP);
         $this->assertEquals(['auth', 'legacy'], array_slice($stack->collectRouteMiddleware(['legacy', 'auth']), 0, 2));
     }
 
+    public function testLoadMiddlewareConfigurationPreservesBuilderPrependAppendOperationsWhenMergingLegacyConfig(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+
+        file_put_contents($basePath . '/config/middleware.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Middleware\CsrfMiddleware;
+
+return [
+    'global' => [
+        CsrfMiddleware::class,
+    ],
+    'groups' => [
+        'web' => [
+            CsrfMiddleware::class,
+        ],
+    ],
+    'aliases' => [],
+    'priority' => [],
+];
+PHP);
+
+        $app = App::configure($basePath)
+            ->withMiddleware(function (MiddlewareConfigurator $middleware): void {
+                $middleware->prepend(SessionMiddleware::class);
+                $middleware->append(RateLimitMiddleware::class);
+                $middleware->prependToGroup('web', SessionMiddleware::class);
+                $middleware->appendToGroup('web', RateLimitMiddleware::class);
+            })
+            ->create();
+
+        (new LoadMiddlewareConfiguration())->bootstrap($app);
+
+        $stack = MiddlewareStack::getInstance();
+
+        $this->assertEquals(
+            [SessionMiddleware::class, CsrfMiddleware::class, RateLimitMiddleware::class],
+            $stack->getGlobals()
+        );
+        $this->assertEquals(
+            [SessionMiddleware::class, CsrfMiddleware::class, RateLimitMiddleware::class],
+            $stack->getGroup('web')
+        );
+    }
+
     public function testLoadMiddlewareConfigurationStillLoadsLegacyConfigWithoutBuilderOverrides(): void
     {
         $basePath = $this->createTempBootstrapBasePath();

@@ -85,7 +85,7 @@ class ApplicationBuilder
             $callback($middleware);
         }
 
-        $this->configuration->setMiddleware($middleware->toArray());
+        $this->configuration->setMiddleware($middleware->toArray(), $middleware->operations());
 
         return $this;
     }

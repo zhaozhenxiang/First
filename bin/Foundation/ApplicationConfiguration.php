@@ -25,6 +25,23 @@ class ApplicationConfiguration
         'priority' => [],
     ];
 
+    /**
+     * @var array{
+     *     global_prepend: array<int, string>,
+     *     global_append: array<int, string>,
+     *     group_replace: array<string, array<int, string>>,
+     *     group_prepend: array<string, array<int, string>>,
+     *     group_append: array<string, array<int, string>>
+     * }
+     */
+    private array $middlewareOperations = [
+        'global_prepend' => [],
+        'global_append' => [],
+        'group_replace' => [],
+        'group_prepend' => [],
+        'group_append' => [],
+    ];
+
     public function __construct(private string $basePath)
     {
     }
@@ -93,14 +110,30 @@ class ApplicationConfiguration
 
     /**
      * @param array{global?: array<int, string>, groups?: array<string, array<int, string>>, aliases?: array<string, string>, priority?: array<string, int>} $middleware
+     * @param array{
+     *     global_prepend?: array<int, string>,
+     *     global_append?: array<int, string>,
+     *     group_replace?: array<string, array<int, string>>,
+     *     group_prepend?: array<string, array<int, string>>,
+     *     group_append?: array<string, array<int, string>>
+     * } $operations
      */
-    public function setMiddleware(array $middleware): void
+    public function setMiddleware(array $middleware, array $operations = []): void
     {
         $this->middleware = [
             'global' => array_values($middleware['global'] ?? []),
             'groups' => $middleware['groups'] ?? [],
             'aliases' => $middleware['aliases'] ?? [],
             'priority' => $middleware['priority'] ?? [],
+        ];
+
+        $defaultGroupReplacements = $operations === [] ? $this->middleware['groups'] : [];
+        $this->middlewareOperations = [
+            'global_prepend' => array_values($operations['global_prepend'] ?? []),
+            'global_append' => array_values($operations['global_append'] ?? []),
+            'group_replace' => $operations['group_replace'] ?? $defaultGroupReplacements,
+            'group_prepend' => $operations['group_prepend'] ?? [],
+            'group_append' => $operations['group_append'] ?? [],
         ];
     }
 
@@ -110,5 +143,19 @@ class ApplicationConfiguration
     public function middleware(): array
     {
         return $this->middleware;
+    }
+
+    /**
+     * @return array{
+     *     global_prepend: array<int, string>,
+     *     global_append: array<int, string>,
+     *     group_replace: array<string, array<int, string>>,
+     *     group_prepend: array<string, array<int, string>>,
+     *     group_append: array<string, array<int, string>>
+     * }
+     */
+    public function middlewareOperations(): array
+    {
+        return $this->middlewareOperations;
     }
 }
