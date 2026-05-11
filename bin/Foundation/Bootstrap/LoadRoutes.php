@@ -11,10 +11,34 @@ class LoadRoutes implements BootstrapperContract
 {
     public function bootstrap(App $app): void
     {
-        $routeFile = $app->basePath() . '/app/routes.php';
+        $configuration = $app->getApplicationConfiguration();
+        $routeFiles = $configuration->routeFiles();
 
-        if (file_exists($routeFile)) {
-            require_once $routeFile;
+        if ($routeFiles !== []) {
+            $this->loadRouteFiles($routeFiles);
+            return;
+        }
+
+        if ($configuration->hasRouteConfiguration()) {
+            return;
+        }
+
+        $legacy = $app->basePath() . '/app/routes.php';
+
+        if (is_file($legacy)) {
+            require $legacy;
+        }
+    }
+
+    /**
+     * @param array<int, string> $routeFiles
+     */
+    private function loadRouteFiles(array $routeFiles): void
+    {
+        foreach ($routeFiles as $routeFile) {
+            if (is_file($routeFile)) {
+                require $routeFile;
+            }
         }
     }
 }

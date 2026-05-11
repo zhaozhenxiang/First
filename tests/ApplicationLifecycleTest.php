@@ -467,6 +467,85 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertContains(CsrfMiddleware::class, $stack->getGroup('web'));
     }
 
+    public function testLoadRoutesUsesConfiguredRouteFilesInOrder(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/from-web', static fn (): string => 'web');
+PHP);
+
+        file_put_contents($basePath . '/routes/api.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/from-api', static fn (): string => 'api');
+PHP);
+
+        file_put_contents($basePath . '/routes/extra.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/from-extra', static fn (): string => 'extra');
+PHP);
+
+        $app = App::configure($basePath)
+            ->withRouting(
+                web: $basePath . '/routes/web.php',
+                api: $basePath . '/routes/api.php',
+                then: [$basePath . '/routes/extra.php']
+            )
+            ->create();
+
+        (new LoadRoutes())->bootstrap($app);
+
+        $paths = array_map(static fn ($route): string => $route->getPath(), Route::getRoutes());
+
+        $this->assertEquals(['/from-web', '/from-api', '/from-extra'], $paths);
+    }
+
+    public function testLoadRoutesFallsBackToAppRoutesWhenNoNewRouteFilesAreConfigured(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+
+        $app = App::configure($basePath)
+            ->withRouting()
+            ->create();
+
+        (new LoadRoutes())->bootstrap($app);
+
+        $routes = Route::getRoutes();
+
+        $this->assertCount(1, $routes);
+        $this->assertEquals('/bootstrap/test-route', $routes[0]->getPath());
+    }
+
+    public function testLoadRoutesSkipsMissingConfiguredRouteFilesWithoutLegacyFallback(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+
+        $app = App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/missing-web.php')
+            ->create();
+
+        (new LoadRoutes())->bootstrap($app);
+
+        $this->assertSame([], Route::getRoutes());
+    }
+
     public function testHttpBootstrapLoadsSessionBeforeCsrfInWebGroup(): void
     {
         $app = App::getInstance();
