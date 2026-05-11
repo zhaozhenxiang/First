@@ -519,6 +519,7 @@ PHP);
 
         $app = App::configure($basePath)
             ->withMiddleware(function (MiddlewareConfigurator $middleware): void {
+                $middleware->append(CsrfMiddleware::class);
                 $middleware->append(SessionMiddleware::class);
                 $middleware->group('web', [SessionMiddleware::class]);
                 $middleware->alias('auth', SessionMiddleware::class);
