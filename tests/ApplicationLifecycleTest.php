@@ -482,6 +482,74 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertSame(SessionMiddleware::class, $stack->getAliases()['session']);
     }
 
+    public function testLoadMiddlewareConfigurationMergesBuilderAndLegacyConfig(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+
+        file_put_contents($basePath . '/config/middleware.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Middleware\AuthMiddleware;
+use Bin\Middleware\CsrfMiddleware;
+use Bin\Middleware\RateLimitMiddleware;
+
+return [
+    'global' => [
+        CsrfMiddleware::class,
+    ],
+    'groups' => [
+        'web' => [
+            CsrfMiddleware::class,
+        ],
+        'api' => [
+            RateLimitMiddleware::class,
+        ],
+    ],
+    'aliases' => [
+        'auth' => AuthMiddleware::class,
+        'legacy' => CsrfMiddleware::class,
+    ],
+    'priority' => [
+        'legacy' => 5,
+    ],
+];
+PHP);
+
+        $app = App::configure($basePath)
+            ->withMiddleware(function (MiddlewareConfigurator $middleware): void {
+                $middleware->append(SessionMiddleware::class);
+                $middleware->group('web', [SessionMiddleware::class]);
+                $middleware->alias('auth', SessionMiddleware::class);
+                $middleware->priority(['auth' => 40]);
+            })
+            ->create();
+
+        (new LoadMiddlewareConfiguration())->bootstrap($app);
+
+        $stack = MiddlewareStack::getInstance();
+
+        $this->assertEquals([CsrfMiddleware::class, SessionMiddleware::class], $stack->getGlobals());
+        $this->assertEquals([SessionMiddleware::class], $stack->getGroup('web'));
+        $this->assertEquals([RateLimitMiddleware::class], $stack->getGroup('api'));
+        $this->assertEquals(SessionMiddleware::class, $stack->getAliases()['auth']);
+        $this->assertEquals(CsrfMiddleware::class, $stack->getAliases()['legacy']);
+    }
+
+    public function testLoadMiddlewareConfigurationStillLoadsLegacyConfigWithoutBuilderOverrides(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+        $app = App::configure($basePath)->create();
+
+        (new LoadMiddlewareConfiguration())->bootstrap($app);
+
+        $stack = MiddlewareStack::getInstance();
+
+        $this->assertEquals(AuthMiddleware::class, $stack->getAliases()['auth']);
+        $this->assertContains(CsrfMiddleware::class, $stack->getGroup('web'));
+    }
+
     public function testHttpBootstrapKeepsSessionBeforeAuthForProtectedWebRoutes(): void
     {
         $app = App::getInstance();
