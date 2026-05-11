@@ -23,7 +23,7 @@ class LoadRoutes implements BootstrapperContract
             return;
         }
 
-        $legacy = $app->basePath() . '/app/routes.php';
+        $legacy = $app->appPath('routes.php');
 
         if (is_file($legacy)) {
             require $legacy;

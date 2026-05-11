@@ -170,6 +170,14 @@ class App implements ContainerInterface
     }
 
     /**
+     * 获取 app 目录路径
+     */
+    public function appPath(string $path = ''): string
+    {
+        return $this->joinBasePath('app', $path);
+    }
+
+    /**
      * 获取 bootstrap 目录路径
      */
     public function bootstrapPath(string $path = ''): string

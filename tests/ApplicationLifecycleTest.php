@@ -533,6 +533,19 @@ PHP);
         $this->assertEquals('/bootstrap/test-route', $routes[0]->getPath());
     }
 
+    public function testLoadRoutesUsesCanonicalAppPathForLegacyFallback(): void
+    {
+        $rootApp = App::configure('/')->create();
+
+        $this->assertTrue(method_exists($rootApp, 'appPath'));
+        $this->assertSame('/app/routes.php', $rootApp->appPath('routes.php'));
+
+        $basePath = $this->createTempBootstrapBasePath();
+        $app = App::configure($basePath)->create();
+
+        $this->assertSame($basePath . '/app/routes.php', $app->appPath('routes.php'));
+    }
+
     public function testLoadRoutesSkipsMissingConfiguredRouteFilesWithoutLegacyFallback(): void
     {
         $basePath = $this->createTempBootstrapBasePath();
