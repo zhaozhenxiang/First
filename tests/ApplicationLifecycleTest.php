@@ -634,6 +634,7 @@ class ApplicationLifecycleTest extends TestCase
 
     public function testRegisterProvidersLoadsBootstrapProvidersAndLegacyProvidersOnce(): void
     {
+        LifecycleConfiguredProvider::resetCounts();
         LifecycleBootstrapProvider::resetCounts();
         LifecycleLegacyProvider::resetCounts();
 
@@ -658,20 +659,24 @@ declare(strict_types=1);
 
 return [
     'providers' => [
+        \Tests\LifecycleBootstrapProvider::class,
         \Tests\LifecycleLegacyProvider::class,
     ],
 ];
 PHP);
 
         $app = App::configure($basePath)
-            ->withProviders([\Tests\LifecycleBootstrapProvider::class])
+            ->withProviders([\Tests\LifecycleConfiguredProvider::class])
             ->create();
 
         (new RegisterProviders())->bootstrap($app);
         (new BootProviders())->bootstrap($app);
 
+        $this->assertTrue($app->bound('lifecycle.configured.provider'));
         $this->assertTrue($app->bound('lifecycle.bootstrap.provider'));
         $this->assertTrue($app->bound('lifecycle.legacy.provider'));
+        $this->assertEquals(1, LifecycleConfiguredProvider::$registered);
+        $this->assertEquals(1, LifecycleConfiguredProvider::$booted);
         $this->assertEquals(1, LifecycleBootstrapProvider::$registered);
         $this->assertEquals(1, LifecycleBootstrapProvider::$booted);
         $this->assertEquals(1, LifecycleLegacyProvider::$registered);
@@ -803,6 +808,29 @@ PHP);
     {
         $reflection = new \ReflectionProperty(App::class, 'basePath');
         $reflection->setValue($app, $basePath);
+    }
+}
+
+class LifecycleConfiguredProvider extends \Bin\Providers\ServiceProvider
+{
+    public static int $registered = 0;
+    public static int $booted = 0;
+
+    public function register(): void
+    {
+        self::$registered++;
+        $this->app->instance('lifecycle.configured.provider', new \stdClass());
+    }
+
+    public function boot(): void
+    {
+        self::$booted++;
+    }
+
+    public static function resetCounts(): void
+    {
+        self::$registered = 0;
+        self::$booted = 0;
     }
 }
 
