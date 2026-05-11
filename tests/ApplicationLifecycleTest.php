@@ -632,6 +632,81 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertTrue(true);
     }
 
+    public function testRegisterProvidersLoadsBootstrapProvidersAndLegacyProvidersOnce(): void
+    {
+        LifecycleBootstrapProvider::resetCounts();
+        LifecycleLegacyProvider::resetCounts();
+
+        $basePath = $this->createTempBootstrapBasePath();
+        mkdir($basePath . '/bootstrap', 0777, true);
+
+        file_put_contents($basePath . '/bootstrap/providers.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+return [
+    \Tests\LifecycleBootstrapProvider::class,
+    \Tests\LifecycleBootstrapProvider::class,
+];
+PHP);
+
+        file_put_contents($basePath . '/config/app.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+return [
+    'providers' => [
+        \Tests\LifecycleLegacyProvider::class,
+    ],
+];
+PHP);
+
+        $app = App::configure($basePath)
+            ->withProviders([\Tests\LifecycleBootstrapProvider::class])
+            ->create();
+
+        (new RegisterProviders())->bootstrap($app);
+        (new BootProviders())->bootstrap($app);
+
+        $this->assertTrue($app->bound('lifecycle.bootstrap.provider'));
+        $this->assertTrue($app->bound('lifecycle.legacy.provider'));
+        $this->assertEquals(1, LifecycleBootstrapProvider::$registered);
+        $this->assertEquals(1, LifecycleBootstrapProvider::$booted);
+        $this->assertEquals(1, LifecycleLegacyProvider::$registered);
+        $this->assertEquals(1, LifecycleLegacyProvider::$booted);
+    }
+
+    public function testRegisterProvidersAllowsMissingBootstrapProvidersFile(): void
+    {
+        LifecycleLegacyProvider::resetCounts();
+
+        $basePath = $this->createTempBootstrapBasePath();
+        file_put_contents($basePath . '/config/app.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+return [
+    'providers' => [
+        \Tests\LifecycleLegacyProvider::class,
+    ],
+];
+PHP);
+
+        $app = App::configure($basePath)
+            ->withProviders()
+            ->create();
+
+        (new RegisterProviders())->bootstrap($app);
+        (new BootProviders())->bootstrap($app);
+
+        $this->assertTrue($app->bound('lifecycle.legacy.provider'));
+        $this->assertEquals(1, LifecycleLegacyProvider::$registered);
+        $this->assertEquals(1, LifecycleLegacyProvider::$booted);
+    }
+
     public function testBootProvidersBootstrap(): void
     {
         $app = App::getInstance();
@@ -728,5 +803,51 @@ PHP);
     {
         $reflection = new \ReflectionProperty(App::class, 'basePath');
         $reflection->setValue($app, $basePath);
+    }
+}
+
+class LifecycleBootstrapProvider extends \Bin\Providers\ServiceProvider
+{
+    public static int $registered = 0;
+    public static int $booted = 0;
+
+    public function register(): void
+    {
+        self::$registered++;
+        $this->app->instance('lifecycle.bootstrap.provider', new \stdClass());
+    }
+
+    public function boot(): void
+    {
+        self::$booted++;
+    }
+
+    public static function resetCounts(): void
+    {
+        self::$registered = 0;
+        self::$booted = 0;
+    }
+}
+
+class LifecycleLegacyProvider extends \Bin\Providers\ServiceProvider
+{
+    public static int $registered = 0;
+    public static int $booted = 0;
+
+    public function register(): void
+    {
+        self::$registered++;
+        $this->app->instance('lifecycle.legacy.provider', new \stdClass());
+    }
+
+    public function boot(): void
+    {
+        self::$booted++;
+    }
+
+    public static function resetCounts(): void
+    {
+        self::$registered = 0;
+        self::$booted = 0;
     }
 }

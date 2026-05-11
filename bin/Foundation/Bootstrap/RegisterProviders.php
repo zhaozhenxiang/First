@@ -10,23 +10,88 @@ use Bin\Foundation\Contracts\Bootstrapper as BootstrapperContract;
 /**
  * 注册服务提供者
  *
- * 将应用配置的服务提供者注册到容器中
+ * 将应用配置的服务提供者注册到容器中。
  */
 class RegisterProviders implements BootstrapperContract
 {
     public function bootstrap(App $app): void
     {
-        // 核心服务提供者已在 App 构造时注册
-        // 这里可以加载额外的应用级提供者（如来自 config/app.php）
+        foreach ($this->providers($app) as $provider) {
+            $app->register($provider);
+        }
+    }
+
+    /**
+     * @return array<class-string>
+     */
+    private function providers(App $app): array
+    {
+        $providers = [];
+        $configuration = $app->getApplicationConfiguration();
+
+        $providers = array_merge($providers, $configuration->providers());
+
+        foreach ($configuration->providerFiles() as $providerFile) {
+            $providers = array_merge($providers, $this->loadProviderFile($providerFile));
+        }
+
+        $providers = array_merge($providers, $this->legacyProviders($app));
+
+        return $this->uniqueProviders($providers);
+    }
+
+    /**
+     * @return array<class-string>
+     */
+    private function loadProviderFile(string $path): array
+    {
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $providers = require $path;
+
+        if (!is_array($providers)) {
+            throw new \RuntimeException("Provider file [{$path}] must return an array.");
+        }
+
+        return array_values(array_filter($providers, 'is_string'));
+    }
+
+    /**
+     * @return array<class-string>
+     */
+    private function legacyProviders(App $app): array
+    {
         $configPath = $app->configPath('app.php');
 
-        if (file_exists($configPath)) {
-            $config = require $configPath;
-            $providers = $config['providers'] ?? [];
+        if (!is_file($configPath)) {
+            return [];
+        }
 
-            foreach ($providers as $provider) {
-                $app->register($provider);
+        $config = require $configPath;
+
+        if (!is_array($config)) {
+            throw new \RuntimeException("Config file [{$configPath}] must return an array.");
+        }
+
+        return array_values(array_filter($config['providers'] ?? [], 'is_string'));
+    }
+
+    /**
+     * @param array<int, string> $providers
+     * @return array<class-string>
+     */
+    private function uniqueProviders(array $providers): array
+    {
+        $unique = [];
+
+        foreach ($providers as $provider) {
+            if (!in_array($provider, $unique, true)) {
+                $unique[] = $provider;
             }
         }
+
+        return $unique;
     }
 }
