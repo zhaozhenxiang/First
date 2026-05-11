@@ -141,7 +141,7 @@ class App implements ContainerInterface
 
     public function setBasePath(string $basePath): static
     {
-        $this->basePath = rtrim($basePath, '/');
+        $this->basePath = $this->normalizeBasePath($basePath);
 
         return $this;
     }
@@ -160,6 +160,13 @@ class App implements ContainerInterface
         }
 
         return $this->applicationConfiguration;
+    }
+
+    private function normalizeBasePath(string $basePath): string
+    {
+        $basePath = rtrim($basePath, '/');
+
+        return $basePath === '' ? '/' : $basePath;
     }
 
     /**

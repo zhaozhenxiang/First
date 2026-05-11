@@ -134,6 +134,27 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertFalse($configuration->hasRouteConfiguration());
     }
 
+    public function testApplicationBuilderNormalizesTrailingSlashBasePathForAppAndConfiguration(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+        $basePathWithTrailingSlash = $basePath . '/';
+
+        $app = App::configure($basePathWithTrailingSlash)->create();
+        $configuration = $app->getApplicationConfiguration();
+
+        $this->assertSame($basePath, $app->basePath());
+        $this->assertSame($basePath, $configuration->basePath());
+    }
+
+    public function testApplicationBuilderPreservesRootBasePathForAppAndConfiguration(): void
+    {
+        $app = App::configure('/')->create();
+        $configuration = $app->getApplicationConfiguration();
+
+        $this->assertSame('/', $app->basePath());
+        $this->assertSame('/', $configuration->basePath());
+    }
+
     public function testAppExposesHttpKernel(): void
     {
         $app = App::getInstance();

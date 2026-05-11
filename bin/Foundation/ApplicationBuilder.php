@@ -15,8 +15,8 @@ class ApplicationBuilder
     public function __construct(private ?string $basePath = null)
     {
         $basePath ??= defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__, 2);
-        $this->basePath = $basePath;
-        $this->configuration = new ApplicationConfiguration($basePath);
+        $this->basePath = $this->normalizeBasePath($basePath);
+        $this->configuration = new ApplicationConfiguration($this->basePath);
     }
 
     /**
@@ -97,5 +97,12 @@ class ApplicationBuilder
         $app->setApplicationConfiguration($this->configuration);
 
         return $app;
+    }
+
+    private function normalizeBasePath(string $basePath): string
+    {
+        $basePath = rtrim($basePath, '/');
+
+        return $basePath === '' ? '/' : $basePath;
     }
 }
