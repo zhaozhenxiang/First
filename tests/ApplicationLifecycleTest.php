@@ -134,6 +134,17 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertFalse($configuration->hasRouteConfiguration());
     }
 
+    public function testBootstrapAppReturnsConfiguredApplication(): void
+    {
+        App::setInstance(null);
+
+        $app = require BASE_PATH . '/bootstrap/app.php';
+
+        $this->assertInstanceOf(App::class, $app);
+        $this->assertInstanceOf(ApplicationConfiguration::class, $app->getApplicationConfiguration());
+        $this->assertEquals(BASE_PATH, $app->basePath());
+    }
+
     public function testApplicationBuilderNormalizesTrailingSlashBasePathForAppAndConfiguration(): void
     {
         $basePath = $this->createTempBootstrapBasePath();
