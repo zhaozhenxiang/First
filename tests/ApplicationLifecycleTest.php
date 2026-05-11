@@ -140,9 +140,28 @@ class ApplicationLifecycleTest extends TestCase
 
         $app = require BASE_PATH . '/bootstrap/app.php';
 
+        $configuration = $app->getApplicationConfiguration();
+        $expectedRouteFiles = [];
+
+        foreach ([BASE_PATH . '/routes/web.php', BASE_PATH . '/routes/api.php'] as $routeFile) {
+            if (is_file($routeFile)) {
+                $expectedRouteFiles[] = $routeFile;
+            }
+        }
+
         $this->assertInstanceOf(App::class, $app);
-        $this->assertInstanceOf(ApplicationConfiguration::class, $app->getApplicationConfiguration());
+        $this->assertInstanceOf(ApplicationConfiguration::class, $configuration);
         $this->assertEquals(BASE_PATH, $app->basePath());
+        $this->assertContains(BASE_PATH . '/bootstrap/providers.php', $configuration->providerFiles());
+        $this->assertSame([
+            'global' => [],
+            'groups' => [],
+            'aliases' => [],
+            'priority' => [],
+        ], $configuration->middleware());
+        $this->assertIsType('array', $configuration->routeFiles());
+        $this->assertSame($expectedRouteFiles, $configuration->routeFiles());
+        $this->assertSame($expectedRouteFiles !== [], $configuration->hasRouteConfiguration());
     }
 
     public function testApplicationBuilderNormalizesTrailingSlashBasePathForAppAndConfiguration(): void
