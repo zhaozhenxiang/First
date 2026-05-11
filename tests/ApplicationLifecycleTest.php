@@ -513,6 +513,7 @@ return [
     ],
     'priority' => [
         'legacy' => 5,
+        'auth' => 1,
     ],
 ];
 PHP);
@@ -536,6 +537,7 @@ PHP);
         $this->assertEquals([RateLimitMiddleware::class], $stack->getGroup('api'));
         $this->assertEquals(SessionMiddleware::class, $stack->getAliases()['auth']);
         $this->assertEquals(CsrfMiddleware::class, $stack->getAliases()['legacy']);
+        $this->assertEquals(['auth', 'legacy'], array_slice($stack->collectRouteMiddleware(['legacy', 'auth']), 0, 2));
     }
 
     public function testLoadMiddlewareConfigurationStillLoadsLegacyConfigWithoutBuilderOverrides(): void
