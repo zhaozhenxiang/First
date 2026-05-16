@@ -583,6 +583,10 @@ declare(strict_types=1);
 use Bin\Route\RouteCollection as Route;
 
 Route::get('/users', static fn (): string => 'api')->name('users.index');
+
+Route::group(['prefix' => 'admin', 'middleware_group' => 'admin'], static function (): void {
+    Route::get('/users', static fn (): string => 'admin-api')->name('admin.users.index');
+});
 PHP);
 
         $app = App::configure($basePath)
@@ -596,12 +600,15 @@ PHP);
 
         $routes = Route::getRoutes();
 
-        $this->assertCount(2, $routes);
+        $this->assertCount(3, $routes);
         $this->assertSame('/dashboard', $routes[0]->getPath());
         $this->assertSame([], $routes[0]->getMiddlewareGroups());
         $this->assertSame('/api/users', $routes[1]->getPath());
         $this->assertSame(['api'], $routes[1]->getMiddlewareGroups());
+        $this->assertSame('/api/admin/users', $routes[2]->getPath());
+        $this->assertSame(['api', 'admin'], $routes[2]->getMiddlewareGroups());
         $this->assertNotNull(Route::namedRoute('users.index'));
+        $this->assertNotNull(Route::namedRoute('admin.users.index'));
     }
 
     public function testLoadRoutesFallsBackToAppRoutesWhenNoNewRouteFilesAreConfigured(): void

@@ -37,7 +37,7 @@ class RouteCollection
      * - where: 数组合并（外层约束可被内层覆盖）
      * - middleware: 累积（所有层级合并）
      *
-     * @var array<int, array{prefix:string, name:string, namespace:string, domain:string, where:array<string,string>, middleware:array<string>, middleware_group:string|null}>
+     * @var array<int, array{prefix:string, name:string, namespace:string, domain:string, where:array<string,string>, middleware:array<string>, middleware_group:string|array<int, string>|null}>
      */
     private static array $groupStack = [];
 
@@ -308,7 +308,7 @@ class RouteCollection
      *   - prefix: 路径前缀（拼接）
      *   - name: 路由名前缀（拼接，如 'admin.'）
      *   - middleware: 中间件列表（累积）
-     *   - middleware_group: 中间件组名（累积）
+     *   - middleware_group: 中间件组名或列表（累积）
      *   - namespace: 控制器命名空间前缀（拼接）
      *   - domain: 子域名约束（覆盖，最后定义的生效）
      *   - where: 参数正则约束（合并）
@@ -338,7 +338,7 @@ class RouteCollection
      * - domain: 子覆盖父（非空则覆盖）
      * - where: 数组合并（子覆盖同名 key）
      * - middleware: 数组合并（累积）
-     * - middleware_group: 子覆盖父
+     * - middleware_group: 父 + 子（累积）
      */
     private static function mergeGroupAttributes(array $new): array
     {
@@ -352,7 +352,9 @@ class RouteCollection
             'middleware' => isset($new['middleware'])
                 ? (is_array($new['middleware']) ? $new['middleware'] : [$new['middleware']])
                 : [],
-            'middleware_group' => $new['middleware_group'] ?? null,
+            'middleware_group' => isset($new['middleware_group'])
+                ? (is_array($new['middleware_group']) ? $new['middleware_group'] : [$new['middleware_group']])
+                : null,
         ];
 
         // 与父栈合并
@@ -392,10 +394,13 @@ class RouteCollection
             $parentMw = $parent['middleware'] ?? [];
             $merged['middleware'] = array_values(array_unique(array_merge($parentMw, $merged['middleware'])));
 
-            // middleware_group: 子覆盖父
-            if ($merged['middleware_group'] === null) {
-                $merged['middleware_group'] = $parent['middleware_group'] ?? null;
-            }
+            // middleware_group: 累积
+            $parentGroups = $parent['middleware_group'] ?? null;
+            $parentGroups = $parentGroups === null ? [] : (is_array($parentGroups) ? $parentGroups : [$parentGroups]);
+            $childGroups = $merged['middleware_group'] ?? null;
+            $childGroups = $childGroups === null ? [] : (is_array($childGroups) ? $childGroups : [$childGroups]);
+            $groups = array_values(array_unique(array_merge($parentGroups, $childGroups)));
+            $merged['middleware_group'] = $groups === [] ? null : $groups;
         }
 
         return $merged;
