@@ -65,6 +65,8 @@ class RouteCollection
      */
     private static function resolve(string $method, string $path): Route
     {
+        self::$currentRoute = null;
+
         // 静态路由直接索引查找 O(1)
         $key = $method . ':' . $path;
         if (isset(self::$staticRoutes[$key])) {

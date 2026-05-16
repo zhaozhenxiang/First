@@ -457,6 +457,22 @@ class RouteTest extends TestCase
         $this->assertNull(Route::current());
     }
 
+    public function testFailedMatchClearsCurrentRoute(): void
+    {
+        Route::get('/current', static fn (): string => 'ok')->name('current.show');
+
+        $this->withServerRequest('GET', '/current', static fn () => Route::getRoute());
+        $this->assertNotNull(Route::current());
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function (): void {
+            $this->withServerRequest('GET', '/missing', static fn () => Route::getRoute());
+        });
+
+        $this->assertNull(Route::current());
+        $this->assertNull(Route::currentRouteName());
+        $this->assertNull(Route::currentRouteAction());
+    }
+
     public function testRouteTableReturnsNormalizedMetadata(): void
     {
         Route::group(['middleware' => ['auth'], 'middleware_group' => 'api'], function (): void {
@@ -473,6 +489,18 @@ class RouteTest extends TestCase
             'action' => 'UserController@show',
             'middleware' => 'auth, api',
         ], $rows[0]);
+    }
+
+    public function testRouteTableDescribesClosureAndArrayActions(): void
+    {
+        Route::get('/closure', static fn (): string => 'ok');
+        Route::post('/array', ['UserController', 'store']);
+
+        $rows = Route::routeTable();
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('Closure', $rows[0]['action']);
+        $this->assertSame('UserController@store', $rows[1]['action']);
     }
 
     private function withServerRequest(string $method, string $uri, callable $callback): mixed
