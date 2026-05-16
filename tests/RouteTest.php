@@ -136,6 +136,39 @@ class RouteTest extends TestCase
         $this->assertEquals('/user/5', $route->url(['id' => 5]));
     }
 
+    public function testRouteUrlAppendsUnusedParametersAsQueryString(): void
+    {
+        $route = Route::get('/users/{user}', static fn (): string => 'ok');
+
+        $this->assertEquals('/users/5?tab=posts&sort=recent', $route->url([
+            'user' => 5,
+            'tab' => 'posts',
+            'sort' => 'recent',
+        ]));
+    }
+
+    public function testRouteUrlOmitsNullUnusedQueryParameters(): void
+    {
+        $route = Route::get('/users/{user}', static fn (): string => 'ok');
+
+        $this->assertEquals('/users/5?tab=posts', $route->url([
+            'user' => 5,
+            'tab' => 'posts',
+            'empty' => null,
+        ]));
+    }
+
+    public function testNamedRouteUrlAppendsUnusedParametersAsQueryString(): void
+    {
+        Route::get('/teams/{team}/users/{user}', static fn (): string => 'ok')->name('teams.users.show');
+
+        $this->assertEquals('/teams/acme/users/7?tab=posts', Route::url('teams.users.show', [
+            'team' => 'acme',
+            'user' => 7,
+            'tab' => 'posts',
+        ]));
+    }
+
     public function testRouteUrlPreservesValueThatLooksLikeOptionalPlaceholder(): void
     {
         $route = Route::get('/prefix/{slug}/{optional?}', function () {});

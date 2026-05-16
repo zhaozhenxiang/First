@@ -477,6 +477,7 @@ class Route
         $segments = explode('/', trim($this->getPath(), '/'));
         $missing = [];
         $resolvedSegments = [];
+        $usedParams = [];
 
         foreach ($segments as $segment) {
             if ($segment === '') {
@@ -488,12 +489,13 @@ class Route
                 continue;
             }
 
-            $resolvedSegment = preg_replace_callback('/\{([^}]+)\}/', function (array $matches) use ($params, &$missing): string {
+            $resolvedSegment = preg_replace_callback('/\{([^}]+)\}/', function (array $matches) use ($params, &$missing, &$usedParams): string {
                 $raw = $matches[1];
                 $optional = str_ends_with($raw, '?');
                 $name = rtrim($raw, '?');
 
                 if (array_key_exists($name, $params) && $params[$name] !== null) {
+                    $usedParams[] = $name;
                     return (string) $params[$name];
                 }
 
@@ -514,10 +516,23 @@ class Route
             throw \Bin\Exception\UrlGenerationException::forMissingParameters($this->getPath(), $missing);
         }
 
-        if ($resolvedSegments === []) {
-            return '/';
+        $path = $resolvedSegments === [] ? '/' : '/' . implode('/', $resolvedSegments);
+        $queryParams = [];
+
+        foreach ($params as $key => $value) {
+            if ($value === null || in_array((string) $key, $usedParams, true)) {
+                continue;
+            }
+
+            $queryParams[$key] = $value;
         }
 
-        return '/' . implode('/', $resolvedSegments);
+        if ($queryParams === []) {
+            return $path;
+        }
+
+        $query = http_build_query($queryParams);
+
+        return $query === '' ? $path : $path . '?' . $query;
     }
 }
