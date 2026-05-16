@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\App\App;
 use Bin\Console\ClosureCommand;
+use Bin\Console\Commands\RouteListCommand;
 use Bin\Console\Input;
 use Bin\Console\Kernel;
 use Bin\Console\Output;
 use Bin\Foundation\ConsoleKernel;
+use Bin\Route\RouteCollection as Route;
 use Bin\Testing\TestCase;
 
 /**
@@ -20,11 +23,13 @@ class ConsoleArtisanParityTest extends TestCase
     {
         parent::setUp();
         Kernel::clear();
+        Route::clear();
     }
 
     protected function tearDown(): void
     {
         Kernel::clear();
+        Route::clear();
         parent::tearDown();
     }
 
@@ -456,6 +461,92 @@ class ConsoleArtisanParityTest extends TestCase
         $opts = $cmd->getOptions();
         $this->assertEquals('Overwrite existing', $opts['force']['description']);
         $this->assertEquals('standard', $opts['type']['default']);
+    }
+
+    public function testRouteListCommandIsDiscovered(): void
+    {
+        Kernel::discover();
+
+        $this->assertTrue(Kernel::hasCommand('route:list'));
+        $this->assertInstanceOf(RouteListCommand::class, Kernel::getCommand('route:list'));
+    }
+
+    public function testRouteListCommandOutputsRouteMetadata(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-list-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/route-list/{id}', 'RouteListController@show')
+    ->middleware('auth')
+    ->middlewareGroup('api')
+    ->name('route.list.show');
+PHP);
+
+        App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/web.php')
+            ->create();
+
+        try {
+            $command = new RouteListCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $exitCode = $command->run(new Input(['script', 'route:list']), new Output());
+            $output = ob_get_clean();
+        } finally {
+            App::setInstance($previousApp);
+            Route::clear();
+        }
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('Method', $output);
+        $this->assertStringContainsString('URI', $output);
+        $this->assertStringContainsString('Name', $output);
+        $this->assertStringContainsString('Action', $output);
+        $this->assertStringContainsString('Middleware', $output);
+        $this->assertStringContainsString('GET', $output);
+        $this->assertStringContainsString('/route-list/{id}', $output);
+        $this->assertStringContainsString('route.list.show', $output);
+        $this->assertStringContainsString('RouteListController@show', $output);
+        $this->assertStringContainsString('auth, api', $output);
+    }
+
+    public function testRouteListCommandReturnsSuccessForEmptyRouteTable(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-list-empty-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/routes', 0777, true);
+
+        App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/missing.php')
+            ->create();
+
+        try {
+            $command = new RouteListCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $exitCode = $command->run(new Input(['script', 'route:list']), new Output());
+            $output = ob_get_clean();
+        } finally {
+            App::setInstance($previousApp);
+            Route::clear();
+        }
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('Method', $output);
+        $this->assertStringContainsString('URI', $output);
+        $this->assertStringContainsString('Middleware', $output);
     }
 }
 
