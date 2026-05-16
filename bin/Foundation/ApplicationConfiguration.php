@@ -15,6 +15,11 @@ class ApplicationConfiguration
     /** @var array<string> */
     private array $routeFiles = [];
 
+    /**
+     * @var array<int, array{path: string, type: string}>
+     */
+    private array $routeFileEntries = [];
+
     private bool $hasRouteConfiguration = false;
 
     /** @var array{global: array<int, string>, groups: array<string, array<int, string>>, aliases: array<string, string>, priority: array<string, int>} */
@@ -86,13 +91,24 @@ class ApplicationConfiguration
         return $this->providerFiles;
     }
 
-    public function addRouteFile(string $path): void
+    public function addRouteFile(string $path, string $type = 'extra'): void
     {
         $this->hasRouteConfiguration = true;
 
         if (!in_array($path, $this->routeFiles, true)) {
             $this->routeFiles[] = $path;
         }
+
+        foreach ($this->routeFileEntries as $entry) {
+            if ($entry['path'] === $path) {
+                return;
+            }
+        }
+
+        $this->routeFileEntries[] = [
+            'path' => $path,
+            'type' => $type,
+        ];
     }
 
     /**
@@ -101,6 +117,14 @@ class ApplicationConfiguration
     public function routeFiles(): array
     {
         return $this->routeFiles;
+    }
+
+    /**
+     * @return array<int, array{path: string, type: string}>
+     */
+    public function routeFileEntries(): array
+    {
+        return $this->routeFileEntries;
     }
 
     public function hasRouteConfiguration(): bool

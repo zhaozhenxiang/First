@@ -111,6 +111,10 @@ class ApplicationLifecycleTest extends TestCase
         $this->assertEquals($basePath, $configuration->basePath());
         $this->assertContains(\Bin\Providers\RequestServiceProvider::class, $configuration->providers());
         $this->assertEquals([$webRoute, $apiRoute], $configuration->routeFiles());
+        $this->assertSame([
+            ['path' => $webRoute, 'type' => 'web'],
+            ['path' => $apiRoute, 'type' => 'api'],
+        ], $configuration->routeFileEntries());
         $this->assertTrue($configuration->hasRouteConfiguration());
 
         $middleware = $configuration->middleware();
@@ -149,6 +153,14 @@ class ApplicationLifecycleTest extends TestCase
             }
         }
 
+        $expectedRouteFileEntries = [];
+
+        foreach ([BASE_PATH . '/routes/web.php' => 'web', BASE_PATH . '/routes/api.php' => 'api'] as $routeFile => $type) {
+            if (is_file($routeFile)) {
+                $expectedRouteFileEntries[] = ['path' => $routeFile, 'type' => $type];
+            }
+        }
+
         $this->assertInstanceOf(App::class, $app);
         $this->assertInstanceOf(ApplicationConfiguration::class, $configuration);
         $this->assertEquals(BASE_PATH, $app->basePath());
@@ -161,6 +173,7 @@ class ApplicationLifecycleTest extends TestCase
         ], $configuration->middleware());
         $this->assertIsType('array', $configuration->routeFiles());
         $this->assertSame($expectedRouteFiles, $configuration->routeFiles());
+        $this->assertSame($expectedRouteFileEntries, $configuration->routeFileEntries());
         $this->assertSame($expectedRouteFiles !== [], $configuration->hasRouteConfiguration());
     }
 
@@ -544,7 +557,51 @@ PHP);
 
         $paths = array_map(static fn ($route): string => $route->getPath(), Route::getRoutes());
 
-        $this->assertEquals(['/from-web', '/from-api', '/from-extra'], $paths);
+        $this->assertEquals(['/from-web', '/api/from-api', '/from-extra'], $paths);
+    }
+
+    public function testLoadRoutesWrapsApiRouteFilesWithPrefixAndMiddlewareGroup(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/dashboard', static fn (): string => 'web')->name('dashboard');
+PHP);
+
+        file_put_contents($basePath . '/routes/api.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/users', static fn (): string => 'api')->name('users.index');
+PHP);
+
+        $app = App::configure($basePath)
+            ->withRouting(
+                web: $basePath . '/routes/web.php',
+                api: $basePath . '/routes/api.php',
+            )
+            ->create();
+
+        (new LoadRoutes())->bootstrap($app);
+
+        $routes = Route::getRoutes();
+
+        $this->assertCount(2, $routes);
+        $this->assertSame('/dashboard', $routes[0]->getPath());
+        $this->assertSame([], $routes[0]->getMiddlewareGroups());
+        $this->assertSame('/api/users', $routes[1]->getPath());
+        $this->assertSame(['api'], $routes[1]->getMiddlewareGroups());
+        $this->assertNotNull(Route::namedRoute('users.index'));
     }
 
     public function testLoadRoutesFallsBackToAppRoutesWhenNoNewRouteFilesAreConfigured(): void

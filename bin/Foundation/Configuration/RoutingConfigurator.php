@@ -9,10 +9,19 @@ class RoutingConfigurator
     /** @var array<int, string> */
     private array $files = [];
 
-    public function add(string $path): static
+    /**
+     * @var array<int, array{path: string, type: string}>
+     */
+    private array $entries = [];
+
+    public function add(string $path, string $type = 'extra'): static
     {
         if (!in_array($path, $this->files, true)) {
             $this->files[] = $path;
+            $this->entries[] = [
+                'path' => $path,
+                'type' => $type,
+            ];
         }
 
         return $this;
@@ -24,5 +33,13 @@ class RoutingConfigurator
     public function files(): array
     {
         return $this->files;
+    }
+
+    /**
+     * @return array<int, array{path: string, type: string}>
+     */
+    public function entries(): array
+    {
+        return $this->entries;
     }
 }

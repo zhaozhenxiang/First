@@ -50,28 +50,28 @@ class ApplicationBuilder
             $defaultApi = $this->joinBasePath('routes/api.php');
 
             if (is_file($defaultWeb)) {
-                $routing->add($defaultWeb);
+                $routing->add($defaultWeb, 'web');
             }
 
             if (is_file($defaultApi)) {
-                $routing->add($defaultApi);
+                $routing->add($defaultApi, 'api');
             }
         } else {
             if ($web !== null) {
-                $routing->add($web);
+                $routing->add($web, 'web');
             }
 
             if ($api !== null) {
-                $routing->add($api);
+                $routing->add($api, 'api');
             }
 
             foreach ($then as $file) {
-                $routing->add($file);
+                $routing->add($file, 'extra');
             }
         }
 
-        foreach ($routing->files() as $file) {
-            $this->configuration->addRouteFile($file);
+        foreach ($routing->entries() as $entry) {
+            $this->configuration->addRouteFile($entry['path'], $entry['type']);
         }
 
         return $this;
