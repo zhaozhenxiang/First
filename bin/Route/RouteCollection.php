@@ -23,6 +23,8 @@ class RouteCollection
     private static array $namedRoutes = [];
     /** @var Route|null 兜底路由 */
     private static ?Route $fallbackRoute = null;
+    /** @var Route|null 当前匹配路由 */
+    private static ?Route $currentRoute = null;
     /** @var ResourceRegistrar|null */
     private static ?ResourceRegistrar $registrar = null;
 
@@ -66,22 +68,29 @@ class RouteCollection
         // 静态路由直接索引查找 O(1)
         $key = $method . ':' . $path;
         if (isset(self::$staticRoutes[$key])) {
-            return self::$staticRoutes[$key];
+            return self::setCurrentRoute(self::$staticRoutes[$key]);
         }
 
         // 动态路由遍历匹配
         foreach (self::$dynamicRoutes as $route) {
             if ($route->getMethod() === $method && $route->withSuccess($path)) {
-                return $route;
+                return self::setCurrentRoute($route);
             }
         }
 
         // 兜底路由
         if (self::$fallbackRoute !== null) {
-            return self::$fallbackRoute;
+            return self::setCurrentRoute(self::$fallbackRoute);
         }
 
         throw new NotFoundHttpException('Route not found');
+    }
+
+    private static function setCurrentRoute(Route $route): Route
+    {
+        self::$currentRoute = $route;
+
+        return $route;
     }
 
     /**
@@ -418,6 +427,67 @@ class RouteCollection
         return self::$namedRoutes[$name]->url($params);
     }
 
+    public static function current(): ?Route
+    {
+        return self::$currentRoute;
+    }
+
+    public static function currentRouteName(): ?string
+    {
+        return self::$currentRoute?->getName();
+    }
+
+    public static function currentRouteAction(): mixed
+    {
+        return self::$currentRoute?->getAction();
+    }
+
+    /**
+     * @return array<int, array{method: string, uri: string, name: string, action: string, middleware: string}>
+     */
+    public static function routeTable(): array
+    {
+        return array_map(static function (Route $route): array {
+            $middleware = array_values(array_unique(array_merge(
+                $route->getMiddleware(),
+                $route->getMiddlewareGroups()
+            )));
+
+            return [
+                'method' => $route->getMethod(),
+                'uri' => $route->getPath(),
+                'name' => $route->getName() ?? '',
+                'action' => self::describeAction($route->getAction()),
+                'middleware' => implode(', ', $middleware),
+            ];
+        }, self::$route);
+    }
+
+    private static function describeAction(mixed $action): string
+    {
+        if (is_string($action)) {
+            return $action;
+        }
+
+        if ($action instanceof \Closure) {
+            return 'Closure';
+        }
+
+        if (is_array($action)) {
+            $target = $action[0] ?? '';
+            $method = $action[1] ?? '';
+            $class = is_object($target) ? $target::class : (string) $target;
+
+            return $method !== '' ? $class . '@' . $method : $class;
+        }
+
+        if (is_object($action)) {
+            return $action::class;
+        }
+
+        return get_debug_type($action);
+    }
+
     /**
      * 清除所有路由（用于测试）
      */
@@ -428,6 +498,7 @@ class RouteCollection
         self::$dynamicRoutes = [];
         self::$namedRoutes = [];
         self::$fallbackRoute = null;
+        self::$currentRoute = null;
         self::$groupStack = [];
     }
 

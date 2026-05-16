@@ -404,6 +404,102 @@ class RouteTest extends TestCase
         }
     }
 
+    public function testCurrentRouteIsNullBeforeMatch(): void
+    {
+        $this->assertNull(Route::current());
+        $this->assertNull(Route::currentRouteName());
+        $this->assertNull(Route::currentRouteAction());
+    }
+
+    public function testCurrentRouteIsSetForStaticMatch(): void
+    {
+        $action = static fn (): string => 'ok';
+        Route::get('/current', $action)->name('current.show');
+
+        $matched = $this->withServerRequest('GET', '/current', static fn () => Route::getRoute());
+
+        $this->assertSame($matched, Route::current());
+        $this->assertSame('current.show', Route::currentRouteName());
+        $this->assertSame($action, Route::currentRouteAction());
+    }
+
+    public function testCurrentRouteIsSetForDynamicMatch(): void
+    {
+        Route::get('/current/{id}', static fn (string $id): string => $id)->name('current.dynamic');
+
+        $matched = $this->withServerRequest('GET', '/current/42', static fn () => Route::getRoute());
+
+        $this->assertSame($matched, Route::current());
+        $this->assertSame('/current/{id}', Route::current()->getPath());
+        $this->assertSame('current.dynamic', Route::currentRouteName());
+    }
+
+    public function testCurrentRouteIsSetForFallbackMatch(): void
+    {
+        $fallback = Route::fallback(static fn (): string => 'fallback')->name('fallback');
+
+        $matched = $this->withServerRequest('GET', '/missing', static fn () => Route::getRoute());
+
+        $this->assertSame($fallback, $matched);
+        $this->assertSame($fallback, Route::current());
+        $this->assertSame('fallback', Route::currentRouteName());
+    }
+
+    public function testClearResetsCurrentRoute(): void
+    {
+        Route::get('/current', static fn (): string => 'ok');
+
+        $this->withServerRequest('GET', '/current', static fn () => Route::getRoute());
+        $this->assertNotNull(Route::current());
+
+        Route::clear();
+
+        $this->assertNull(Route::current());
+    }
+
+    public function testRouteTableReturnsNormalizedMetadata(): void
+    {
+        Route::group(['middleware' => ['auth'], 'middleware_group' => 'api'], function (): void {
+            Route::get('/users/{id}', 'UserController@show')->name('users.show');
+        });
+
+        $rows = Route::routeTable();
+
+        $this->assertCount(1, $rows);
+        $this->assertEquals([
+            'method' => 'GET',
+            'uri' => '/users/{id}',
+            'name' => 'users.show',
+            'action' => 'UserController@show',
+            'middleware' => 'auth, api',
+        ], $rows[0]);
+    }
+
+    private function withServerRequest(string $method, string $uri, callable $callback): mixed
+    {
+        $oldMethod = $_SERVER['REQUEST_METHOD'] ?? null;
+        $oldUri = $_SERVER['REQUEST_URI'] ?? null;
+
+        $_SERVER['REQUEST_METHOD'] = $method;
+        $_SERVER['REQUEST_URI'] = $uri;
+
+        try {
+            return $callback();
+        } finally {
+            if ($oldMethod === null) {
+                unset($_SERVER['REQUEST_METHOD']);
+            } else {
+                $_SERVER['REQUEST_METHOD'] = $oldMethod;
+            }
+
+            if ($oldUri === null) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $oldUri;
+            }
+        }
+    }
+
     private function getMatchedParams(RouteObj $route): ?array
     {
         $reflection = new \ReflectionClass($route);

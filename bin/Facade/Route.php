@@ -26,6 +26,10 @@ use Bin\Route\RouteCollection;
  * @method static void middle(array $param, \Closure $callback)
  * @method static void model(string $key, string $class, ?callable $callback = null)
  * @method static void bind(string $key, callable $resolver)
+ * @method static \Bin\Route\Route|null current()
+ * @method static string|null currentRouteName()
+ * @method static mixed currentRouteAction()
+ * @method static array routeTable()
  */
 class Route extends Facade
 {
