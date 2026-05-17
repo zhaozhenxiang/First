@@ -773,6 +773,92 @@ class RouteTest extends TestCase
         }
     }
 
+    public function testRouteCacheRejectsRouteWithNonStringMethod(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [[
+                'method' => 123,
+                'uri' => '/bad-method',
+                'action' => 'BadController@index',
+            ]],
+            'fallback' => null,
+        ], 'first-route-cache-bad-method');
+    }
+
+    public function testRouteCacheRejectsRouteWithNonStringUri(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [[
+                'method' => 'GET',
+                'uri' => false,
+                'action' => 'BadController@index',
+            ]],
+            'fallback' => null,
+        ], 'first-route-cache-bad-uri');
+    }
+
+    public function testRouteCacheRejectsRouteWithNullAction(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [[
+                'method' => 'GET',
+                'uri' => '/bad-action',
+                'action' => null,
+            ]],
+            'fallback' => null,
+        ], 'first-route-cache-null-action');
+    }
+
+    public function testRouteCacheRejectsRouteWithMalformedActionArray(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [[
+                'method' => 'GET',
+                'uri' => '/bad-array-action',
+                'action' => ['BadController'],
+            ]],
+            'fallback' => null,
+        ], 'first-route-cache-bad-array-action');
+    }
+
+    public function testRouteCacheRejectsFallbackWithInvalidAction(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [],
+            'fallback' => [
+                'method' => 'GET',
+                'uri' => '/',
+                'action' => null,
+            ],
+        ], 'first-route-cache-bad-fallback-action');
+    }
+
+    public function testRouteCacheRejectsRouteWithMalformedStringMetadata(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [[
+                'method' => 'GET',
+                'uri' => '/bad-name',
+                'action' => 'BadController@index',
+                'name' => [],
+            ]],
+            'fallback' => null,
+        ], 'first-route-cache-bad-string-metadata');
+    }
+
+    public function testRouteCacheRejectsRouteWithMalformedArrayMetadata(): void
+    {
+        $this->assertRouteCacheRejectsPayload([
+            'routes' => [[
+                'method' => 'GET',
+                'uri' => '/bad-where',
+                'action' => 'BadController@index',
+                'where' => 'not-an-array',
+            ]],
+            'fallback' => null,
+        ], 'first-route-cache-bad-array-metadata');
+    }
+
     private function withServerRequest(string $method, string $uri, callable $callback): mixed
     {
         $oldMethod = $_SERVER['REQUEST_METHOD'] ?? null;
@@ -805,6 +891,26 @@ class RouteTest extends TestCase
         $property->setAccessible(true);
 
         return $property->getValue($route);
+    }
+
+    private function assertRouteCacheRejectsPayload(array $payload, string $directoryPrefix): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/' . $directoryPrefix . '-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+        file_put_contents($basePath . '/storage/routes.php', "<?php\n\nreturn " . var_export($payload, true) . ";\n");
+
+        try {
+            $this->assertThrows(\RuntimeException::class, function () use ($app): void {
+                \Bin\Route\RouteCache::load($app);
+            });
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
     }
 
     private function deleteDirectory(string $path): void
