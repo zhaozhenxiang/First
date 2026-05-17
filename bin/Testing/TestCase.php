@@ -602,9 +602,24 @@ abstract class TestCase
             }
         } catch (Throwable $e) {
             return $e;
+        } finally {
+            $this->resetNativeSessionState();
         }
 
         return null;
+    }
+
+    private function resetNativeSessionState(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
+        }
+
+        unset($_SESSION);
+
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_id('');
+        }
     }
 
     private function captureExceptionHandler(): mixed

@@ -79,6 +79,56 @@ class TestCommandScriptTest extends TestCase
         $this->assertStringNotContainsString('Cannot modify header information', $rendered);
     }
 
+    public function testRootTestScriptIsolatesNativeSessionStateBetweenTests(): void
+    {
+        $script = basePath('test');
+        $tempDir = sys_get_temp_dir() . '/test_command_session_isolation_' . uniqid();
+
+        mkdir($tempDir, 0777, true);
+        file_put_contents($tempDir . '/SessionIsolationTest.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace Tests;
+
+use Bin\Testing\TestCase;
+
+class SessionIsolationTest extends TestCase
+{
+    public function testStartsNativeSession(): void
+    {
+        session_start();
+        $_SESSION['leaked'] = 'yes';
+
+        $this->assertSame(PHP_SESSION_ACTIVE, session_status());
+    }
+
+    public function testNextTestGetsCleanSessionState(): void
+    {
+        $this->assertNotSame(PHP_SESSION_ACTIVE, session_status());
+        $this->assertFalse(isset($_SESSION['leaked']));
+    }
+}
+PHP);
+
+        try {
+            $command = 'php ' . escapeshellarg($script) . ' ' . escapeshellarg($tempDir) . ' 2>&1';
+
+            $output = [];
+            $exitCode = 0;
+            exec($command, $output, $exitCode);
+
+            $rendered = implode("\n", $output);
+
+            $this->assertEquals(0, $exitCode);
+            $this->assertStringContainsString('Tests:  2, ✓ 2 passed', $rendered);
+        } finally {
+            unlink($tempDir . '/SessionIsolationTest.php');
+            rmdir($tempDir);
+        }
+    }
+
     public function testRootTestScriptReturnsNonZeroForUnhandledErrorInSuiteMode(): void
     {
         $script = basePath('test');

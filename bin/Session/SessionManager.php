@@ -103,9 +103,11 @@ class SessionManager implements SessionInterface
      */
     public function start(): bool
     {
-        if ($this->started) {
+        if ($this->hasActiveSessionContext()) {
             return true;
         }
+
+        $this->started = false;
 
         if (session_status() === PHP_SESSION_ACTIVE) {
             $this->started = true;
@@ -126,6 +128,9 @@ class SessionManager implements SessionInterface
         // 在某些环境中（如 CLI），session_start() 返回 true 但状态可能不是 ACTIVE
         // 只要有 $_SESSION 数组可用，就认为已启动
         if ($result || isset($_SESSION)) {
+            if (!isset($_SESSION)) {
+                $_SESSION = [];
+            }
             $this->started = true;
             $this->ageFlashData();
             return true;
@@ -139,9 +144,14 @@ class SessionManager implements SessionInterface
      */
     private function ensureStarted(): void
     {
-        if (!$this->started) {
+        if (!$this->hasActiveSessionContext()) {
             $this->start();
         }
+    }
+
+    private function hasActiveSessionContext(): bool
+    {
+        return $this->started && (session_status() === PHP_SESSION_ACTIVE || isset($_SESSION));
     }
 
     /**
@@ -430,7 +440,7 @@ class SessionManager implements SessionInterface
      */
     public function isStarted(): bool
     {
-        return $this->started || session_status() === PHP_SESSION_ACTIVE || isset($_SESSION);
+        return $this->hasActiveSessionContext();
     }
 
     /**
