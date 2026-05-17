@@ -625,6 +625,67 @@ class RouteTest extends TestCase
         });
     }
 
+    public function testRouteCacheWritesLoadsAndClearsPayload(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-helper-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+
+        try {
+            $payload = [
+                'routes' => [
+                    [
+                        'method' => 'GET',
+                        'uri' => '/cached',
+                        'action' => 'CachedController@index',
+                        'name' => 'cached.index',
+                        'domain' => null,
+                        'where' => [],
+                        'middleware' => [],
+                        'middleware_groups' => [],
+                        'excluded_middleware' => [],
+                    ],
+                ],
+                'fallback' => null,
+            ];
+
+            \Bin\Route\RouteCache::write($payload, $app);
+
+            $this->assertTrue(\Bin\Route\RouteCache::exists($app));
+            $this->assertSame($payload, \Bin\Route\RouteCache::load($app));
+            $this->assertTrue(\Bin\Route\RouteCache::clear($app));
+            $this->assertFalse(\Bin\Route\RouteCache::exists($app));
+            $this->assertNull(\Bin\Route\RouteCache::load($app));
+            $this->assertFalse(\Bin\Route\RouteCache::clear($app));
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
+    public function testRouteCacheRejectsMalformedCacheFile(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-malformed-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+        file_put_contents($basePath . '/storage/routes.php', "<?php\n\nreturn 'not-an-array';\n");
+
+        try {
+            $this->assertThrows(\RuntimeException::class, function () use ($app): void {
+                \Bin\Route\RouteCache::load($app);
+            });
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
     private function withServerRequest(string $method, string $uri, callable $callback): mixed
     {
         $oldMethod = $_SERVER['REQUEST_METHOD'] ?? null;
@@ -657,5 +718,35 @@ class RouteTest extends TestCase
         $property->setAccessible(true);
 
         return $property->getValue($route);
+    }
+
+    private function deleteDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+
+        $items = scandir($path);
+
+        if ($items === false) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $target = $path . DIRECTORY_SEPARATOR . $item;
+
+            if (is_dir($target)) {
+                $this->deleteDirectory($target);
+                continue;
+            }
+
+            unlink($target);
+        }
+
+        rmdir($path);
     }
 }
