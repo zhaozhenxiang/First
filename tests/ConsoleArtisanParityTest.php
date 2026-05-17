@@ -653,6 +653,56 @@ PHP);
         $this->assertStringContainsString('auth, api', $output);
     }
 
+    public function testRouteListCommandFiltersByPathNameAndMethod(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-list-filter-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/api/users', 'UserController@index')->name('api.users.index');
+Route::post('/api/users', 'UserController@store')->name('api.users.store');
+Route::get('/admin/reports', 'ReportController@index')->name('admin.reports.index');
+PHP);
+
+        App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/web.php')
+            ->create();
+
+        try {
+            $command = new RouteListCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $exitCode = $command->run(new Input([
+                'script',
+                'route:list',
+                '--path=api',
+                '--name=users',
+                '--method=POST',
+            ]), new Output());
+            $output = ob_get_clean();
+        } finally {
+            App::setInstance($previousApp);
+            Route::clear();
+            $this->deleteDirectory($basePath);
+        }
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('/api/users', $output);
+        $this->assertStringContainsString('api.users.store', $output);
+        $this->assertStringContainsString('POST', $output);
+        $this->assertStringNotContainsString('api.users.index', $output);
+        $this->assertStringNotContainsString('/admin/reports', $output);
+    }
+
     public function testRouteListCommandReturnsSuccessForEmptyRouteTable(): void
     {
         $previousApp = App::getInstance();

@@ -11,7 +11,7 @@ use Bin\Route\RouteCollection;
 
 class RouteListCommand extends Command
 {
-    protected string $signature = 'route:list';
+    protected string $signature = 'route:list {--path=} {--name=} {--method=}';
 
     protected string $description = 'List registered routes';
 
@@ -23,16 +23,48 @@ class RouteListCommand extends Command
             $app->bootstrapWith([LoadRoutes::class]);
         }
 
+        $routes = array_filter(
+            RouteCollection::routeTable(),
+            fn (array $route): bool => $this->matchesFilters($route)
+        );
+
         $rows = array_map(static fn (array $route): array => [
             $route['method'],
             $route['uri'],
             $route['name'],
             $route['action'],
             $route['middleware'],
-        ], RouteCollection::routeTable());
+        ], $routes);
 
         $this->table(['Method', 'URI', 'Name', 'Action', 'Middleware'], $rows);
 
         return 0;
+    }
+
+    /**
+     * @param array{method: string, uri: string, name: string, action: string, middleware: string} $route
+     */
+    private function matchesFilters(array $route): bool
+    {
+        $path = $this->option('path');
+        if (is_string($path) && $path !== '') {
+            $path = '/' . ltrim($path, '/');
+
+            if (!str_starts_with($route['uri'], $path)) {
+                return false;
+            }
+        }
+
+        $name = $this->option('name');
+        if (is_string($name) && $name !== '' && !str_contains($route['name'], $name)) {
+            return false;
+        }
+
+        $method = $this->option('method');
+        if (is_string($method) && $method !== '' && strtoupper($route['method']) !== strtoupper($method)) {
+            return false;
+        }
+
+        return true;
     }
 }
