@@ -686,6 +686,93 @@ class RouteTest extends TestCase
         }
     }
 
+    public function testRouteCacheWriteFailsWhenStoragePathCannotBeCreated(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-storage-file-' . bin2hex(random_bytes(6));
+        mkdir($basePath, 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+        file_put_contents($basePath . '/storage', 'not-a-directory');
+
+        try {
+            $this->assertThrows(\RuntimeException::class, function () use ($app): void {
+                \Bin\Route\RouteCache::write([
+                    'routes' => [],
+                    'fallback' => null,
+                ], $app);
+            });
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
+    public function testRouteCacheWriteCleansTemporaryFileWhenRenameFails(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-rename-fail-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage/routes.php', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+
+        try {
+            $this->assertThrows(\RuntimeException::class, function () use ($app): void {
+                \Bin\Route\RouteCache::write([
+                    'routes' => [],
+                    'fallback' => null,
+                ], $app);
+            });
+
+            $this->assertFileDoesNotExist($basePath . '/storage/routes.php.tmp');
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
+    public function testRouteCacheRejectsMalformedRouteEntry(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-bad-route-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+        file_put_contents($basePath . '/storage/routes.php', "<?php\n\nreturn [\n    'routes' => [[\n        'method' => 'GET',\n        'uri' => '/bad',\n    ]],\n    'fallback' => null,\n];\n");
+
+        try {
+            $this->assertThrows(\RuntimeException::class, function () use ($app): void {
+                \Bin\Route\RouteCache::load($app);
+            });
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
+    public function testRouteCacheRejectsMalformedFallbackRoute(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-bad-fallback-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+        file_put_contents($basePath . '/storage/routes.php', "<?php\n\nreturn [\n    'routes' => [],\n    'fallback' => [\n        'method' => 'GET',\n        'uri' => '/',\n    ],\n];\n");
+
+        try {
+            $this->assertThrows(\RuntimeException::class, function () use ($app): void {
+                \Bin\Route\RouteCache::load($app);
+            });
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
     private function withServerRequest(string $method, string $uri, callable $callback): mixed
     {
         $oldMethod = $_SERVER['REQUEST_METHOD'] ?? null;

@@ -9,6 +9,8 @@ use RuntimeException;
 
 class RouteCache
 {
+    private const REQUIRED_ROUTE_KEYS = ['method', 'uri', 'action'];
+
     public static function path(?App $app = null): string
     {
         $app ??= App::getInstance();
@@ -42,9 +44,19 @@ class RouteCache
             throw new RuntimeException('Route cache file is missing a routes array: ' . $path);
         }
 
+        foreach ($payload['routes'] as $index => $route) {
+            self::validateRoute($route, 'route entry [' . $index . ']', $path);
+        }
+
+        $fallback = $payload['fallback'] ?? null;
+
+        if ($fallback !== null) {
+            self::validateRoute($fallback, 'fallback route', $path);
+        }
+
         return [
             'routes' => $payload['routes'],
-            'fallback' => $payload['fallback'] ?? null,
+            'fallback' => $fallback,
         ];
     }
 
@@ -56,13 +68,23 @@ class RouteCache
         $path = self::path($app);
         $directory = dirname($path);
 
-        if (!is_dir($directory)) {
-            mkdir($directory, 0755, true);
+        if (!is_dir($directory) && !@mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new RuntimeException('Unable to create route cache directory: ' . $directory);
         }
 
         $temporary = $path . '.tmp';
-        file_put_contents($temporary, self::compile($payload));
-        rename($temporary, $path);
+
+        if (@file_put_contents($temporary, self::compile($payload)) === false) {
+            self::removeTemporaryFile($temporary);
+
+            throw new RuntimeException('Unable to write route cache file: ' . $temporary);
+        }
+
+        if (!@rename($temporary, $path)) {
+            self::removeTemporaryFile($temporary);
+
+            throw new RuntimeException('Unable to move route cache file into place: ' . $path);
+        }
     }
 
     public static function clear(?App $app = null): bool
@@ -73,9 +95,35 @@ class RouteCache
             return false;
         }
 
-        unlink($path);
+        if (!@unlink($path)) {
+            if (is_file($path)) {
+                throw new RuntimeException('Unable to clear route cache file: ' . $path);
+            }
+
+            return false;
+        }
 
         return true;
+    }
+
+    private static function validateRoute(mixed $route, string $label, string $path): void
+    {
+        if (!is_array($route)) {
+            throw new RuntimeException('Route cache file has invalid ' . $label . ': ' . $path);
+        }
+
+        foreach (self::REQUIRED_ROUTE_KEYS as $key) {
+            if (!array_key_exists($key, $route)) {
+                throw new RuntimeException('Route cache file has invalid ' . $label . ': missing ' . $key . ' in ' . $path);
+            }
+        }
+    }
+
+    private static function removeTemporaryFile(string $path): void
+    {
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     /**
