@@ -536,6 +536,75 @@ class RouteTest extends TestCase
         $this->assertSame('UserController@store', $rows[1]['action']);
     }
 
+    public function testRouteCollectionExportsAndRestoresCacheableRoutes(): void
+    {
+        Route::get('/cached/{id}', 'CachedController@show')
+            ->where('id', '[0-9]+')
+            ->middleware(['auth', 'throttle:60,1'])
+            ->middlewareGroup('api')
+            ->withoutMiddleware('csrf')
+            ->name('cached.show');
+
+        $payload = Route::exportForCache();
+
+        $this->assertSame(1, count($payload['routes']));
+        $this->assertSame('/cached/{id}', $payload['routes'][0]['uri']);
+        $this->assertSame('CachedController@show', $payload['routes'][0]['action']);
+        $this->assertSame('cached.show', $payload['routes'][0]['name']);
+        $this->assertSame(['id' => '[0-9]+'], $payload['routes'][0]['where']);
+        $this->assertSame(['auth', 'throttle:60,1'], $payload['routes'][0]['middleware']);
+        $this->assertSame(['api'], $payload['routes'][0]['middleware_groups']);
+        $this->assertSame(['csrf'], $payload['routes'][0]['excluded_middleware']);
+
+        Route::clear();
+        Route::loadFromCache($payload);
+
+        $routes = Route::getRoutes();
+
+        $this->assertCount(1, $routes);
+        $this->assertSame('/cached/{id}', $routes[0]->getPath());
+        $this->assertSame('CachedController@show', $routes[0]->getAction());
+        $this->assertSame('cached.show', $routes[0]->getName());
+        $this->assertSame(['id' => '[0-9]+'], $routes[0]->getWheres());
+        $this->assertSame(['auth', 'throttle:60,1'], $routes[0]->getMiddleware());
+        $this->assertSame(['api'], $routes[0]->getMiddlewareGroups());
+        $this->assertSame(['csrf'], $routes[0]->getExcludedMiddleware());
+        $this->assertNotNull(Route::namedRoute('cached.show'));
+    }
+
+    public function testRouteCollectionExportsAndRestoresCachedFallbackRoute(): void
+    {
+        Route::fallback('FallbackController@handle');
+
+        $payload = Route::exportForCache();
+
+        $this->assertSame([], $payload['routes']);
+        $this->assertSame('GET', $payload['fallback']['method']);
+        $this->assertSame('/', $payload['fallback']['uri']);
+        $this->assertSame('FallbackController@handle', $payload['fallback']['action']);
+
+        Route::clear();
+        Route::loadFromCache($payload);
+
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $_SERVER['REQUEST_URI'] = '/missing-from-cache';
+
+        $route = Route::getRoute();
+
+        $this->assertSame('/', $route->getPath());
+        $this->assertSame('FallbackController@handle', $route->getAction());
+        $this->assertSame($route, Route::current());
+    }
+
+    public function testRouteCollectionRejectsClosureRoutesWhenExportingCache(): void
+    {
+        Route::get('/closure-cache', static fn (): string => 'no-cache');
+
+        $this->assertThrows(\RuntimeException::class, function (): void {
+            Route::exportForCache();
+        });
+    }
+
     private function withServerRequest(string $method, string $uri, callable $callback): mixed
     {
         $oldMethod = $_SERVER['REQUEST_METHOD'] ?? null;

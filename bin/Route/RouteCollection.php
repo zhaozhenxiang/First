@@ -8,6 +8,7 @@ use Bin\App\App;
 use Bin\Exception\NotFoundHttpException;
 use Bin\Request\Request;
 use Exception;
+use RuntimeException;
 
 class RouteCollection
 {
@@ -488,6 +489,107 @@ class RouteCollection
         }
 
         return get_debug_type($action);
+    }
+
+    /**
+     * @return array{routes: array<int, array<string, mixed>>, fallback: array<string, mixed>|null}
+     */
+    public static function exportForCache(): array
+    {
+        return [
+            'routes' => array_map(static fn (Route $route): array => self::exportRoute($route), self::$route),
+            'fallback' => self::$fallbackRoute === null ? null : self::exportRoute(self::$fallbackRoute),
+        ];
+    }
+
+    /**
+     * @param array{routes?: array<int, array<string, mixed>>, fallback?: array<string, mixed>|null} $payload
+     */
+    public static function loadFromCache(array $payload): void
+    {
+        self::clear();
+
+        foreach ($payload['routes'] ?? [] as $route) {
+            self::restoreCachedRoute($route, false);
+        }
+
+        $fallback = $payload['fallback'] ?? null;
+
+        if (is_array($fallback)) {
+            self::restoreCachedRoute($fallback, true);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function exportRoute(Route $route): array
+    {
+        return [
+            'method' => $route->getMethod(),
+            'uri' => $route->getPath(),
+            'action' => self::exportCacheableAction($route->getAction(), $route->getPath()),
+            'name' => $route->getName(),
+            'domain' => $route->getDomain(),
+            'where' => $route->getWheres(),
+            'middleware' => $route->getMiddleware(),
+            'middleware_groups' => $route->getMiddlewareGroups(),
+            'excluded_middleware' => $route->getExcludedMiddleware(),
+        ];
+    }
+
+    private static function exportCacheableAction(mixed $action, string $uri): string|array
+    {
+        if (is_string($action)) {
+            return $action;
+        }
+
+        if (is_array($action)) {
+            $target = $action[0] ?? null;
+            $method = $action[1] ?? null;
+
+            if (is_string($target) && is_string($method)) {
+                return [$target, $method];
+            }
+        }
+
+        throw new RuntimeException("Unable to cache route [{$uri}] because it uses a non-cacheable action.");
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function restoreCachedRoute(array $data, bool $fallback): void
+    {
+        $route = $fallback
+            ? self::fallback($data['action'])
+            : self::action((string) $data['method'], (string) $data['uri'], $data['action']);
+
+        if (($data['domain'] ?? null) !== null) {
+            $route->setDomain((string) $data['domain']);
+        }
+
+        if (($data['where'] ?? []) !== []) {
+            $route->where($data['where']);
+        }
+
+        if (($data['middleware'] ?? []) !== []) {
+            $route->middleware($data['middleware']);
+        }
+
+        if (($data['middleware_groups'] ?? []) !== []) {
+            $route->middlewareGroup($data['middleware_groups']);
+        }
+
+        if (($data['excluded_middleware'] ?? []) !== []) {
+            $route->withoutMiddleware($data['excluded_middleware']);
+        }
+
+        $name = $data['name'] ?? null;
+
+        if (is_string($name) && $name !== '') {
+            $route->name($name);
+        }
     }
 
     /**
