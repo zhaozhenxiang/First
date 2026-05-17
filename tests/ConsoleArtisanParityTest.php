@@ -703,6 +703,54 @@ PHP);
         $this->assertStringNotContainsString('/admin/reports', $output);
     }
 
+    public function testRouteListCommandNormalizesPathFilterSlashes(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-list-path-normalize-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/api', 'ApiController@index')->name('api.root');
+Route::get('api/users', 'UserController@index')->name('api.users.slashless');
+Route::get('/admin', 'AdminController@index')->name('admin.root');
+PHP);
+
+        App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/web.php')
+            ->create();
+
+        try {
+            $command = new RouteListCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $exitCode = $command->run(new Input([
+                'script',
+                'route:list',
+                '--path=api/',
+            ]), new Output());
+            $output = ob_get_clean();
+        } finally {
+            App::setInstance($previousApp);
+            Route::clear();
+            $this->deleteDirectory($basePath);
+        }
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('/api', $output);
+        $this->assertStringContainsString('api.root', $output);
+        $this->assertStringContainsString('api/users', $output);
+        $this->assertStringContainsString('api.users.slashless', $output);
+        $this->assertStringNotContainsString('/admin', $output);
+    }
+
     public function testRouteListCommandReturnsSuccessForEmptyRouteTable(): void
     {
         $previousApp = App::getInstance();

@@ -48,9 +48,10 @@ class RouteListCommand extends Command
     {
         $path = $this->option('path');
         if (is_string($path) && $path !== '') {
-            $path = '/' . ltrim($path, '/');
+            $path = $this->normalizePath($path);
+            $routeUri = $this->normalizePath($route['uri']);
 
-            if (!str_starts_with($route['uri'], $path)) {
+            if ($path !== '/' && $routeUri !== $path && !str_starts_with($routeUri, $path . '/')) {
                 return false;
             }
         }
@@ -66,5 +67,12 @@ class RouteListCommand extends Command
         }
 
         return true;
+    }
+
+    private function normalizePath(string $path): string
+    {
+        $path = trim($path, '/');
+
+        return $path === '' ? '/' : '/' . $path;
     }
 }
