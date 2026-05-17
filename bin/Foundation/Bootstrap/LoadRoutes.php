@@ -6,12 +6,20 @@ namespace Bin\Foundation\Bootstrap;
 
 use Bin\App\App;
 use Bin\Foundation\Contracts\Bootstrapper as BootstrapperContract;
+use Bin\Route\RouteCache;
 use Bin\Route\RouteCollection;
 
 class LoadRoutes implements BootstrapperContract
 {
     public function bootstrap(App $app): void
     {
+        $cachedRoutes = RouteCache::load($app);
+
+        if ($cachedRoutes !== null) {
+            RouteCollection::loadFromCache($cachedRoutes);
+            return;
+        }
+
         $configuration = $app->getApplicationConfiguration();
         $routeFileEntries = $configuration->routeFileEntries();
 

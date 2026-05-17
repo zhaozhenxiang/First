@@ -653,6 +653,55 @@ PHP);
         $this->assertSame([], Route::getRoutes());
     }
 
+    public function testLoadRoutesPrefersCompiledRouteCache(): void
+    {
+        $basePath = $this->createTempBootstrapBasePath();
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/from-source', 'SourceController@index')->name('source.index');
+PHP);
+
+        $app = App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/web.php')
+            ->create();
+
+        \Bin\Route\RouteCache::write([
+            'routes' => [
+                [
+                    'method' => 'GET',
+                    'uri' => '/from-cache',
+                    'action' => 'CachedController@index',
+                    'name' => 'cached.index',
+                    'domain' => null,
+                    'where' => [],
+                    'middleware' => ['auth'],
+                    'middleware_groups' => ['api'],
+                    'excluded_middleware' => [],
+                ],
+            ],
+            'fallback' => null,
+        ], $app);
+
+        (new LoadRoutes())->bootstrap($app);
+
+        $routes = Route::getRoutes();
+
+        $this->assertCount(1, $routes);
+        $this->assertSame('/from-cache', $routes[0]->getPath());
+        $this->assertSame('CachedController@index', $routes[0]->getAction());
+        $this->assertSame('cached.index', $routes[0]->getName());
+        $this->assertSame(['auth'], $routes[0]->getMiddleware());
+        $this->assertSame(['api'], $routes[0]->getMiddlewareGroups());
+        $this->assertNotNull(Route::namedRoute('cached.index'));
+    }
+
     public function testHttpBootstrapLoadsSessionBeforeCsrfInWebGroup(): void
     {
         $app = App::getInstance();
