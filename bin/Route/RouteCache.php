@@ -11,7 +11,8 @@ class RouteCache
 {
     private const REQUIRED_ROUTE_KEYS = ['method', 'uri', 'action'];
     private const NULLABLE_STRING_KEYS = ['name', 'domain'];
-    private const ARRAY_KEYS = ['where', 'preg', 'middleware', 'middleware_groups', 'excluded_middleware'];
+    private const ARRAY_KEYS = ['where', 'middleware', 'middleware_groups', 'excluded_middleware'];
+    private const NULLABLE_ARRAY_KEYS = ['preg'];
 
     public static function path(?App $app = null): string
     {
@@ -143,6 +144,12 @@ class RouteCache
         foreach (self::ARRAY_KEYS as $key) {
             if (array_key_exists($key, $route) && !is_array($route[$key])) {
                 throw new RuntimeException('Route cache file has invalid ' . $label . ': ' . $key . ' must be an array in ' . $path);
+            }
+        }
+
+        foreach (self::NULLABLE_ARRAY_KEYS as $key) {
+            if (array_key_exists($key, $route) && $route[$key] !== null && !is_array($route[$key])) {
+                throw new RuntimeException('Route cache file has invalid ' . $label . ': ' . $key . ' must be null or array in ' . $path);
             }
         }
     }

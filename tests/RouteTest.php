@@ -666,6 +666,30 @@ class RouteTest extends TestCase
         }
     }
 
+    public function testRouteCacheLoadsExportedPayloadWithNullPregMetadata(): void
+    {
+        $previousApp = \Bin\App\App::getInstance();
+        \Bin\App\App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-null-preg-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = \Bin\App\App::configure($basePath)->create();
+
+        try {
+            Route::get('/cached-normal', 'CachedController@index');
+            $payload = Route::exportForCache();
+
+            $this->assertNull($payload['routes'][0]['preg']);
+
+            \Bin\Route\RouteCache::write($payload, $app);
+
+            $this->assertSame($payload, \Bin\Route\RouteCache::load($app));
+        } finally {
+            \Bin\App\App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
     public function testRouteCacheRejectsMalformedCacheFile(): void
     {
         $previousApp = \Bin\App\App::getInstance();
