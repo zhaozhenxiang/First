@@ -6,11 +6,14 @@ namespace Tests;
 
 use Bin\App\App;
 use Bin\Console\ClosureCommand;
+use Bin\Console\Commands\RouteCacheCommand;
+use Bin\Console\Commands\RouteClearCommand;
 use Bin\Console\Commands\RouteListCommand;
 use Bin\Console\Input;
 use Bin\Console\Kernel;
 use Bin\Console\Output;
 use Bin\Foundation\ConsoleKernel;
+use Bin\Route\RouteCache;
 use Bin\Route\RouteCollection as Route;
 use Bin\Testing\TestCase;
 
@@ -471,6 +474,136 @@ class ConsoleArtisanParityTest extends TestCase
         $this->assertInstanceOf(RouteListCommand::class, Kernel::getCommand('route:list'));
     }
 
+    public function testRouteCacheAndClearCommandsAreDiscovered(): void
+    {
+        Kernel::discover();
+
+        $this->assertTrue(Kernel::hasCommand('route:cache'));
+        $this->assertTrue(Kernel::hasCommand('route:clear'));
+        $this->assertInstanceOf(RouteCacheCommand::class, Kernel::getCommand('route:cache'));
+        $this->assertInstanceOf(RouteClearCommand::class, Kernel::getCommand('route:clear'));
+    }
+
+    public function testRouteCacheCommandWritesCompiledRoutes(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-command-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/cache-command/{id}', 'CacheCommandController@show')
+    ->where('id', '[0-9]+')
+    ->middleware('auth')
+    ->name('cache.command.show');
+PHP);
+
+        $app = App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/web.php')
+            ->create();
+
+        try {
+            $command = new RouteCacheCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $exitCode = $command->run(new Input(['script', 'route:cache']), new Output());
+            $output = ob_get_clean();
+
+            $this->assertSame(0, $exitCode);
+            $this->assertTrue(RouteCache::exists($app));
+            $this->assertStringContainsString('Route cache generated', $output);
+
+            $payload = RouteCache::load($app);
+
+            $this->assertSame('/cache-command/{id}', $payload['routes'][0]['uri']);
+            $this->assertSame('CacheCommandController@show', $payload['routes'][0]['action']);
+            $this->assertSame('cache.command.show', $payload['routes'][0]['name']);
+        } finally {
+            App::setInstance($previousApp);
+            Route::clear();
+            $this->deleteDirectory($basePath);
+        }
+    }
+
+    public function testRouteCacheCommandFailsForClosureRoutes(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-cache-closure-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/routes', 0777, true);
+
+        file_put_contents($basePath . '/routes/web.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+use Bin\Route\RouteCollection as Route;
+
+Route::get('/closure-route', static fn (): string => 'closure');
+PHP);
+
+        $app = App::configure($basePath)
+            ->withRouting(web: $basePath . '/routes/web.php')
+            ->create();
+
+        try {
+            $command = new RouteCacheCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $exitCode = $command->run(new Input(['script', 'route:cache']), new Output());
+            $output = ob_get_clean();
+
+            $this->assertSame(1, $exitCode);
+            $this->assertFalse(RouteCache::exists($app));
+            $this->assertStringContainsString('Unable to cache route [/closure-route]', $output);
+        } finally {
+            App::setInstance($previousApp);
+            Route::clear();
+            $this->deleteDirectory($basePath);
+        }
+    }
+
+    public function testRouteClearCommandRemovesCompiledRoutesIdempotently(): void
+    {
+        $previousApp = App::getInstance();
+        App::setInstance(null);
+        $basePath = sys_get_temp_dir() . '/first-route-clear-command-' . bin2hex(random_bytes(6));
+        mkdir($basePath . '/storage', 0777, true);
+
+        $app = App::configure($basePath)->create();
+        RouteCache::write(['routes' => [], 'fallback' => null], $app);
+
+        try {
+            $command = new RouteClearCommand();
+            $command->parseSignature();
+
+            ob_start();
+            $firstExitCode = $command->run(new Input(['script', 'route:clear']), new Output());
+            $firstOutput = ob_get_clean();
+
+            ob_start();
+            $secondExitCode = $command->run(new Input(['script', 'route:clear']), new Output());
+            $secondOutput = ob_get_clean();
+
+            $this->assertSame(0, $firstExitCode);
+            $this->assertSame(0, $secondExitCode);
+            $this->assertFalse(RouteCache::exists($app));
+            $this->assertStringContainsString('Route cache cleared', $firstOutput);
+            $this->assertStringContainsString('No route cache to clear', $secondOutput);
+        } finally {
+            App::setInstance($previousApp);
+            $this->deleteDirectory($basePath);
+        }
+    }
+
     public function testRouteListCommandOutputsRouteMetadata(): void
     {
         $previousApp = App::getInstance();
@@ -547,6 +680,36 @@ PHP);
         $this->assertStringContainsString('Method', $output);
         $this->assertStringContainsString('URI', $output);
         $this->assertStringContainsString('Middleware', $output);
+    }
+
+    private function deleteDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+
+        $items = scandir($path);
+
+        if ($items === false) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $target = $path . DIRECTORY_SEPARATOR . $item;
+
+            if (is_dir($target)) {
+                $this->deleteDirectory($target);
+                continue;
+            }
+
+            unlink($target);
+        }
+
+        rmdir($path);
     }
 }
 
