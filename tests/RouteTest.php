@@ -572,6 +572,29 @@ class RouteTest extends TestCase
         $this->assertNotNull(Route::namedRoute('cached.show'));
     }
 
+    public function testRouteCollectionPreservesLegacyRegexConstraintsWhenRestoringCache(): void
+    {
+        Route::get('/pick/{no}', 'PickController@show')->with('[0-9]+');
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function (): void {
+            $this->withServerRequest('GET', '/pick/abc', static fn () => Route::getRoute());
+        });
+
+        $payload = Route::exportForCache();
+
+        $this->assertSame(['[0-9]+'], $payload['routes'][0]['preg']);
+
+        Route::clear();
+        Route::loadFromCache($payload);
+
+        $routes = Route::getRoutes();
+        $this->assertSame(['[0-9]+'], $routes[0]->getPreg());
+
+        $this->assertThrows(\Bin\Exception\NotFoundHttpException::class, function (): void {
+            $this->withServerRequest('GET', '/pick/abc', static fn () => Route::getRoute());
+        });
+    }
+
     public function testRouteCollectionExportsAndRestoresCachedFallbackRoute(): void
     {
         Route::fallback('FallbackController@handle');
@@ -586,10 +609,7 @@ class RouteTest extends TestCase
         Route::clear();
         Route::loadFromCache($payload);
 
-        $_SERVER['REQUEST_METHOD'] = 'GET';
-        $_SERVER['REQUEST_URI'] = '/missing-from-cache';
-
-        $route = Route::getRoute();
+        $route = $this->withServerRequest('GET', '/missing-from-cache', static fn () => Route::getRoute());
 
         $this->assertSame('/', $route->getPath());
         $this->assertSame('FallbackController@handle', $route->getAction());

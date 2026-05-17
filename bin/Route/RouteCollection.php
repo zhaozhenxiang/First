@@ -532,6 +532,7 @@ class RouteCollection
             'name' => $route->getName(),
             'domain' => $route->getDomain(),
             'where' => $route->getWheres(),
+            'preg' => $route->getPreg(),
             'middleware' => $route->getMiddleware(),
             'middleware_groups' => $route->getMiddlewareGroups(),
             'excluded_middleware' => $route->getExcludedMiddleware(),
@@ -571,6 +572,10 @@ class RouteCollection
 
         if (($data['where'] ?? []) !== []) {
             $route->where($data['where']);
+        }
+
+        foreach ($data['preg'] ?? [] as $pattern) {
+            $route->with((string) $pattern);
         }
 
         if (($data['middleware'] ?? []) !== []) {
