@@ -244,6 +244,23 @@ class SessionTest extends TestCase
         $this->assertEquals($sidLength, strlen($id)); // PHP session_id 长度取决于当前环境
     }
 
+    public function testSetIdAllowsReusedManagerAfterNativeSessionReset(): void
+    {
+        $this->session->getId();
+
+        session_write_close();
+        unset($_SESSION);
+
+        $this->assertFalse($this->session->isStarted());
+
+        $incomingId = str_repeat('a', (int) ini_get('session.sid_length'));
+
+        $this->session->setId($incomingId);
+        $this->session->start();
+
+        $this->assertSame($incomingId, $this->session->getId());
+    }
+
     public function testSessionName(): void
     {
         $name = $this->session->getName();

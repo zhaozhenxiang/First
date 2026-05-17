@@ -381,7 +381,7 @@ class SessionManager implements SessionInterface
      */
     public function setId(string $id): void
     {
-        if ($this->started && $this->tempId !== null) {
+        if ($this->hasActiveSessionContext() && $this->tempId !== null) {
             throw new \RuntimeException('Cannot set session ID after session has started.');
         }
 

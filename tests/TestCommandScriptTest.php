@@ -57,7 +57,7 @@ class TestCommandScriptTest extends TestCase
 
         $this->assertStringNotContainsString('data_set(): Argument #1 ($data) must be of type array, null given', $rendered);
         $this->assertStringNotContainsString('Session cannot be started after headers have already been sent', $rendered);
-        $this->assertStringContainsString('Passed: 26, Failed: 0', $rendered);
+        $this->assertStringContainsString('Passed: 27, Failed: 0', $rendered);
         $this->assertEquals(0, $exitCode);
     }
 
