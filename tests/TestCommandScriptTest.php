@@ -98,6 +98,7 @@ class SessionIsolationTest extends TestCase
 {
     public function testStartsNativeSession(): void
     {
+        session_save_path(__DIR__);
         session_start();
         $_SESSION['leaked'] = 'yes';
 
@@ -124,6 +125,7 @@ PHP);
             $this->assertEquals(0, $exitCode);
             $this->assertStringContainsString('Tests:  2, ✓ 2 passed', $rendered);
         } finally {
+            array_map('unlink', glob($tempDir . '/sess_*') ?: []);
             unlink($tempDir . '/SessionIsolationTest.php');
             rmdir($tempDir);
         }
