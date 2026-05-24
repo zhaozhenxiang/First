@@ -173,6 +173,100 @@ class SignedUrlTest extends TestCase
         });
     }
 
+    public function testSignedRouteRejectsBracketedSignatureParameter(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+
+        $this->assertThrows(\InvalidArgumentException::class, function (): void {
+            URL::signedRoute('probe', ['signature[]' => 'x']);
+        });
+    }
+
+    public function testSignedRouteRejectsBracketedExpiresParameter(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+
+        $this->assertThrows(\InvalidArgumentException::class, function (): void {
+            URL::signedRoute('probe', ['expires[]' => 'x']);
+        });
+    }
+
+    public function testHasValidSignatureRejectsBracketedSignaturePollution(): void
+    {
+        $signature = hash_hmac(
+            'sha256',
+            '/probe?signature%5B%5D=x',
+            'testing-secret'
+        );
+
+        $request = $this->requestFromUrl('/probe?signature=' . $signature . '&signature%5B%5D=x');
+
+        $this->assertFalse(SignedUrl::hasValidSignature($request));
+    }
+
+    public function testHasValidSignatureRejectsBracketedExpiresPollution(): void
+    {
+        $signature = hash_hmac(
+            'sha256',
+            '/probe?expires%5B%5D=abc',
+            'testing-secret'
+        );
+
+        $request = $this->requestFromUrl('/probe?expires%5B%5D=abc&signature=' . $signature);
+
+        $this->assertFalse(SignedUrl::hasValidSignature($request));
+    }
+
+    public function testHasValidSignatureRejectsDuplicateSignatureParameters(): void
+    {
+        $signature = hash_hmac('sha256', '/probe', 'testing-secret');
+
+        $request = $this->requestFromUrl('/probe?signature=invalid&signature=' . $signature);
+
+        $this->assertFalse(SignedUrl::hasValidSignature($request));
+    }
+
+    public function testHasValidSignatureRejectsDuplicateExpiresParameters(): void
+    {
+        $expires = (string) (time() + 3600);
+        $signature = hash_hmac('sha256', '/probe?expires=' . $expires, 'testing-secret');
+
+        $request = $this->requestFromUrl('/probe?expires=1&expires=' . $expires . '&signature=' . $signature);
+
+        $this->assertFalse(SignedUrl::hasValidSignature($request));
+    }
+
+    public function testHasValidSignatureRejectsMalformedExpiresParameter(): void
+    {
+        $signature = hash_hmac(
+            'sha256',
+            '/probe?expires=abc',
+            'testing-secret'
+        );
+
+        $request = $this->requestFromUrl('/probe?expires=abc&signature=' . $signature);
+
+        $this->assertFalse(SignedUrl::hasValidSignature($request));
+    }
+
+    public function testHasValidSignatureRejectsAddedSignedQueryParameter(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+
+        $url = URL::signedRoute('probe', ['a' => 'b']);
+
+        $this->assertFalse(SignedUrl::hasValidSignature($this->requestFromUrl($url . '&extra=x')));
+    }
+
+    public function testHasValidSignatureRejectsRemovedSignedQueryParameter(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+
+        $url = URL::signedRoute('probe', ['a' => 'b']);
+
+        $this->assertFalse(SignedUrl::hasValidSignature($this->requestFromUrl('/probe?signature=' . $this->signatureFromUrl($url))));
+    }
+
     public function testSignedRouteRequiresConfiguredAppKey(): void
     {
         Route::get('/download/{file}', 'DownloadController@show')->name('download.show');
@@ -194,5 +288,20 @@ class SignedUrlTest extends TestCase
         }
 
         return '';
+    }
+
+    private function requestFromUrl(string $url): Request
+    {
+        parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $query);
+
+        return new Request(
+            $query,
+            [],
+            [
+                'REQUEST_METHOD' => 'GET',
+                'REQUEST_URI' => $url,
+            ],
+            []
+        );
     }
 }

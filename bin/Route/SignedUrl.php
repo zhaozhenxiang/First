@@ -28,6 +28,11 @@ class SignedUrl
     {
         $requestUri = (string) $request->server('REQUEST_URI', '/');
         $rawQuery = parse_url($requestUri, PHP_URL_QUERY);
+
+        if (is_string($rawQuery) && self::hasInvalidReservedQueryKeys($rawQuery)) {
+            return false;
+        }
+
         $query = is_string($rawQuery)
             ? self::parseQueryString($rawQuery)
             : $request->query();
@@ -86,11 +91,60 @@ class SignedUrl
 
     private static function assertNoReservedParameters(array $parameters): void
     {
-        foreach ([self::SIGNATURE_KEY, self::EXPIRES_KEY] as $reserved) {
-            if (array_key_exists($reserved, $parameters)) {
-                throw new InvalidArgumentException("Signed route parameters may not contain reserved key [{$reserved}].");
+        foreach ($parameters as $key => $_value) {
+            if (is_string($key) && self::isReservedQueryKey(urldecode($key))) {
+                throw new InvalidArgumentException("Signed route parameters may not contain reserved key [{$key}].");
             }
         }
+    }
+
+    private static function hasInvalidReservedQueryKeys(string $queryString): bool
+    {
+        $seenReservedKeys = [];
+
+        foreach (explode('&', $queryString) as $pair) {
+            if ($pair === '') {
+                continue;
+            }
+
+            [$key] = explode('=', $pair, 2);
+            $key = urldecode($key);
+
+            if (self::isBracketedReservedQueryKey($key)) {
+                return true;
+            }
+
+            if (self::isExactReservedQueryKey($key)) {
+                if (isset($seenReservedKeys[$key])) {
+                    return true;
+                }
+
+                $seenReservedKeys[$key] = true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function isReservedQueryKey(string $key): bool
+    {
+        return self::isExactReservedQueryKey($key) || self::isBracketedReservedQueryKey($key);
+    }
+
+    private static function isExactReservedQueryKey(string $key): bool
+    {
+        return $key === self::SIGNATURE_KEY || $key === self::EXPIRES_KEY;
+    }
+
+    private static function isBracketedReservedQueryKey(string $key): bool
+    {
+        foreach ([self::SIGNATURE_KEY, self::EXPIRES_KEY] as $reserved) {
+            if (str_starts_with($key, $reserved . '[') && str_ends_with($key, ']')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
