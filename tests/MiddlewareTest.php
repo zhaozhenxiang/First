@@ -7,12 +7,16 @@ namespace Tests;
 use Bin\App\App;
 use Bin\Auth\AuthManager;
 use Bin\Exception\AuthenticationException;
+use Bin\Exception\HttpException;
+use Bin\Facade\URL;
 use Bin\Middleware\AuthMiddleware;
 use Bin\Middleware\GuestMiddleware;
 use Bin\Middleware\Middleware;
 use Bin\Middleware\SessionMiddleware;
+use Bin\Middleware\ValidateSignature;
 use Bin\Request\Request;
 use Bin\Response\Response;
+use Bin\Route\RouteCollection as Route;
 use Bin\Session\FileSessionHandler;
 use Bin\Session\SessionManager;
 use Bin\Testing\TestCase;
@@ -187,6 +191,54 @@ class MiddlewareTest extends TestCase
         }
     }
 
+    public function testValidateSignatureMiddlewareAllowsValidSignedRequest(): void
+    {
+        $previousKey = config('app.key');
+        config(['app.key' => 'testing-secret']);
+        Route::clear();
+
+        try {
+            Route::get('/signed/{id}', 'SignedController@show')->name('signed.show');
+
+            $request = $this->middlewareRequestFromSignedUrl(
+                URL::signedRoute('signed.show', ['id' => 5])
+            );
+
+            $middleware = new ValidateSignature();
+
+            $this->assertSame('next', $middleware->handle($request, fn (Request $request): string => 'next'));
+        } finally {
+            Route::clear();
+            config(['app.key' => $previousKey]);
+        }
+    }
+
+    public function testValidateSignatureMiddlewareRejectsTamperedRequestWith403(): void
+    {
+        $previousKey = config('app.key');
+        config(['app.key' => 'testing-secret']);
+        Route::clear();
+
+        try {
+            Route::get('/signed/{id}', 'SignedController@show')->name('signed.show');
+
+            $signedUrl = URL::signedRoute('signed.show', ['id' => 5]);
+            $request = $this->middlewareRequestFromSignedUrl(str_replace('/signed/5', '/signed/6', $signedUrl));
+            $middleware = new ValidateSignature();
+
+            try {
+                $middleware->handle($request, fn (Request $request): string => 'next');
+                $this->fail('Expected invalid signature to throw HttpException.');
+            } catch (HttpException $exception) {
+                $this->assertSame(403, $exception->getStatusCode());
+                $this->assertSame('Invalid signature.', $exception->getMessage());
+            }
+        } finally {
+            Route::clear();
+            config(['app.key' => $previousKey]);
+        }
+    }
+
     // === CsrfMiddleware 静态验证 ===
 
     public function testCsrfTokenGeneration(): void
@@ -314,5 +366,27 @@ class MiddlewareTest extends TestCase
         $key = \Bin\Auth\RateLimiter::key('user_123', 'login');
         $this->assertStringContainsString('user_123', $key);
         $this->assertStringContainsString('login', $key);
+    }
+
+    private function middlewareRequestFromSignedUrl(string $url): Request
+    {
+        $parts = parse_url($url);
+        $path = $parts['path'] ?? '/';
+        $query = [];
+
+        parse_str($parts['query'] ?? '', $query);
+
+        $queryString = http_build_query($query);
+
+        return new Request(
+            query: $query,
+            post: [],
+            server: [
+                'REQUEST_METHOD' => 'GET',
+                'REQUEST_URI' => $path . ($queryString === '' ? '' : '?' . $queryString),
+                'SERVER_NAME' => 'localhost',
+            ],
+            cookies: []
+        );
     }
 }
