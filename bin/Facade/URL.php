@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace Bin\Facade;
 
 use Bin\Route\RouteCollection;
+use Bin\Route\SignedUrl;
+use DateTimeInterface;
 
 /**
  * URL Facade - 静态代理 URL 生成
  *
  * @method static string to(string $path)
  * @method static string route(string $name, array $params = [])
+ * @method static string signedRoute(string $name, array $params = [])
+ * @method static string temporarySignedRoute(string $name, DateTimeInterface|int $expiration, array $params = [])
  * @method static string full()
  * @method static string current()
  */
@@ -39,6 +43,22 @@ class URL extends Facade
     public static function route(string $name, array $params = []): string
     {
         return RouteCollection::url($name, $params);
+    }
+
+    /**
+     * Generate a signed named route URL.
+     */
+    public static function signedRoute(string $name, array $params = []): string
+    {
+        return SignedUrl::signedRoute($name, $params);
+    }
+
+    /**
+     * Generate a temporary signed named route URL.
+     */
+    public static function temporarySignedRoute(string $name, DateTimeInterface|int $expiration, array $params = []): string
+    {
+        return SignedUrl::temporarySignedRoute($name, $expiration, $params);
     }
 
     /**
