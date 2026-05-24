@@ -85,6 +85,25 @@ class SignedUrlTest extends TestCase
         );
     }
 
+    public function testSignedRoutePreservesDottedQueryParameterKeys(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+
+        $signature = hash_hmac(
+            'sha256',
+            '/probe?a.b=c&z=last',
+            'testing-secret'
+        );
+
+        $this->assertSame(
+            '/probe?a.b=c&signature=' . $signature . '&z=last',
+            URL::signedRoute('probe', [
+                'a.b' => 'c',
+                'z' => 'last',
+            ])
+        );
+    }
+
     public function testSignedRouteRejectsReservedSignatureParameter(): void
     {
         Route::get('/download/{file}', 'DownloadController@show')->name('download.show');

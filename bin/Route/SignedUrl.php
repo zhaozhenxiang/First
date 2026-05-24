@@ -99,10 +99,30 @@ class SignedUrl
         $query = [];
 
         if ($queryString !== '') {
-            parse_str($queryString, $query);
+            $query = self::parseQueryString($queryString);
         }
 
         return [$path, $query];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function parseQueryString(string $queryString): array
+    {
+        $query = [];
+
+        foreach (explode('&', $queryString) as $pair) {
+            if ($pair === '') {
+                continue;
+            }
+
+            [$key, $value] = array_pad(explode('=', $pair, 2), 2, '');
+
+            $query[urldecode($key)] = urldecode($value);
+        }
+
+        return $query;
     }
 
     private static function expirationTimestamp(DateTimeInterface|int $expiration): int
