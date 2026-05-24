@@ -7,6 +7,7 @@ namespace Bin\Request;
 use Bin\Auth\AuthManager;
 use Bin\Database\Collection;
 use Bin\Http\UploadedFile;
+use Bin\Route\SignedUrl;
 use Closure;
 use UnitEnum;
 
@@ -525,6 +526,11 @@ class Request implements \ArrayAccess, \Iterator
         }
         $queryString = http_build_query($existing);
         return $this->url() . ($queryString ? '?' . $queryString : '');
+    }
+
+    public function hasValidSignature(): bool
+    {
+        return SignedUrl::hasValidSignature($this);
     }
 
     /**

@@ -6,6 +6,8 @@ namespace Tests;
 
 use Bin\Testing\TestCase;
 use Bin\Request\Request;
+use Bin\Facade\URL;
+use Bin\Route\RouteCollection as Route;
 
 class RequestTest extends TestCase
 {
@@ -518,6 +520,85 @@ class RequestTest extends TestCase
         $this->assertStringNotContainsString('a=1', $url);
     }
 
+    public function testRequestHasValidSignatureForSignedUrl(): void
+    {
+        $previousKey = config('app.key');
+        config(['app.key' => 'testing-secret']);
+        Route::clear();
+
+        try {
+            Route::get('/invites/{invite}', 'InviteController@show')->name('invites.show');
+
+            $url = URL::signedRoute('invites.show', [
+                'invite' => 42,
+                'email' => 'taylor@example.com',
+            ]);
+
+            $this->assertTrue($this->requestFromSignedUrl($url)->hasValidSignature());
+        } finally {
+            Route::clear();
+            config(['app.key' => $previousKey]);
+        }
+    }
+
+    public function testRequestRejectsTamperedSignedQuery(): void
+    {
+        $previousKey = config('app.key');
+        config(['app.key' => 'testing-secret']);
+        Route::clear();
+
+        try {
+            Route::get('/invites/{invite}', 'InviteController@show')->name('invites.show');
+
+            $url = URL::signedRoute('invites.show', [
+                'invite' => 42,
+                'email' => 'taylor@example.com',
+            ]);
+
+            $request = $this->requestFromSignedUrl($url, ['email' => 'mallory@example.com']);
+
+            $this->assertFalse($request->hasValidSignature());
+        } finally {
+            Route::clear();
+            config(['app.key' => $previousKey]);
+        }
+    }
+
+    public function testRequestRejectsMissingSignature(): void
+    {
+        $previousKey = config('app.key');
+        config(['app.key' => 'testing-secret']);
+
+        try {
+            $request = $this->makeRequest(
+                query: ['email' => 'taylor@example.com'],
+                server: ['REQUEST_URI' => '/invites/42?email=taylor%40example.com']
+            );
+
+            $this->assertFalse($request->hasValidSignature());
+        } finally {
+            config(['app.key' => $previousKey]);
+        }
+    }
+
+    public function testRequestRejectsExpiredTemporarySignedUrl(): void
+    {
+        $previousKey = config('app.key');
+        config(['app.key' => 'testing-secret']);
+        Route::clear();
+
+        try {
+            Route::get('/invites/{invite}', 'InviteController@show')->name('invites.show');
+
+            $url = URL::temporarySignedRoute('invites.show', time() - 10, ['invite' => 42]);
+
+            $this->assertFalse($this->requestFromSignedUrl($url)->hasValidSignature());
+        } finally {
+            Route::clear();
+            config(['app.key' => $previousKey]);
+        }
+    }
+
     public function testIsMatchesPatterns(): void
     {
         $request = $this->makeRequest(server: ['REQUEST_URI' => '/admin/users/edit']);
@@ -818,6 +899,25 @@ class RequestTest extends TestCase
     {
         $request = $this->makeRequest(server: ['CONTENT_TYPE' => 'application/json']);
         $this->assertEquals('application/json', $request->getContentType());
+    }
+
+    private function requestFromSignedUrl(string $url, array $queryOverrides = []): Request
+    {
+        $parts = parse_url($url);
+        $path = $parts['path'] ?? '/';
+        $query = [];
+
+        parse_str($parts['query'] ?? '', $query);
+
+        $query = array_replace($query, $queryOverrides);
+        $queryString = http_build_query($query);
+
+        return $this->makeRequest(
+            query: $query,
+            server: [
+                'REQUEST_URI' => $path . ($queryString === '' ? '' : '?' . $queryString),
+            ]
+        );
     }
 }
 
