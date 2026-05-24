@@ -26,7 +26,11 @@ class SignedUrl
 
     public static function hasValidSignature(Request $request): bool
     {
-        $query = $request->query();
+        $requestUri = (string) $request->server('REQUEST_URI', '/');
+        $rawQuery = parse_url($requestUri, PHP_URL_QUERY);
+        $query = is_string($rawQuery)
+            ? self::parseQueryString($rawQuery)
+            : $request->query();
 
         if (
             !isset($query[self::SIGNATURE_KEY])
@@ -51,7 +55,7 @@ class SignedUrl
             }
         }
 
-        $path = parse_url((string) $request->server('REQUEST_URI', '/'), PHP_URL_PATH) ?: '/';
+        $path = parse_url($requestUri, PHP_URL_PATH) ?: '/';
         $canonical = self::canonicalUrl($path, $query);
 
         try {

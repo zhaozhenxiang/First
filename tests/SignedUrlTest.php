@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\Facade\URL;
+use Bin\Request\Request;
 use Bin\Route\RouteCollection as Route;
+use Bin\Route\SignedUrl;
 use Bin\Testing\TestCase;
 
 class SignedUrlTest extends TestCase
@@ -104,6 +106,49 @@ class SignedUrlTest extends TestCase
         );
     }
 
+    public function testSignedRouteUsesDecodedBase64AppKey(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+        config(['app.key' => 'base64:' . base64_encode('decoded-secret')]);
+
+        $signature = hash_hmac(
+            'sha256',
+            '/probe?a=b',
+            'decoded-secret'
+        );
+
+        $this->assertSame(
+            '/probe?a=b&signature=' . $signature,
+            URL::signedRoute('probe', ['a' => 'b'])
+        );
+    }
+
+    public function testHasValidSignatureUsesRawQueryStringForDottedKeys(): void
+    {
+        Route::get('/probe', 'ProbeController@show')->name('probe');
+
+        $url = URL::signedRoute('probe', [
+            'a.b' => 'c',
+            'z' => 'last',
+        ]);
+
+        $request = new Request(
+            [
+                'a_b' => 'c',
+                'z' => 'last',
+                'signature' => $this->signatureFromUrl($url),
+            ],
+            [],
+            [
+                'REQUEST_METHOD' => 'GET',
+                'REQUEST_URI' => $url,
+            ],
+            []
+        );
+
+        $this->assertTrue(SignedUrl::hasValidSignature($request));
+    }
+
     public function testSignedRouteRejectsReservedSignatureParameter(): void
     {
         Route::get('/download/{file}', 'DownloadController@show')->name('download.show');
@@ -136,5 +181,18 @@ class SignedUrlTest extends TestCase
         $this->assertThrows(\RuntimeException::class, function (): void {
             URL::signedRoute('download.show', ['file' => 'report.pdf']);
         });
+    }
+
+    private function signatureFromUrl(string $url): string
+    {
+        $queryString = parse_url($url, PHP_URL_QUERY) ?? '';
+
+        foreach (explode('&', $queryString) as $pair) {
+            if (str_starts_with($pair, 'signature=')) {
+                return urldecode(substr($pair, 10));
+            }
+        }
+
+        return '';
     }
 }
