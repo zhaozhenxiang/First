@@ -1001,6 +1001,7 @@ class MiddlewarePipelineTest extends TestCase
         $this->assertArrayHasKey('guest', $config['aliases']);
         $this->assertArrayHasKey('csrf', $config['aliases']);
         $this->assertArrayHasKey('throttle', $config['aliases']);
+        $this->assertArrayHasKey('signed', $config['aliases']);
     }
 
     public function testMiddlewareConfigHasDefaultGroups(): void

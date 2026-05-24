@@ -7,6 +7,7 @@ use Bin\Middleware\CsrfMiddleware;
 use Bin\Middleware\GuestMiddleware;
 use Bin\Middleware\RateLimitMiddleware;
 use Bin\Middleware\SessionMiddleware;
+use Bin\Middleware\ValidateSignature;
 
 /**
  * 中间件配置
@@ -63,6 +64,7 @@ return [
         'guest' => GuestMiddleware::class,
         'csrf' => CsrfMiddleware::class,
         'throttle' => RateLimitMiddleware::class,
+        'signed' => ValidateSignature::class,
     ],
 
     /*
