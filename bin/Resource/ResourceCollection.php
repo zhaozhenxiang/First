@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Bin\Resource;
 
-use ArrayObject;
+use Bin\App\App;
+use Bin\Response\Response;
+use Bin\Response\ResponseFactory;
 use Countable;
 use IteratorAggregate;
 use JsonSerializable;
@@ -186,9 +188,11 @@ class ResourceCollection implements JsonSerializable, Countable, IteratorAggrega
     /**
      * 转换为响应
      */
-    public function toResponse(int $status = 200): \Bin\Response\Response
+    public function toResponse(int $status = 200): Response
     {
-        return new \Bin\Response\Response($this, $status);
+        return App::getInstance()
+            ->make(ResponseFactory::class)
+            ->json($this, $status);
     }
 
     /**

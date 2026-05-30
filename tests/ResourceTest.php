@@ -161,6 +161,23 @@ class ResourceTest extends TestCase
         $this->assertInstanceOf(\Bin\Response\Response::class, $response);
     }
 
+    public function testResourceToResponseUsesJsonResponseFactory(): void
+    {
+        $user = ['id' => 1, 'name' => 'John', 'email' => 'john@example.com'];
+        $resource = $this->createUserResource($user);
+
+        $response = $resource->toResponse(201);
+
+        $this->assertInstanceOf(\Bin\Response\Response::class, $response);
+        $this->assertEquals(201, $response->getStatusCode());
+        $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+        $this->assertEquals([
+            'id' => 1,
+            'name' => 'John',
+            'email' => 'john@example.com',
+        ], json_decode($response->getContent(), true));
+    }
+
     // ResourceCollection 测试
     public function testResourceCollectionMake(): void
     {
@@ -209,6 +226,40 @@ class ResourceTest extends TestCase
         $this->assertArrayHasKey('meta', $data);
         $this->assertArrayHasKey('pagination', $data['meta']);
         $this->assertEquals(10, $data['meta']['pagination']['total']);
+    }
+
+    public function testResourceCollectionToResponseUsesJsonResponseFactory(): void
+    {
+        $users = [
+            ['id' => 1, 'name' => 'John', 'email' => 'john@example.com'],
+            ['id' => 2, 'name' => 'Jane', 'email' => 'jane@example.com'],
+        ];
+
+        $collection = ResourceCollection::make($users, get_class($this->createUserResource([])))
+            ->pagination([
+                'total' => 10,
+                'per_page' => 2,
+                'current_page' => 1,
+            ]);
+
+        $response = $collection->toResponse(202);
+
+        $this->assertInstanceOf(\Bin\Response\Response::class, $response);
+        $this->assertEquals(202, $response->getStatusCode());
+        $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+        $this->assertEquals([
+            'data' => [
+                ['id' => 1, 'name' => 'John', 'email' => 'john@example.com'],
+                ['id' => 2, 'name' => 'Jane', 'email' => 'jane@example.com'],
+            ],
+            'meta' => [
+                'pagination' => [
+                    'total' => 10,
+                    'per_page' => 2,
+                    'current_page' => 1,
+                ],
+            ],
+        ], json_decode($response->getContent(), true));
     }
 
     public function testResourceCollectionWith(): void
