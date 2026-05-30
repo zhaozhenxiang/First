@@ -133,6 +133,50 @@ class ResponseTest extends TestCase
         $this->assertEquals('123', $response->getContent());
     }
 
+    public function testResponseFactoryMakesJsonSerializablePayloadsJsonResponses(): void
+    {
+        $payload = new class implements \JsonSerializable {
+            public function jsonSerialize(): array
+            {
+                return ['status' => 'ok'];
+            }
+        };
+
+        $response = (new ResponseFactory())->make($payload, 202);
+
+        $this->assertEquals(202, $response->getStatusCode());
+        $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+        $this->assertEquals(['status' => 'ok'], json_decode($response->getContent(), true));
+    }
+
+    public function testResponseFactoryJsonAcceptsJsonSerializablePayloads(): void
+    {
+        $payload = new class implements \JsonSerializable {
+            public function jsonSerialize(): array
+            {
+                return ['kind' => 'resource'];
+            }
+        };
+
+        $response = (new ResponseFactory())->json($payload, 201);
+
+        $this->assertEquals(201, $response->getStatusCode());
+        $this->assertEquals('application/json', $response->getHeader('Content-Type'));
+        $this->assertEquals(['kind' => 'resource'], json_decode($response->getContent(), true));
+    }
+
+    public function testResponseFactoryJsonAllowsCallerContentTypeOverride(): void
+    {
+        $response = (new ResponseFactory())->json(
+            ['ok' => true],
+            200,
+            ['Content-Type' => 'application/vnd.api+json']
+        );
+
+        $this->assertEquals('application/vnd.api+json', $response->getHeader('Content-Type'));
+        $this->assertEquals(['ok' => true], json_decode($response->getContent(), true));
+    }
+
     public function testResponseHelperPropagatesFactoryResolutionFailures(): void
     {
         $app = App::getInstance();

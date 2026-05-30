@@ -566,6 +566,66 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertEquals(['status' => 'ok'], json_decode($result->getContent(), true));
     }
 
+    public function testDispatcherWrapsJsonResourceReturnValueAsJsonResponse(): void
+    {
+        $controller = new class {
+            public function show(): \Bin\Resource\JsonResource
+            {
+                return new class(['id' => 7, 'name' => 'Ada']) extends \Bin\Resource\JsonResource {
+                    public function toArray(): array
+                    {
+                        return [
+                            'id' => $this->id(),
+                            'name' => $this->resource['name'],
+                        ];
+                    }
+                };
+            }
+        };
+
+        $className = get_class($controller);
+        Container::getInstance()->instance($className, $controller);
+
+        $route = new Route('GET', '/resource', $className . '@show');
+        $result = $this->dispatcher->dispatch($className, 'show', $route);
+
+        $this->assertInstanceOf(Response::class, $result);
+        $this->assertEquals('application/json', $result->getHeader('Content-Type'));
+        $this->assertEquals(['id' => 7, 'name' => 'Ada'], json_decode($result->getContent(), true));
+    }
+
+    public function testDispatcherWrapsResourceCollectionClosureReturnValueAsJsonResponse(): void
+    {
+        $resourceClass = get_class(new class([]) extends \Bin\Resource\JsonResource {
+            public function toArray(): array
+            {
+                return [
+                    'id' => $this->id(),
+                    'name' => $this->resource['name'],
+                ];
+            }
+        });
+
+        $closure = function () use ($resourceClass): \Bin\Resource\ResourceCollection {
+            return \Bin\Resource\ResourceCollection::make([
+                ['id' => 1, 'name' => 'Ada'],
+                ['id' => 2, 'name' => 'Grace'],
+            ], $resourceClass);
+        };
+
+        $route = new Route('GET', '/resources', $closure);
+        $result = $this->dispatcher->dispatchClosure($closure, $route);
+
+        $this->assertInstanceOf(Response::class, $result);
+        $this->assertEquals('application/json', $result->getHeader('Content-Type'));
+        $this->assertEquals([
+            'data' => [
+                ['id' => 1, 'name' => 'Ada'],
+                ['id' => 2, 'name' => 'Grace'],
+            ],
+        ], json_decode($result->getContent(), true));
+    }
+
     // ================================================================
     // 方法参数默认值
     // ================================================================

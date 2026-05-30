@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Bin\Response;
 
+use JsonSerializable;
+
 class ResponseFactory
 {
     public function make(mixed $payload = '', int $status = 200, array $headers = []): Response
@@ -16,20 +18,22 @@ class ResponseFactory
             return $payload;
         }
 
-        if (is_scalar($payload)) {
-            $payload = (string) $payload;
+        if (is_array($payload) || $payload instanceof JsonSerializable) {
+            return $this->json($payload, $status, $headers);
         }
 
-        if (is_array($payload) && !isset($headers['Content-Type'])) {
-            $headers['Content-Type'] = 'application/json';
+        if (is_scalar($payload)) {
+            $payload = (string) $payload;
         }
 
         return new Response($payload, $status, $headers);
     }
 
-    public function json(array $payload, int $status = 200, array $headers = []): Response
+    public function json(mixed $payload, int $status = 200, array $headers = []): Response
     {
-        return $this->make($payload, $status, ['Content-Type' => 'application/json'] + $headers);
+        $headers = array_merge(['Content-Type' => 'application/json'], $headers);
+
+        return new Response(json_encode($payload, JSON_THROW_ON_ERROR), $status, $headers);
     }
 
     public function redirect(string $url, int $status = 302, array $headers = []): Response
