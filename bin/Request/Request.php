@@ -8,6 +8,7 @@ use Bin\Auth\AuthManager;
 use Bin\Database\Collection;
 use Bin\Http\UploadedFile;
 use Bin\Route\SignedUrl;
+use Bin\Validation\ValidationManager;
 use Closure;
 use UnitEnum;
 
@@ -35,6 +36,8 @@ class Request implements \ArrayAccess, \Iterator
     protected array $routeParams = [];
     /** @var array<string, mixed> 手动合并的输入 */
     protected array $mergedInput = [];
+    /** @var array<string, mixed> 最近一次成功验证后的数据 */
+    protected array $validatedData = [];
     /** @var Closure|null Resolver for the current authenticated user in this request scope. */
     protected ?Closure $userResolver = null;
     /** @var array<string, mixed> 迭代器当前位置缓存 */
@@ -168,6 +171,52 @@ class Request implements \ArrayAccess, \Iterator
     {
         $keys = is_array($keys) ? $keys : func_get_args();
         return array_diff_key($this->all(), array_flip($keys));
+    }
+
+    /**
+     * 验证当前请求输入并返回已验证数据。
+     *
+     * @param array<string, mixed> $rules
+     * @param array<string, string> $messages
+     * @param array<string, string> $attributes
+     * @return array<string, mixed>
+     */
+    public function validate(array $rules, array $messages = [], array $attributes = []): array
+    {
+        $input = $this->all();
+        $validator = new ValidationManager($input, $rules);
+
+        if ($messages !== []) {
+            $validator->setCustomMessages($messages);
+        }
+
+        if ($attributes !== []) {
+            $validator->setAliases($attributes);
+        }
+
+        $validator->validateOrFail();
+
+        $validated = [];
+        foreach (array_keys($rules) as $field) {
+            $field = (string) $field;
+            if (data_has($input, $field)) {
+                $validated[$field] = data_get($input, $field);
+            }
+        }
+
+        $this->validatedData = $validated;
+
+        return $this->validatedData;
+    }
+
+    /**
+     * 获取最近一次成功验证后的数据。
+     *
+     * @return array<string, mixed>
+     */
+    public function validated(): array
+    {
+        return $this->validatedData;
     }
 
     // =========================================================================

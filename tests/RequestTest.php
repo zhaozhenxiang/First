@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Bin\Exception\ValidationException;
 use Bin\Testing\TestCase;
 use Bin\Request\Request;
 use Bin\Facade\URL;
@@ -134,6 +135,156 @@ class RequestTest extends TestCase
         $all = $request->input();
         $this->assertEquals(1, $all['a']);
         $this->assertEquals(2, $all['b']);
+    }
+
+    public function testValidateReturnsDeclaredValidatedDataAndStoresIt(): void
+    {
+        $request = $this->makeRequest(
+            query: ['page' => '2', 'extra' => 'ignored'],
+            post: ['name' => 'Ada', 'email' => 'ada@example.com']
+        );
+
+        $validated = $request->validate([
+            'name' => 'required|string',
+            'email' => 'required|email',
+            'page' => 'required|integer',
+        ]);
+
+        $this->assertEquals([
+            'name' => 'Ada',
+            'email' => 'ada@example.com',
+            'page' => '2',
+        ], $validated);
+        $this->assertEquals($validated, $request->validated());
+        $this->assertArrayNotHasKey('extra', $validated);
+    }
+
+    public function testValidateUsesMergedRequestInputSources(): void
+    {
+        $request = $this->makeRequest(
+            query: ['source' => 'query'],
+            post: ['name' => 'Ada']
+        );
+        $request->merge(['role' => 'admin', 'source' => 'merged']);
+
+        $validated = $request->validate([
+            'source' => 'required|string',
+            'name' => 'required|string',
+            'role' => 'required|string',
+        ]);
+
+        $this->assertEquals([
+            'source' => 'merged',
+            'name' => 'Ada',
+            'role' => 'admin',
+        ], $validated);
+    }
+
+    public function testValidateSupportsJsonStyleMergedInputAndDottedRules(): void
+    {
+        $request = $this->makeRequest(
+            server: [
+                'REQUEST_METHOD' => 'POST',
+                'CONTENT_TYPE' => 'application/json',
+            ]
+        );
+        $request->merge([
+            'profile' => ['name' => 'Ada'],
+            'email' => 'ada@example.com',
+        ]);
+
+        $validated = $request->validate([
+            'profile.name' => 'required|string',
+            'email' => 'required|email',
+        ]);
+
+        $this->assertEquals([
+            'profile.name' => 'Ada',
+            'email' => 'ada@example.com',
+        ], $validated);
+    }
+
+    public function testValidateOmitsAbsentOptionalFields(): void
+    {
+        $request = $this->makeRequest(post: ['name' => 'Ada']);
+
+        $validated = $request->validate([
+            'name' => 'required|string',
+            'nickname' => 'string',
+        ]);
+
+        $this->assertEquals(['name' => 'Ada'], $validated);
+        $this->assertArrayNotHasKey('nickname', $validated);
+    }
+
+    public function testValidateThrowsValidationExceptionForInvalidInput(): void
+    {
+        $request = $this->makeRequest(post: ['email' => 'not-an-email']);
+
+        try {
+            $request->validate([
+                'email' => 'required|email',
+                'name' => 'required|string',
+            ]);
+            $this->fail('Expected ValidationException was not thrown');
+        } catch (ValidationException $e) {
+            $errors = $e->getErrors();
+
+            $this->assertEquals(422, $e->getCode());
+            $this->assertArrayHasKey('email', $errors);
+            $this->assertArrayHasKey('name', $errors);
+            $this->assertTrue(is_array($errors['email']));
+            $this->assertTrue(is_array($errors['name']));
+        }
+
+        $this->assertEquals([], $request->validated());
+    }
+
+    public function testValidateAppliesCustomMessagesAndAttributeAliases(): void
+    {
+        $request = $this->makeRequest(post: ['email' => 'not-an-email']);
+
+        try {
+            $request->validate(
+                [
+                    'email' => 'required|email',
+                    'name' => 'required|string',
+                ],
+                ['email.email' => 'Email must be valid'],
+                ['name' => 'Display name']
+            );
+            $this->fail('Expected ValidationException was not thrown');
+        } catch (ValidationException $e) {
+            $errors = $e->getErrors();
+
+            $this->assertEquals('Email must be valid', $errors['email'][0] ?? '');
+            $this->assertStringContainsString('Display name', $errors['name'][0] ?? '');
+        }
+    }
+
+    public function testValidatedReturnsLatestSuccessfulResultAndSurvivesLaterFailure(): void
+    {
+        $request = $this->makeRequest(post: [
+            'name' => 'Ada',
+            'email' => 'ada@example.com',
+        ]);
+
+        $this->assertEquals([], $request->validated());
+
+        $first = $request->validate(['name' => 'required|string']);
+        $this->assertEquals(['name' => 'Ada'], $first);
+        $this->assertEquals($first, $request->validated());
+
+        $second = $request->validate(['email' => 'required|email']);
+        $this->assertEquals(['email' => 'ada@example.com'], $second);
+        $this->assertEquals($second, $request->validated());
+
+        try {
+            $request->validate(['missing' => 'required']);
+            $this->fail('Expected ValidationException was not thrown');
+        } catch (ValidationException) {
+            $this->assertEquals($second, $request->validated());
+        }
     }
 
     public function testCookiesNotInInput(): void
