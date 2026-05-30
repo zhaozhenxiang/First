@@ -18,6 +18,7 @@ use Bin\Facade\Route;
 use Bin\Facade\URL;
 use Bin\Facade\View;
 use Bin\Facade\Validator;
+use Bin\Exception\ValidationException;
 
 /**
  * Facade 扩展测试
@@ -185,6 +186,52 @@ class FacadeExpandTest extends TestCase
     {
         $v = Validator::make(['name' => 'test'], ['name' => 'required']);
         $this->assertInstanceOf(\Bin\Validation\ValidationManager::class, $v);
+    }
+
+    public function testValidatorFacadeMakeAcceptsMessagesAndAttributes(): void
+    {
+        $validator = Validator::make(
+            ['email' => 'not-an-email', 'name' => ''],
+            ['email' => 'email', 'name' => 'required'],
+            ['email.email' => 'Email must be valid'],
+            ['name' => 'Display name']
+        );
+
+        $validator->validate();
+
+        $this->assertEquals('Email must be valid', $validator->getError('email')[0] ?? '');
+        $this->assertStringContainsString('Display name', $validator->getError('name')[0] ?? '');
+    }
+
+    public function testValidatorFacadeValidateReturnsValidatedData(): void
+    {
+        $validated = Validator::validate(
+            ['name' => 'Ada', 'email' => 'ada@example.com'],
+            ['name' => 'required|string', 'email' => 'required|email']
+        );
+
+        $this->assertEquals([
+            'name' => 'Ada',
+            'email' => 'ada@example.com',
+        ], $validated);
+    }
+
+    public function testValidatorFacadeValidateThrowsWithMessagesAndAttributes(): void
+    {
+        try {
+            Validator::validate(
+                ['email' => 'not-an-email', 'name' => ''],
+                ['email' => 'email', 'name' => 'required'],
+                ['email.email' => 'Email must be valid'],
+                ['name' => 'Display name']
+            );
+            $this->fail('Expected ValidationException was not thrown');
+        } catch (ValidationException $e) {
+            $errors = $e->getErrors();
+
+            $this->assertEquals('Email must be valid', $errors['email'][0] ?? '');
+            $this->assertStringContainsString('Display name', $errors['name'][0] ?? '');
+        }
     }
 
     public function testRouteFacadeRegistersGet(): void
