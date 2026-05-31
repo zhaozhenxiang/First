@@ -181,6 +181,48 @@ git add tests/RuntimeCompatibilityTest.php
 git commit -m "test: cover PHP runtime compatibility hygiene"
 ```
 
+## Task 1A: Mock Duplicate Method Lint Blocker
+
+**Files:**
+- Modify: `bin/Testing/Mock.php`
+
+- [ ] **Step 1: Resolve duplicate `Mock::shouldIgnoreMissing()` declarations**
+
+Root cause: `Mock::shouldIgnoreMissing(): self` is the public chainable setter
+used by `Bin\Testing\TestCase::spy()`, while the later
+`Mock::shouldIgnoreMissing(): bool` method is an internal query used by the
+anonymous mock object's `__call()`. PHP cannot declare both methods with the
+same name, so the framework lint guard fatals before nullable-signature work can
+continue.
+
+Keep the public chainable `shouldIgnoreMissing(): self` API unchanged. Rename
+the internal boolean query to `isIgnoringMissingMethods(): bool` and update the
+anonymous mock object call site to use the renamed method. Do not change
+behavior beyond removing the duplicate declaration fatal.
+
+- [ ] **Step 2: Verify the blocker is cleared**
+
+Run:
+
+```bash
+php -d error_reporting=32767 -d display_errors=1 -l bin/Testing/Mock.php
+php test --pattern=RuntimeCompatibilityTest.php --filter=testFrameworkFilesLintWithoutDeprecations
+```
+
+Expected: the direct lint command passes. The runtime compatibility guard may
+still fail at this stage because nullable deprecations remain, but the failure
+list must no longer include `bin/Testing/Mock.php`.
+
+If a fast direct mock test exists, run it too. If not, record that no direct
+mock test was found and that the lint plus runtime guard were used.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add bin/Testing/Mock.php docs/superpowers/plans/2026-05-31-runtime-php85-hygiene.md
+git commit -m "fix: resolve mock lint duplicate method"
+```
+
 ## Task 2: Container, App, Provider, and Manager Nullable Signatures
 
 **Files:**

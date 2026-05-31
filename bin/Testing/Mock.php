@@ -180,7 +180,7 @@ class Mock
                 }
 
                 // 如果忽略缺失方法，返回 null
-                if ($this->mockBuilder->shouldIgnoreMissing()) {
+                if ($this->mockBuilder->isIgnoringMissingMethods()) {
                     return null;
                 }
 
@@ -202,7 +202,7 @@ class Mock
     /**
      * 是否忽略缺失方法
      */
-    public function shouldIgnoreMissing(): bool
+    public function isIgnoringMissingMethods(): bool
     {
         return $this->ignoreMissing;
     }
