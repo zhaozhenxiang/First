@@ -178,7 +178,6 @@ class HttpClientTest extends TestCase
 
         // 通过反射检查 URL 构建
         $reflection = new \ReflectionMethod($request, 'buildUrl');
-        $reflection->setAccessible(true);
 
         $url = $reflection->invoke($request, '/users', []);
         $this->assertEquals('https://api.example.com/users', $url);
@@ -189,7 +188,6 @@ class HttpClientTest extends TestCase
         $request = new PendingRequest();
 
         $reflection = new \ReflectionMethod($request, 'buildUrl');
-        $reflection->setAccessible(true);
 
         $url = $reflection->invoke($request, 'https://example.com/search', ['q' => 'test', 'page' => 1]);
         $this->assertStringContainsString('q=test', $url);
@@ -202,7 +200,6 @@ class HttpClientTest extends TestCase
         $request->withToken('my-token');
 
         $reflection = new \ReflectionProperty($request, 'headers');
-        $reflection->setAccessible(true);
         $headers = $reflection->getValue($request);
 
         $this->assertEquals('Bearer my-token', $headers['Authorization']);
@@ -214,7 +211,6 @@ class HttpClientTest extends TestCase
         $request->withBasicAuth('user', 'pass');
 
         $reflection = new \ReflectionProperty($request, 'headers');
-        $reflection->setAccessible(true);
         $headers = $reflection->getValue($request);
 
         $this->assertEquals('Basic ' . base64_encode('user:pass'), $headers['Authorization']);
@@ -226,7 +222,6 @@ class HttpClientTest extends TestCase
         $request->withHeaders(['X-Custom' => 'value', 'Accept' => 'text/html']);
 
         $reflection = new \ReflectionProperty($request, 'headers');
-        $reflection->setAccessible(true);
         $headers = $reflection->getValue($request);
 
         $this->assertEquals('value', $headers['X-Custom']);
@@ -239,7 +234,6 @@ class HttpClientTest extends TestCase
         $request->timeout(60);
 
         $reflection = new \ReflectionProperty($request, 'timeout');
-        $reflection->setAccessible(true);
 
         $this->assertEquals(60, $reflection->getValue($request));
     }
@@ -250,7 +244,6 @@ class HttpClientTest extends TestCase
         $request->withoutVerifying();
 
         $reflection = new \ReflectionProperty($request, 'verifySsl');
-        $reflection->setAccessible(true);
 
         $this->assertFalse($reflection->getValue($request));
     }
@@ -261,7 +254,6 @@ class HttpClientTest extends TestCase
         $request->withoutRedirecting();
 
         $reflection = new \ReflectionProperty($request, 'followRedirects');
-        $reflection->setAccessible(true);
 
         $this->assertFalse($reflection->getValue($request));
     }
@@ -272,11 +264,9 @@ class HttpClientTest extends TestCase
         $request->retry(3, 100);
 
         $reflection = new \ReflectionProperty($request, 'retryTimes');
-        $reflection->setAccessible(true);
         $times = $reflection->getValue($request);
 
         $sleepRef = new \ReflectionProperty($request, 'retrySleepMs');
-        $sleepRef->setAccessible(true);
         $sleep = $sleepRef->getValue($request);
 
         $this->assertEquals(3, $times);
@@ -289,7 +279,6 @@ class HttpClientTest extends TestCase
         $request->asJson();
 
         $reflection = new \ReflectionProperty($request, 'bodyFormat');
-        $reflection->setAccessible(true);
 
         $this->assertEquals('json', $reflection->getValue($request));
     }
@@ -300,7 +289,6 @@ class HttpClientTest extends TestCase
         $request->asForm();
 
         $reflection = new \ReflectionProperty($request, 'bodyFormat');
-        $reflection->setAccessible(true);
 
         $this->assertEquals('form', $reflection->getValue($request));
     }
@@ -311,7 +299,6 @@ class HttpClientTest extends TestCase
         $request->asJson();
 
         $buildBody = new \ReflectionMethod($request, 'buildBody');
-        $buildBody->setAccessible(true);
 
         $headers = [];
         $data = ['name' => 'test'];
@@ -327,7 +314,6 @@ class HttpClientTest extends TestCase
         $request->asForm();
 
         $buildBody = new \ReflectionMethod($request, 'buildBody');
-        $buildBody->setAccessible(true);
 
         $headers = [];
         $data = ['name' => 'test'];
@@ -342,7 +328,6 @@ class HttpClientTest extends TestCase
         $request = new PendingRequest();
 
         $buildBody = new \ReflectionMethod($request, 'buildBody');
-        $buildBody->setAccessible(true);
 
         $headers = [];
         $data = null;
@@ -391,11 +376,9 @@ class HttpClientTest extends TestCase
 
         // 检查 timeout 通过反射
         $reflection = new \ReflectionProperty($request, 'timeout');
-        $reflection->setAccessible(true);
         $this->assertEquals(60, $reflection->getValue($request));
 
         $baseUrlRef = new \ReflectionProperty($request, 'baseUrl');
-        $baseUrlRef->setAccessible(true);
         $this->assertEquals('https://api.example.com', $baseUrlRef->getValue($request));
     }
 
@@ -424,7 +407,6 @@ class HttpClientTest extends TestCase
 
         // 反射调用 execute
         $reflection = new \ReflectionMethod($pool, 'execute');
-        $reflection->setAccessible(true);
 
         $results = $reflection->invoke($pool);
         $this->assertEquals([], $results);

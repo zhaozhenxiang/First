@@ -102,7 +102,6 @@ class FacadeExpandTest extends TestCase
     {
         $ref = new \ReflectionClass($facade);
         $method = $ref->getMethod('getClassName');
-        $method->setAccessible(true);
         return $method->invoke($facade);
     }
 

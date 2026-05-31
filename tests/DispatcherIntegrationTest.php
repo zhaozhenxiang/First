@@ -49,7 +49,6 @@ class DispatcherIntegrationTest extends TestCase
         AuthManager::resetUser();
 
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
-        $property->setAccessible(true);
         $property->setValue(null, null);
     }
 
@@ -68,7 +67,6 @@ class DispatcherIntegrationTest extends TestCase
         session_manager()->clear();
         AuthManager::resetUser();
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
-        $property->setAccessible(true);
         $property->setValue(null, null);
         parent::tearDown();
     }
@@ -413,7 +411,6 @@ class DispatcherIntegrationTest extends TestCase
         $response = $kernel->handle();
 
         $property = new \ReflectionProperty(HttpKernel::class, 'currentRequest');
-        $property->setAccessible(true);
         $currentRequest = $property->getValue($kernel);
 
         $this->assertInstanceOf(Response::class, $response);
@@ -449,7 +446,6 @@ class DispatcherIntegrationTest extends TestCase
         App::getInstance()->instance(ControllerDispatcher::class, $custom);
 
         $property = new \ReflectionProperty(RouteAction::class, 'dispatcher');
-        $property->setAccessible(true);
         $property->setValue(null, null);
 
         $this->assertSame($custom, RouteAction::getDispatcher());
@@ -659,7 +655,6 @@ class DispatcherIntegrationTest extends TestCase
         Container::getInstance()->instance($className, $middleware);
 
         $reflection = new \ReflectionMethod(RouteAction::class, 'buildMiddlewareInstances');
-        $reflection->setAccessible(true);
 
         $instances = $reflection->invoke(null, [[$className, []]]);
         $this->assertCount(1, $instances);
@@ -669,7 +664,6 @@ class DispatcherIntegrationTest extends TestCase
     public function testMiddlewareFallsBackWhenContainerFails(): void
     {
         $reflection = new \ReflectionMethod(RouteAction::class, 'buildMiddlewareInstances');
-        $reflection->setAccessible(true);
 
         $instances = $reflection->invoke(null, [[\Bin\Middleware\CsrfMiddleware::class, []]]);
 
@@ -680,7 +674,6 @@ class DispatcherIntegrationTest extends TestCase
     public function testMiddlewareWithParameters(): void
     {
         $reflection = new \ReflectionMethod(RouteAction::class, 'buildMiddlewareInstances');
-        $reflection->setAccessible(true);
 
         $instances = $reflection->invoke(null, [[\Bin\Middleware\RateLimitMiddleware::class, ['60', '1']]]);
 

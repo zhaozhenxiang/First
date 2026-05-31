@@ -318,7 +318,6 @@ abstract class Mailable
                 }
 
                 if (PHP_VERSION_ID < 80100) {
-                    $property->setAccessible(true);
                 }
                 $state[$property->getDeclaringClass()->getName()][$property->getName()] = $property->getValue($this);
             }
@@ -351,7 +350,6 @@ abstract class Mailable
                 }
 
                 if (PHP_VERSION_ID < 80100) {
-                    $property->setAccessible(true);
                 }
                 $property->setValue($this, $value);
             }

@@ -1063,7 +1063,6 @@ class QueueTest extends TestCase
         $worker->stop();
 
         $ref = new \ReflectionProperty($worker, 'shouldQuit');
-        $ref->setAccessible(true);
         $this->assertTrue($ref->getValue($worker));
     }
 

@@ -117,7 +117,6 @@ class RouteEnhancementTest extends TestCase
         // 通过反射测试 protected 方法
         $ref = new \ReflectionClass($registrar);
         $method = $ref->getMethod('singularize');
-        $method->setAccessible(true);
 
         $this->assertEquals('post', $method->invoke($registrar, 'posts'));
         $this->assertEquals('category', $method->invoke($registrar, 'categories'));

@@ -51,7 +51,6 @@ class MakeCommandsTest extends TestCase
     {
         $ref = new \ReflectionClass($obj);
         $m = $ref->getMethod($method);
-        $m->setAccessible(true);
         return $m->invokeArgs($obj, $args);
     }
 
@@ -67,7 +66,6 @@ class MakeCommandsTest extends TestCase
         }
         if ($ref) {
             $p = $ref->getProperty($prop);
-            $p->setAccessible(true);
             $p->setValue($obj, $value);
         }
     }
@@ -83,19 +81,15 @@ class MakeCommandsTest extends TestCase
         // 注入 output 避免 uninitialized 错误
         $baseRef = new \ReflectionClass(\Bin\Console\Command::class);
         $outputProp = $baseRef->getProperty('output');
-        $outputProp->setAccessible(true);
         $outputProp->setValue($cmd, new \Bin\Console\Output());
 
         $inputProp = $baseRef->getProperty('input');
-        $inputProp->setAccessible(true);
         $inputProp->setValue($cmd, new \Bin\Console\Input(['script', 'make:test', $name]));
 
         $argProp = $baseRef->getProperty('argumentValues');
-        $argProp->setAccessible(true);
         $argProp->setValue($cmd, ['name' => $name]);
 
         $optProp = $baseRef->getProperty('optionValues');
-        $optProp->setAccessible(true);
         $optProp->setValue($cmd, $options);
 
         return $cmd;
@@ -425,16 +419,12 @@ class MakeCommandsTest extends TestCase
 
         $baseRef = new \ReflectionClass(\Bin\Console\Command::class);
         $outputProp = $baseRef->getProperty('output');
-        $outputProp->setAccessible(true);
         $outputProp->setValue($cmd, new \Bin\Console\Output());
         $inputProp = $baseRef->getProperty('input');
-        $inputProp->setAccessible(true);
         $inputProp->setValue($cmd, new \Bin\Console\Input(['script', 'make:middleware', 'TestMiddleware']));
         $argProp = $baseRef->getProperty('argumentValues');
-        $argProp->setAccessible(true);
         $argProp->setValue($cmd, ['name' => 'TestMiddleware']);
         $optProp = $baseRef->getProperty('optionValues');
-        $optProp->setAccessible(true);
         $optProp->setValue($cmd, []);
 
         ob_start();
@@ -460,13 +450,10 @@ class MakeCommandsTest extends TestCase
 
         $baseRef = new \ReflectionClass(\Bin\Console\Command::class);
         $outputProp = $baseRef->getProperty('output');
-        $outputProp->setAccessible(true);
         $outputProp->setValue($cmd, new \Bin\Console\Output());
         $argProp = $baseRef->getProperty('argumentValues');
-        $argProp->setAccessible(true);
         $argProp->setValue($cmd, ['name' => 'TestMiddleware']);
         $optProp = $baseRef->getProperty('optionValues');
-        $optProp->setAccessible(true);
         $optProp->setValue($cmd, []);
 
         ob_start();
@@ -487,13 +474,10 @@ class MakeCommandsTest extends TestCase
 
         $baseRef = new \ReflectionClass(\Bin\Console\Command::class);
         $outputProp = $baseRef->getProperty('output');
-        $outputProp->setAccessible(true);
         $outputProp->setValue($cmd, new \Bin\Console\Output());
         $argProp = $baseRef->getProperty('argumentValues');
-        $argProp->setAccessible(true);
         $argProp->setValue($cmd, ['name' => 'bad_name']);
         $optProp = $baseRef->getProperty('optionValues');
-        $optProp->setAccessible(true);
         $optProp->setValue($cmd, []);
 
         ob_start();

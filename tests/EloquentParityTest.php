@@ -172,7 +172,6 @@ class EloquentParityTest extends TestCase
         $post = new ParityPost();
         // 通过反射测试 protected 方法
         $ref = new \ReflectionMethod($post, 'getForeignKey');
-        $ref->setAccessible(true);
         $foreignKey = $ref->invoke($post);
         $this->assertEquals('parity_post_id', $foreignKey);
     }
@@ -182,7 +181,6 @@ class EloquentParityTest extends TestCase
         // 通过反射测试 protected 方法
         $user = new ParityUser();
         $ref = new \ReflectionMethod($user, 'joiningTable');
-        $ref->setAccessible(true);
         $table = $ref->invoke($user, ParityPost::class);
         $this->assertEquals('parity_post_parity_user', $table);
     }

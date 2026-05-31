@@ -30,7 +30,6 @@ class LegacyExceptionHandlerTest extends TestCase
     {
         $reflection = new \ReflectionClass(Handler::class);
         $method = $reflection->getMethod('renderProductionResponse');
-        $method->setAccessible(true);
 
         $response = $method->invoke(null, 500);
 

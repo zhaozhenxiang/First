@@ -912,7 +912,6 @@ class RouteTest extends TestCase
     {
         $reflection = new \ReflectionClass($route);
         $property = $reflection->getProperty('matchedParams');
-        $property->setAccessible(true);
 
         return $property->getValue($route);
     }
