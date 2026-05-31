@@ -19,6 +19,7 @@ class RuntimeCompatibilityTest extends TestCase
                 escapeshellarg($file)
             );
 
+            $output = [];
             exec($command, $output, $exitCode);
             $text = implode("\n", $output);
 

@@ -102,6 +102,7 @@ class RuntimeCompatibilityTest extends TestCase
                 escapeshellarg($file)
             );
 
+            $output = [];
             exec($command, $output, $exitCode);
             $text = implode("\n", $output);
 
@@ -158,7 +159,7 @@ class RuntimeCompatibilityTest extends TestCase
 Run:
 
 ```bash
-php test tests/RuntimeCompatibilityTest.php --filter=testFrameworkFilesLintWithoutDeprecations
+php test --pattern=RuntimeCompatibilityTest.php --filter=testFrameworkFilesLintWithoutDeprecations
 ```
 
 Expected: FAIL. The failure output should list framework files such as `bin/Container/Container.php`, `bin/Database/Schema/Blueprint.php`, and `bin/Database/Model/HasRelationships.php` with implicit nullable deprecation messages.
@@ -168,7 +169,7 @@ Expected: FAIL. The failure output should list framework files such as `bin/Cont
 Run:
 
 ```bash
-php test tests/RuntimeCompatibilityTest.php --filter=testNoDeprecatedReflectionSetAccessibleCallsRemain
+php test --pattern=RuntimeCompatibilityTest.php --filter=testNoDeprecatedReflectionSetAccessibleCallsRemain
 ```
 
 Expected: FAIL. The failure output should list files such as `tests/MakeCommandsTest.php`, `tests/RouteTest.php`, `tests/HttpClientTest.php`, and `bin/Mail/Mailable.php`.
@@ -430,7 +431,7 @@ Expected: PASS.
 Run:
 
 ```bash
-php test tests/RuntimeCompatibilityTest.php --filter=testFrameworkFilesLintWithoutDeprecations
+php test --pattern=RuntimeCompatibilityTest.php --filter=testFrameworkFilesLintWithoutDeprecations
 ```
 
 Expected: PASS.
@@ -486,7 +487,7 @@ Expected: PASS.
 Run:
 
 ```bash
-php test tests/RuntimeCompatibilityTest.php --filter=testNoDeprecatedReflectionSetAccessibleCallsRemain
+php test --pattern=RuntimeCompatibilityTest.php --filter=testNoDeprecatedReflectionSetAccessibleCallsRemain
 ```
 
 Expected: PASS.
@@ -516,7 +517,7 @@ warnings when linted with `E_ALL` on the currently supported runtime.
 Runtime compatibility checks:
 
 ```bash
-php test tests/RuntimeCompatibilityTest.php
+php test --pattern=RuntimeCompatibilityTest.php
 ```
 
 The compatibility test lints all files under `bin/` with deprecation reporting
@@ -552,7 +553,7 @@ git commit -m "docs: document runtime compatibility checks"
 Run:
 
 ```bash
-php test tests/RuntimeCompatibilityTest.php
+php test --pattern=RuntimeCompatibilityTest.php
 ```
 
 Expected: PASS with no deprecation output.
