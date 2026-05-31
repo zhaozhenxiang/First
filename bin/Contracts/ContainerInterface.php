@@ -29,12 +29,12 @@ interface ContainerInterface
     /**
      * 绑定服务到容器
      */
-    public function bind(string $abstract, callable|string $concrete = null, bool $shared = false): void;
+    public function bind(string $abstract, callable|string|null $concrete = null, bool $shared = false): void;
 
     /**
      * 绑定单例
      */
-    public function singleton(string $abstract, callable|string $concrete = null): void;
+    public function singleton(string $abstract, callable|string|null $concrete = null): void;
 
     /**
      * 绑定实例

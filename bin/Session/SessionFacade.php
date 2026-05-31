@@ -172,7 +172,7 @@ class SessionFacade extends Facade
     /**
      * 获取上一个请求的输入值
      */
-    public static function getOldInput(string $key = null, mixed $default = null): mixed
+    public static function getOldInput(?string $key = null, mixed $default = null): mixed
     {
         return static::getInstance()->getOldInput($key, $default);
     }

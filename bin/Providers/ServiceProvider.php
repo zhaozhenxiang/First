@@ -68,7 +68,7 @@ abstract class ServiceProvider
     /**
      * 注册单例
      */
-    protected function singleton(string $abstract, callable|string $concrete = null): void
+    protected function singleton(string $abstract, callable|string|null $concrete = null): void
     {
         $this->app->singleton($abstract, $concrete);
     }
@@ -76,7 +76,7 @@ abstract class ServiceProvider
     /**
      * 绑定服务
      */
-    protected function bind(string $abstract, callable|string $concrete = null, bool $shared = false): void
+    protected function bind(string $abstract, callable|string|null $concrete = null, bool $shared = false): void
     {
         $this->app->bind($abstract, $concrete, $shared);
     }

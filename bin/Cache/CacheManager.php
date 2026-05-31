@@ -197,7 +197,7 @@ class CacheManager
     /**
      * @deprecated 使用 CacheManager::getInstance()->storeFor()->set()
      */
-    public static function set(string $key, mixed $value, int $ttl = null): bool
+    public static function set(string $key, mixed $value, ?int $ttl = null): bool
     {
         return self::getInstance()->storeFor()->set($key, $value, $ttl);
     }

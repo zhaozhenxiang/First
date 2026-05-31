@@ -146,7 +146,7 @@ class Container implements ContainerInterface, PsrContainerInterface
     /**
      * 绑定服务到容器
      */
-    public function bind(string $abstract, callable|string $concrete = null, bool $shared = false): void
+    public function bind(string $abstract, callable|string|null $concrete = null, bool $shared = false): void
     {
         $this->dropStaleInstances($abstract);
 
@@ -167,7 +167,7 @@ class Container implements ContainerInterface, PsrContainerInterface
     /**
      * 绑定单例
      */
-    public function singleton(string $abstract, callable|string $concrete = null): void
+    public function singleton(string $abstract, callable|string|null $concrete = null): void
     {
         $this->bind($abstract, $concrete, true);
     }
@@ -203,7 +203,7 @@ class Container implements ContainerInterface, PsrContainerInterface
      *
      * 在同一作用域/请求生命周期内共享实例
      */
-    public function scoped(string $abstract, callable|string $concrete = null): void
+    public function scoped(string $abstract, callable|string|null $concrete = null): void
     {
         $this->bind($abstract, $concrete, true);
 
@@ -216,7 +216,7 @@ class Container implements ContainerInterface, PsrContainerInterface
     /**
      * 条件绑定：仅在未绑定时绑定
      */
-    public function bindIf(string $abstract, callable|string $concrete = null, bool $shared = false): void
+    public function bindIf(string $abstract, callable|string|null $concrete = null, bool $shared = false): void
     {
         if (!$this->bound($abstract)) {
             $this->bind($abstract, $concrete, $shared);
@@ -226,7 +226,7 @@ class Container implements ContainerInterface, PsrContainerInterface
     /**
      * 条件单例：仅在未绑定时绑定单例
      */
-    public function singletonIf(string $abstract, callable|string $concrete = null): void
+    public function singletonIf(string $abstract, callable|string|null $concrete = null): void
     {
         if (!$this->bound($abstract)) {
             $this->singleton($abstract, $concrete);
@@ -1021,7 +1021,7 @@ class Container implements ContainerInterface, PsrContainerInterface
     /**
      * 绑定并立即解析
      */
-    public function bindAndMake(string $abstract, callable|string $concrete = null): object
+    public function bindAndMake(string $abstract, callable|string|null $concrete = null): object
     {
         $this->bind($abstract, $concrete);
 
@@ -1031,7 +1031,7 @@ class Container implements ContainerInterface, PsrContainerInterface
     /**
      * 绑定单例并立即解析
      */
-    public function singletonAndMake(string $abstract, callable|string $concrete = null): object
+    public function singletonAndMake(string $abstract, callable|string|null $concrete = null): object
     {
         $this->singleton($abstract, $concrete);
 

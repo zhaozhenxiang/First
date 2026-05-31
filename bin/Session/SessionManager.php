@@ -551,7 +551,7 @@ class SessionManager implements SessionInterface
     /**
      * 获取上一个请求的输入值
      */
-    public function getOldInput(string $key = null, mixed $default = null): mixed
+    public function getOldInput(?string $key = null, mixed $default = null): mixed
     {
         // 从 Flash 数据中获取旧输入
         $oldInput = $this->getFlash('_old_input', []);

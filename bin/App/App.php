@@ -466,7 +466,7 @@ class App implements ContainerInterface
     /**
      * 绑定服务到容器
      */
-    public function bind(string $abstract, callable|string $concrete = null, bool $shared = false): void
+    public function bind(string $abstract, callable|string|null $concrete = null, bool $shared = false): void
     {
         $this->container->bind($abstract, $concrete, $shared);
     }
@@ -474,7 +474,7 @@ class App implements ContainerInterface
     /**
      * 绑定单例
      */
-    public function singleton(string $abstract, callable|string $concrete = null): void
+    public function singleton(string $abstract, callable|string|null $concrete = null): void
     {
         $this->container->singleton($abstract, $concrete);
     }
@@ -590,7 +590,7 @@ class App implements ContainerInterface
     /**
      * 作用域绑定
      */
-    public function scoped(string $abstract, callable|string $concrete = null): void
+    public function scoped(string $abstract, callable|string|null $concrete = null): void
     {
         $this->container->scoped($abstract, $concrete);
     }
@@ -638,7 +638,7 @@ class App implements ContainerInterface
     /**
      * 条件绑定：仅在未绑定时绑定
      */
-    public function bindIf(string $abstract, callable|string $concrete = null, bool $shared = false): void
+    public function bindIf(string $abstract, callable|string|null $concrete = null, bool $shared = false): void
     {
         $this->container->bindIf($abstract, $concrete, $shared);
     }
@@ -646,7 +646,7 @@ class App implements ContainerInterface
     /**
      * 条件单例：仅在未绑定时绑定单例
      */
-    public function singletonIf(string $abstract, callable|string $concrete = null): void
+    public function singletonIf(string $abstract, callable|string|null $concrete = null): void
     {
         $this->container->singletonIf($abstract, $concrete);
     }

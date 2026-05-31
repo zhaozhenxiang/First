@@ -47,7 +47,7 @@ class LogManager
     /**
      * 获取日志通道
      */
-    public function channelFor(string $name = null): Logger
+    public function channelFor(?string $name = null): Logger
     {
         $name = $name ?? $this->defaultChannel;
 
@@ -89,7 +89,7 @@ class LogManager
      * 获取日志通道
      * @deprecated 使用 app('log')->channelFor() 或 LogManager::getInstance()->channelFor()
      */
-    public static function channel(string $name = null): Logger
+    public static function channel(?string $name = null): Logger
     {
         return self::getInstance()->channelFor($name);
     }
