@@ -116,11 +116,12 @@ class RuntimeCompatibilityTest extends TestCase
     public function testNoDeprecatedReflectionSetAccessibleCallsRemain(): void
     {
         $matches = [];
+        $deprecatedCall = '->set' . 'Accessible(';
 
         foreach ([BASE_PATH . '/bin', BASE_PATH . '/tests'] as $directory) {
             foreach ($this->phpFiles($directory) as $file) {
                 $contents = file_get_contents($file);
-                if ($contents !== false && str_contains($contents, '->setAccessible(')) {
+                if ($contents !== false && str_contains($contents, $deprecatedCall)) {
                     $matches[] = $file;
                 }
             }
