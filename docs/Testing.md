@@ -592,3 +592,19 @@ class TimeServiceTest extends TestCase
     }
 }
 ```
+
+## Runtime Compatibility
+
+First supports PHP 8.3 and newer. Framework code must not emit PHP deprecation
+warnings when linted with `E_ALL` on the currently supported runtime.
+
+Runtime compatibility checks:
+
+```bash
+php test --pattern=RuntimeCompatibilityTest.php
+```
+
+The compatibility test lints all files under `bin/` with deprecation reporting
+enabled and scans `bin/` plus `tests/` for deprecated reflection
+`setAccessible()` calls. When PHP introduces new deprecations, fix framework
+signatures or test helpers instead of suppressing warnings globally.
