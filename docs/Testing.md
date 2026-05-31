@@ -564,14 +564,16 @@ public function testThrowsException(): void
 
 ### Q: 如何测试私有方法？
 
-建议通过公共接口测试，如果必须测试私有方法，可以使用反射：
+优先通过公共接口测试私有行为。私有方法通常是实现细节，直接测试会让
+测试和内部结构耦合。
+
+如果在受支持的 PHP 版本上确实需要使用反射，可以直接调用目标方法：
 
 ```php
 public function testPrivateMethod(): void
 {
     $class = new MyClass();
     $method = new \ReflectionMethod($class, 'privateMethod');
-    $method->setAccessible(true);
     $result = $method->invoke($class);
     $this->assertEquals('expected', $result);
 }
