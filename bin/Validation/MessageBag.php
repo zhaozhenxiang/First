@@ -58,7 +58,7 @@ class MessageBag
     /**
      * 是否有错误（可指定字段）
      */
-    public function has(string $key = null): bool
+    public function has(?string $key = null): bool
     {
         if ($key === null) {
             return $this->messages !== [];

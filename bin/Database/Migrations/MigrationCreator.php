@@ -21,7 +21,7 @@ class MigrationCreator
     /**
      * 创建迁移文件
      */
-    public function create(string $name, string $table = null): string
+    public function create(string $name, ?string $table = null): string
     {
         $this->ensureDirectoryExists();
 

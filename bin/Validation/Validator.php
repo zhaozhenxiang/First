@@ -40,7 +40,7 @@ class Validator
     /**
      * 验证整数输入
      */
-    public static function int(mixed $value, int $min = null, int $max = null): int
+    public static function int(mixed $value, ?int $min = null, ?int $max = null): int
     {
         if (!is_numeric($value)) {
             throw new \InvalidArgumentException('Input must be numeric');

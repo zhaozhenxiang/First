@@ -135,7 +135,7 @@ trait HasRelationships
     /**
      * 定义 Has One 关系
      */
-    protected function hasOne(string $related, string $foreignKey = null, string $localKey = null): \Bin\Database\Relations\HasOne
+    protected function hasOne(string $related, ?string $foreignKey = null, ?string $localKey = null): \Bin\Database\Relations\HasOne
     {
         $instance = new $related();
 
@@ -151,7 +151,7 @@ trait HasRelationships
     /**
      * 定义 Has Many 关系
      */
-    protected function hasMany(string $related, string $foreignKey = null, string $localKey = null): \Bin\Database\Relations\HasMany
+    protected function hasMany(string $related, ?string $foreignKey = null, ?string $localKey = null): \Bin\Database\Relations\HasMany
     {
         $instance = new $related();
 
@@ -167,7 +167,7 @@ trait HasRelationships
     /**
      * 定义 Belongs To 关系
      */
-    protected function belongsTo(string $related, string $foreignKey = null, string $ownerKey = null, string $relation = null): \Bin\Database\Relations\BelongsTo
+    protected function belongsTo(string $related, ?string $foreignKey = null, ?string $ownerKey = null, ?string $relation = null): \Bin\Database\Relations\BelongsTo
     {
         $relation = $relation ?? $this->guessBelongsToRelation();
 
@@ -187,11 +187,11 @@ trait HasRelationships
      */
     protected function belongsToMany(
         string $related,
-        string $table = null,
-        string $foreignPivotKey = null,
-        string $relatedPivotKey = null,
-        string $parentKey = null,
-        string $relatedKey = null
+        ?string $table = null,
+        ?string $foreignPivotKey = null,
+        ?string $relatedPivotKey = null,
+        ?string $parentKey = null,
+        ?string $relatedKey = null
     ): \Bin\Database\Relations\BelongsToMany {
         $instance = new $related();
 
@@ -224,10 +224,10 @@ trait HasRelationships
     protected function hasOneThrough(
         string $related,
         string $through,
-        string $firstKey = null,
-        string $secondKey = null,
-        string $localKey = null,
-        string $secondLocalKey = null
+        ?string $firstKey = null,
+        ?string $secondKey = null,
+        ?string $localKey = null,
+        ?string $secondLocalKey = null
     ): \Bin\Database\Relations\HasOneThrough {
         $relatedInstance = new $related();
         $throughInstance = new $through();
@@ -250,10 +250,10 @@ trait HasRelationships
     protected function hasManyThrough(
         string $related,
         string $through,
-        string $firstKey = null,
-        string $secondKey = null,
-        string $localKey = null,
-        string $secondLocalKey = null
+        ?string $firstKey = null,
+        ?string $secondKey = null,
+        ?string $localKey = null,
+        ?string $secondLocalKey = null
     ): \Bin\Database\Relations\HasManyThrough {
         $relatedInstance = new $related();
         $throughInstance = new $through();
@@ -273,7 +273,7 @@ trait HasRelationships
     /**
      * 定义多态一对一关系
      */
-    protected function morphOne(string $related, string $name, string $type = null, string $id = null, string $localKey = null): Relations\MorphOne
+    protected function morphOne(string $related, string $name, ?string $type = null, ?string $id = null, ?string $localKey = null): Relations\MorphOne
     {
         $instance = new $related();
         $type = $type ?? $name . '_type';
@@ -290,7 +290,7 @@ trait HasRelationships
     /**
      * 定义多态一对多关系
      */
-    protected function morphMany(string $related, string $name, string $type = null, string $id = null, string $localKey = null): Relations\MorphMany
+    protected function morphMany(string $related, string $name, ?string $type = null, ?string $id = null, ?string $localKey = null): Relations\MorphMany
     {
         $instance = new $related();
         $type = $type ?? $name . '_type';
@@ -310,11 +310,11 @@ trait HasRelationships
     protected function morphToMany(
         string $related,
         string $name,
-        string $table = null,
-        string $foreignPivotKey = null,
-        string $relatedPivotKey = null,
-        string $parentKey = null,
-        string $relatedKey = null
+        ?string $table = null,
+        ?string $foreignPivotKey = null,
+        ?string $relatedPivotKey = null,
+        ?string $parentKey = null,
+        ?string $relatedKey = null
     ): Relations\MorphToMany {
         $instance = new $related();
         $table = $table ?? $name . 's';
@@ -352,11 +352,11 @@ trait HasRelationships
     protected function morphedByMany(
         string $related,
         string $name,
-        string $table = null,
-        string $foreignPivotKey = null,
-        string $relatedPivotKey = null,
-        string $parentKey = null,
-        string $relatedKey = null
+        ?string $table = null,
+        ?string $foreignPivotKey = null,
+        ?string $relatedPivotKey = null,
+        ?string $parentKey = null,
+        ?string $relatedKey = null
     ): Relations\MorphToMany {
         $instance = new $related();
         $table = $table ?? $name . 's';

@@ -93,7 +93,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * 获取第一个元素
      */
-    public function first(callable $callback = null, mixed $default = null): mixed
+    public function first(?callable $callback = null, mixed $default = null): mixed
     {
         if ($callback === null) {
             return empty($this->items) ? $default : reset($this->items);
@@ -111,7 +111,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * 获取最后一个元素
      */
-    public function last(callable $callback = null, mixed $default = null): mixed
+    public function last(?callable $callback = null, mixed $default = null): mixed
     {
         if ($callback === null) {
             return empty($this->items) ? $default : end($this->items);
@@ -217,7 +217,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     /**
      * Sort 排序
      */
-    public function sort(callable $callback = null): self
+    public function sort(?callable $callback = null): self
     {
         $items = $this->items;
 

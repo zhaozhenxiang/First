@@ -309,7 +309,7 @@ class BelongsToMany extends Relation
     /**
      * 从关系中分离模型
      */
-    public function detach(int|array $ids = null): int
+    public function detach(int|array|null $ids = null): int
     {
         $query = $this->newPivotQuery();
 

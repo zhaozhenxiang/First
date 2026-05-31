@@ -56,7 +56,7 @@ abstract class HasOneOrMany extends Relation
     /**
      * 获取所有父模型的键
      */
-    protected function getKeys(array $models, string $key = null): array
+    protected function getKeys(array $models, ?string $key = null): array
     {
         $keys = [];
 

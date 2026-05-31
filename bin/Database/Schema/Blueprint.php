@@ -69,7 +69,7 @@ class Blueprint
     /**
      * 外键约束
      */
-    public function foreign(string $column, string $table = null, string $columnOnTable = 'id'): ForeignKey
+    public function foreign(string $column, ?string $table = null, string $columnOnTable = 'id'): ForeignKey
     {
         $referencedTable = $table ?? str_replace('_id', '', $column);
 
@@ -265,7 +265,7 @@ class Blueprint
     /**
      * DOUBLE
      */
-    public function double(string $column, int $total = null, int $places = null): ColumnDefinition
+    public function double(string $column, ?int $total = null, ?int $places = null): ColumnDefinition
     {
         $def = $this->addColumn('double', $column);
         if ($total !== null) {
@@ -280,7 +280,7 @@ class Blueprint
     /**
      * FLOAT
      */
-    public function float(string $column, int $total = null, int $places = null): ColumnDefinition
+    public function float(string $column, ?int $total = null, ?int $places = null): ColumnDefinition
     {
         $def = $this->addColumn('float', $column);
         if ($total !== null) {
@@ -400,7 +400,7 @@ class Blueprint
     /**
      * BINARY
      */
-    public function binary(string $column, int $length = null): ColumnDefinition
+    public function binary(string $column, ?int $length = null): ColumnDefinition
     {
         $def = $this->addColumn('binary', $column);
         if ($length !== null) {
@@ -581,7 +581,7 @@ class Blueprint
     /**
      * 删除主键
      */
-    public function dropPrimary(string $index = null): void
+    public function dropPrimary(?string $index = null): void
     {
         $this->commands[] = [
             'type' => 'dropPrimary',
@@ -625,7 +625,7 @@ class Blueprint
     /**
      * 主键
      */
-    public function primary(string|array $columns, string $name = null): void
+    public function primary(string|array $columns, ?string $name = null): void
     {
         $this->commands[] = [
             'type' => 'primary',
@@ -637,7 +637,7 @@ class Blueprint
     /**
      * 唯一索引
      */
-    public function unique(string|array $columns, string $name = null, string $algorithm = null): void
+    public function unique(string|array $columns, ?string $name = null, ?string $algorithm = null): void
     {
         $this->commands[] = [
             'type' => 'unique',
@@ -650,7 +650,7 @@ class Blueprint
     /**
      * 索引
      */
-    public function index(string|array $columns, string $name = null, string $algorithm = null): void
+    public function index(string|array $columns, ?string $name = null, ?string $algorithm = null): void
     {
         $this->commands[] = [
             'type' => 'index',
@@ -663,7 +663,7 @@ class Blueprint
     /**
      * 全文索引
      */
-    public function fullText(string|array $columns, string $name = null, string $algorithm = null): void
+    public function fullText(string|array $columns, ?string $name = null, ?string $algorithm = null): void
     {
         $this->commands[] = [
             'type' => 'fulltext',
@@ -676,7 +676,7 @@ class Blueprint
     /**
      * 空间索引
      */
-    public function spatialIndex(string|array $columns, string $name = null): void
+    public function spatialIndex(string|array $columns, ?string $name = null): void
     {
         $this->commands[] = [
             'type' => 'spatialIndex',
@@ -690,11 +690,11 @@ class Blueprint
      */
     public function foreignKey(
         string|array $columns,
-        string $name = null,
-        string $on = null,
+        ?string $name = null,
+        ?string $on = null,
         string $references = 'id',
-        string $onDelete = null,
-        string $onUpdate = null
+        ?string $onDelete = null,
+        ?string $onUpdate = null
     ): void {
         $this->commands[] = [
             'type' => 'foreign',

@@ -11,7 +11,7 @@ class SeederCreator
 {
     private string $path;
 
-    public function __construct(string $path = null)
+    public function __construct(?string $path = null)
     {
         $this->path = $path ?? basePath('database/seeders');
     }
@@ -19,7 +19,7 @@ class SeederCreator
     /**
      * 创建 Seeder 文件
      */
-    public function create(string $name, string $path = null): string
+    public function create(string $name, ?string $path = null): string
     {
         $path = $path ?? $this->path;
 
