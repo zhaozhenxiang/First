@@ -8,14 +8,17 @@ use Bin\Container\Exceptions\BindingResolutionException;
 use Bin\Container\Exceptions\CircularDependencyException;
 use Bin\Container\Exceptions\NotFoundException;
 use Bin\Contracts\ContainerInterface;
+use Bin\Contracts\ContextualAttribute;
 use Bin\Psr\Container\ContainerInterface as PsrContainerInterface;
 use Bin\Psr\Container\NotFoundExceptionInterface;
 use Closure;
+use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionFunction;
 use ReflectionMethod;
 use ReflectionParameter;
 use RuntimeException;
+use Throwable;
 
 /**
  * IoC 服务容器
@@ -32,6 +35,8 @@ use RuntimeException;
  */
 class Container implements ContainerInterface, PsrContainerInterface
 {
+    public const ROUTE_PARAMETER_CONTEXT = '__route_parameters';
+
     /**
      * 已绑定的服务
      * @var array<string, array{concrete: callable|string, shared: bool}>
@@ -115,6 +120,13 @@ class Container implements ContainerInterface, PsrContainerInterface
      * @var array<string, bool>
      */
     protected array $resolved = [];
+
+    /**
+     * Parameters currently being resolved by Container::call().
+     *
+     * @var array<int, array{parameters: array<string, mixed>, route: array<string, mixed>}>
+     */
+    protected array $parameterContextStack = [];
 
     /**
      * 全局容器实例
@@ -463,6 +475,10 @@ class Container implements ContainerInterface, PsrContainerInterface
         } catch (CircularDependencyException $e) {
             throw $e;
         } catch (BindingResolutionException $e) {
+            if (str_starts_with($e->getMessage(), 'Contextual attribute [')) {
+                throw $e;
+            }
+
             throw BindingResolutionException::dependencyFailed($concrete, $e->getAbstract(), $e);
         }
 
@@ -477,6 +493,12 @@ class Container implements ContainerInterface, PsrContainerInterface
         $results = [];
 
         foreach ($dependencies as $dependency) {
+            [$hasAttribute, $attributeValue] = $this->resolveContextualAttribute($dependency);
+            if ($hasAttribute) {
+                $results[] = $attributeValue;
+                continue;
+            }
+
             $type = $dependency->getType();
 
             if ($type !== null && $type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
@@ -487,16 +509,9 @@ class Container implements ContainerInterface, PsrContainerInterface
                     $buildingClass = end($this->buildStack);
 
                     if (isset($this->contextual[$buildingClass][$abstract])) {
-                        $concrete = $this->contextual[$buildingClass][$abstract];
-
-                        if ($concrete instanceof Closure) {
-                            $results[] = $concrete($this);
-                        } elseif (is_string($concrete)) {
-                            $results[] = $this->make($concrete);
-                        } else {
-                            $results[] = $concrete;
-                        }
-
+                        $results[] = $this->resolveContextualBindingValue(
+                            $this->contextual[$buildingClass][$abstract]
+                        );
                         continue;
                     }
                 }
@@ -511,8 +526,9 @@ class Container implements ContainerInterface, PsrContainerInterface
                 $paramName = $dependency->getName();
 
                 if (isset($this->contextual[$buildingClass][$paramName])) {
-                    $concrete = $this->contextual[$buildingClass][$paramName];
-                    $results[] = $concrete instanceof Closure ? $concrete($this) : $concrete;
+                    $results[] = $this->resolveContextualBindingValue(
+                        $this->contextual[$buildingClass][$paramName]
+                    );
                     continue;
                 }
             }
@@ -584,10 +600,16 @@ class Container implements ContainerInterface, PsrContainerInterface
      */
     protected function callClosure(\Closure $closure, array $parameters = []): mixed
     {
-        $reflector = new ReflectionFunction($closure);
-        $args = $this->resolveMethodParameters($reflector->getParameters(), $parameters);
+        $parameters = $this->pushParameterContext($parameters);
 
-        return $closure(...$args);
+        try {
+            $reflector = new ReflectionFunction($closure);
+            $args = $this->resolveMethodParameters($reflector->getParameters(), $parameters);
+
+            return $closure(...$args);
+        } finally {
+            $this->popParameterContext();
+        }
     }
 
     /**
@@ -595,10 +617,16 @@ class Container implements ContainerInterface, PsrContainerInterface
      */
     protected function callMethod(object $instance, string $method, array $parameters = []): mixed
     {
-        $reflector = new ReflectionMethod($instance, $method);
-        $args = $this->resolveMethodParameters($reflector->getParameters(), $parameters);
+        $parameters = $this->pushParameterContext($parameters);
 
-        return $instance->{$method}(...$args);
+        try {
+            $reflector = new ReflectionMethod($instance, $method);
+            $args = $this->resolveMethodParameters($reflector->getParameters(), $parameters);
+
+            return $instance->{$method}(...$args);
+        } finally {
+            $this->popParameterContext();
+        }
     }
 
     /**
@@ -614,6 +642,12 @@ class Container implements ContainerInterface, PsrContainerInterface
             // 显式参数优先
             if (array_key_exists($name, $parameters)) {
                 $results[] = $parameters[$name];
+                continue;
+            }
+
+            [$hasAttribute, $attributeValue] = $this->resolveContextualAttribute($dependency);
+            if ($hasAttribute) {
+                $results[] = $attributeValue;
                 continue;
             }
 
@@ -640,6 +674,118 @@ class Container implements ContainerInterface, PsrContainerInterface
         }
 
         return $results;
+    }
+
+    /**
+     * @return array{0: bool, 1: mixed}
+     */
+    protected function resolveContextualAttribute(ReflectionParameter $parameter): array
+    {
+        $attributes = $parameter->getAttributes(
+            ContextualAttribute::class,
+            ReflectionAttribute::IS_INSTANCEOF
+        );
+
+        if ($attributes === []) {
+            return [false, null];
+        }
+
+        $attribute = $attributes[0];
+        $attributeName = $attribute->getName();
+        $parameterName = $parameter->getName();
+
+        try {
+            /** @var ContextualAttribute $instance */
+            $instance = $attribute->newInstance();
+
+            return [true, $instance->resolve($this, $parameter)];
+        } catch (Throwable $exception) {
+            throw new BindingResolutionException(
+                $parameterName,
+                "Contextual attribute [{$attributeName}] failed resolving parameter [{$parameterName}]: {$exception->getMessage()}",
+                0,
+                $exception
+            );
+        }
+    }
+
+    protected function resolveContextualBindingValue(mixed $concrete): mixed
+    {
+        if ($concrete instanceof Closure) {
+            return $concrete($this);
+        }
+
+        if (is_string($concrete) && ($this->bound($concrete) || class_exists($concrete) || interface_exists($concrete))) {
+            return $this->make($concrete);
+        }
+
+        return $concrete;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function pushParameterContext(array $parameters): array
+    {
+        $routeParameters = [];
+
+        if (array_key_exists(self::ROUTE_PARAMETER_CONTEXT, $parameters)) {
+            $rawRouteParameters = $parameters[self::ROUTE_PARAMETER_CONTEXT];
+            unset($parameters[self::ROUTE_PARAMETER_CONTEXT]);
+
+            if (is_array($rawRouteParameters)) {
+                $routeParameters = $rawRouteParameters;
+            }
+        }
+
+        $this->parameterContextStack[] = [
+            'parameters' => $parameters,
+            'route' => $routeParameters,
+        ];
+
+        return $parameters;
+    }
+
+    protected function popParameterContext(): void
+    {
+        array_pop($this->parameterContextStack);
+    }
+
+    public function hasParameterContextValue(string $name): bool
+    {
+        for ($i = count($this->parameterContextStack) - 1; $i >= 0; $i--) {
+            $context = $this->parameterContextStack[$i];
+
+            if (array_key_exists($name, $context['route'])) {
+                return true;
+            }
+
+            if (array_key_exists($name, $context['parameters'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function getParameterContextValue(string $name): mixed
+    {
+        for ($i = count($this->parameterContextStack) - 1; $i >= 0; $i--) {
+            $context = $this->parameterContextStack[$i];
+
+            if (array_key_exists($name, $context['route'])) {
+                return $context['route'][$name];
+            }
+
+            if (array_key_exists($name, $context['parameters'])) {
+                return $context['parameters'][$name];
+            }
+        }
+
+        throw new BindingResolutionException(
+            $name,
+            "Parameter context value [{$name}] is not available"
+        );
     }
 
     // ===== 查询方法 =====
@@ -883,6 +1029,7 @@ class Container implements ContainerInterface, PsrContainerInterface
         $this->reboundCallbacks = [];
         $this->resolved = [];
         $this->buildStack = [];
+        $this->parameterContextStack = [];
     }
 
     /**
