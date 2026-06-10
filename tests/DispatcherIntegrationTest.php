@@ -6,6 +6,7 @@ namespace Tests;
 
 use Bin\App\App;
 use Bin\Auth\AuthManager;
+use Bin\Container\Attributes\RouteParameter;
 use Bin\Container\Container;
 use Bin\Exception\AuthorizationException;
 use Bin\Exception\ValidationException;
@@ -143,6 +144,47 @@ class DispatcherIntegrationTest extends TestCase
         $result = $this->dispatcher->dispatchClosure($closure, $route);
 
         $this->assertEquals('id=42', $result->getContent());
+    }
+
+    public function testDispatcherClosureRouteParameterAttributeReadsDifferentUrlKey(): void
+    {
+        $request = \Bin\Request\Request::capture();
+        $request->setUrlParam(['post' => '42']);
+        Container::getInstance()->instance(\Bin\Request\Request::class, $request);
+
+        $closure = fn (
+            #[RouteParameter('post')]
+            string $postId
+        ): string => "post={$postId}";
+
+        $route = new Route('GET', '/posts/{post}', $closure);
+        $result = $this->dispatcher->dispatchClosure($closure, $route);
+
+        $this->assertEquals('post=42', $result->getContent());
+    }
+
+    public function testDispatcherControllerRouteParameterAttributeReadsDifferentUrlKey(): void
+    {
+        $request = \Bin\Request\Request::capture();
+        $request->setUrlParam(['post' => '84']);
+        Container::getInstance()->instance(\Bin\Request\Request::class, $request);
+
+        $controller = new class {
+            public function show(
+                #[RouteParameter('post')]
+                string $postId
+            ): string {
+                return "post={$postId}";
+            }
+        };
+
+        $className = get_class($controller);
+        Container::getInstance()->instance($className, $controller);
+
+        $route = new Route('GET', '/posts/{post}', $className . '@show');
+        $result = $this->dispatcher->dispatch($className, 'show', $route);
+
+        $this->assertEquals('post=84', $result->getContent());
     }
 
     public function testRouteActionDispatchUsesProvidedRequestInstance(): void

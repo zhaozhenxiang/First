@@ -106,7 +106,9 @@ class ControllerDispatcher
             $request = Request::capture();
         }
         $urlParams = $request->getUrlParam() ?? [];
-        $parameters = [];
+        $parameters = [
+            \Bin\Container\Container::ROUTE_PARAMETER_CONTEXT => $urlParams,
+        ];
 
         foreach ($reflectionParams as $param) {
             $type = $param->getType();
@@ -122,13 +124,13 @@ class ControllerDispatcher
                 }
 
                 // 2. 显式路由模型绑定
-                if (RouteBinding::hasBinding($name) && isset($urlParams[$name])) {
+                if (RouteBinding::hasBinding($name) && array_key_exists($name, $urlParams)) {
                     $parameters[$name] = RouteBinding::resolve($name, $urlParams[$name]);
                     continue;
                 }
 
                 // 3. 隐式模型绑定
-                if (class_exists($typeName) && is_subclass_of($typeName, Model::class) && isset($urlParams[$name])) {
+                if (class_exists($typeName) && is_subclass_of($typeName, Model::class) && array_key_exists($name, $urlParams)) {
                     $resolved = RouteBinding::resolveForClass($typeName, $urlParams[$name]);
                     if ($resolved !== null) {
                         $parameters[$name] = $resolved;
@@ -141,7 +143,7 @@ class ControllerDispatcher
             }
 
             // 无类型/内置类型：从 URL 参数按名称映射
-            if (isset($urlParams[$name])) {
+            if (array_key_exists($name, $urlParams)) {
                 $parameters[$name] = $urlParams[$name];
             }
         }
