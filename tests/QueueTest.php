@@ -34,6 +34,7 @@ class QueueTest extends TestCase
         \QueueTest_FinallyFailingJob::resetState();
         \QueueTest_FailedCallbackThrowingJob::resetState();
         \QueueTest_InjectedJob::resetState();
+        \QueueTest_ScopedJob::resetState();
 
         $this->pdo = new PDO('sqlite::memory:');
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -1055,6 +1056,27 @@ class QueueTest extends TestCase
         App::getInstance()->getContainer()->forget(\QueueTest_InjectedDependency::class);
     }
 
+    public function testWorkerProcessResetsScopedBindingsBetweenJobs(): void
+    {
+        App::getInstance()->scoped(\QueueTest_ScopedDependency::class);
+
+        $manager = new QueueManager();
+        $manager->setConfig([
+            'sync' => ['driver' => 'sync'],
+        ]);
+
+        try {
+            $worker = new Worker($manager);
+            $worker->process(new \QueueTest_ScopedJob(), 'sync', 'default', 3);
+            $worker->process(new \QueueTest_ScopedJob(), 'sync', 'default', 3);
+
+            $this->assertCount(2, \QueueTest_ScopedJob::$dependencyIds);
+            $this->assertNotSame(\QueueTest_ScopedJob::$dependencyIds[0], \QueueTest_ScopedJob::$dependencyIds[1]);
+        } finally {
+            App::getInstance()->getContainer()->forget(\QueueTest_ScopedDependency::class);
+        }
+    }
+
     public function testWorkerStop(): void
     {
         $manager = new QueueManager();
@@ -1084,6 +1106,37 @@ class QueueTest extends TestCase
         $this->assertEquals('from dispatch sync', \QueueTest_InjectedJob::$value);
 
         App::getInstance()->getContainer()->forget(\QueueTest_InjectedDependency::class);
+    }
+
+    public function testSyncQueueResetsScopedBindingsBetweenJobs(): void
+    {
+        App::getInstance()->scoped(\QueueTest_ScopedDependency::class);
+
+        try {
+            $queue = new SyncQueue();
+            $queue->push(new \QueueTest_ScopedJob());
+            $queue->push(new \QueueTest_ScopedJob());
+
+            $this->assertCount(2, \QueueTest_ScopedJob::$dependencyIds);
+            $this->assertNotSame(\QueueTest_ScopedJob::$dependencyIds[0], \QueueTest_ScopedJob::$dependencyIds[1]);
+        } finally {
+            App::getInstance()->getContainer()->forget(\QueueTest_ScopedDependency::class);
+        }
+    }
+
+    public function testDispatchSyncResetsScopedBindingsBetweenJobs(): void
+    {
+        App::getInstance()->scoped(\QueueTest_ScopedDependency::class);
+
+        try {
+            \QueueTest_ScopedJob::dispatchSync();
+            \QueueTest_ScopedJob::dispatchSync();
+
+            $this->assertCount(2, \QueueTest_ScopedJob::$dependencyIds);
+            $this->assertNotSame(\QueueTest_ScopedJob::$dependencyIds[0], \QueueTest_ScopedJob::$dependencyIds[1]);
+        } finally {
+            App::getInstance()->getContainer()->forget(\QueueTest_ScopedDependency::class);
+        }
     }
 
     public function testPendingDispatchExplicitDispatchUsesSelectedConnectionQueueAndDelay(): void

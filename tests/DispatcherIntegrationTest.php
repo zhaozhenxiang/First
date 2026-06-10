@@ -217,6 +217,36 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertSame($request, App::getInstance()->make(Request::class));
     }
 
+    public function testRouteActionDispatchResetsScopedBindingsBetweenRequests(): void
+    {
+        $originalServer = $_SERVER;
+        $seen = [];
+
+        try {
+            App::getInstance()->scoped(DispatcherIntegrationScopedProbe::class);
+
+            \Bin\Route\RouteCollection::get('/scoped', function (DispatcherIntegrationScopedProbe $probe) use (&$seen): string {
+                $seen[] = spl_object_id($probe);
+
+                return 'ok';
+            });
+
+            $_SERVER['REQUEST_METHOD'] = 'GET';
+            $_SERVER['REQUEST_URI'] = '/scoped';
+            RouteAction::dispatch(Request::capture());
+
+            $_SERVER['REQUEST_METHOD'] = 'GET';
+            $_SERVER['REQUEST_URI'] = '/scoped';
+            RouteAction::dispatch(Request::capture());
+
+            $this->assertCount(2, $seen);
+            $this->assertNotSame($seen[0], $seen[1]);
+        } finally {
+            $_SERVER = $originalServer;
+            App::getInstance()->forget(DispatcherIntegrationScopedProbe::class);
+        }
+    }
+
     public function testRouteActionDispatchInstallsRequestUserResolverAndResetsAuthCache(): void
     {
         $_SERVER['REQUEST_METHOD'] = 'GET';
@@ -870,6 +900,10 @@ class IdentityInputRouteUser
     {
         return self::$users[(int) $id] ?? null;
     }
+}
+
+class DispatcherIntegrationScopedProbe
+{
 }
 
 class DispatcherIntegrationAuthUser

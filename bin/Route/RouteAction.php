@@ -51,9 +51,12 @@ class RouteAction
      */
     public static function dispatch(Request $request): mixed
     {
+        $app = App::getInstance();
+        $app->resetScope();
+
         AuthManager::resetUser();
         $request->setUserResolver(fn (): ?object => AuthManager::user());
-        App::getInstance()->instance(Request::class, $request);
+        $app->instance(Request::class, $request);
 
         $route = RouteCollection::getRoute();
 

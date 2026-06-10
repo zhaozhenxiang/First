@@ -108,11 +108,16 @@ class Worker
      */
     public function process(Job $job, string $connection, string $queue, int $tries = 3): void
     {
+        $container = App::getInstance()->getContainer();
+        $container->resetScope();
+
         try {
-            App::getInstance()->getContainer()->call([$job, 'handle']);
+            $container->call([$job, 'handle']);
             $this->manager->connection($connection)->delete($job);
         } catch (\Throwable $e) {
             $this->handleFailure($job, $connection, $queue, $e, $tries);
+        } finally {
+            $container->resetScope();
         }
     }
 

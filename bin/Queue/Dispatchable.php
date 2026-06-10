@@ -31,7 +31,14 @@ trait Dispatchable
     public static function dispatchSync(mixed ...$args): void
     {
         $job = new static(...$args);
-        \Bin\App\App::getInstance()->getContainer()->call([$job, 'handle']);
+        $container = \Bin\App\App::getInstance()->getContainer();
+        $container->resetScope();
+
+        try {
+            $container->call([$job, 'handle']);
+        } finally {
+            $container->resetScope();
+        }
     }
 
     /**
