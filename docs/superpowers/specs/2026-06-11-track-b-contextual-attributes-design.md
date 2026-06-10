@@ -203,3 +203,21 @@ After this design is approved, create a detailed implementation plan in
 `docs/superpowers/plans/2026-06-11-track-b-contextual-attributes.md`.
 The plan should use TDD, keep commits small, and implement B-1 before any other
 Track B-F work.
+
+## Implementation Notes
+
+Implemented by plan `docs/superpowers/plans/2026-06-11-track-b-contextual-attributes.md`.
+
+- Container parameter resolution owns contextual attributes for constructors and
+  `Container::call()`.
+- Built-ins cover implemented First services: config, cache, database, storage,
+  log, default auth manager, route parameter, tagged services, and explicit
+  implementation.
+- Route dispatch passes raw route parameters to the container through
+  `Container::ROUTE_PARAMETER_CONTEXT`; dispatchers do not inspect contextual
+  attributes.
+- Scoped bindings reset at direct `resetScope()`, request dispatch, worker job,
+  sync queue, and `dispatchSync()` boundaries.
+- Non-default auth guards and named database connections produce explicit
+  `BindingResolutionException` messages because First does not yet expose those
+  runtime abstractions.
