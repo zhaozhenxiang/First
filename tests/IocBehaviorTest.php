@@ -22,6 +22,9 @@ class IocBehaviorTest extends TestCase
 
     private static bool $serverChecked = false;
 
+    /** @var resource|null 本测试拉起的内置服务器进程（复用已有服务器时为 null） */
+    private static $serverProcess = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -60,7 +63,8 @@ class IocBehaviorTest extends TestCase
         ];
 
         $process = proc_open(
-            "php -S 127.0.0.1:9876 -t {$docRoot}",
+            // exec 让 sh 直接替换为 php 进程，否则 proc_terminate 只能杀到 sh，php -S 会成为孤儿
+            "exec php -S 127.0.0.1:9876 -t {$docRoot}",
             $descriptors,
             $pipes
         );
@@ -69,6 +73,15 @@ class IocBehaviorTest extends TestCase
             $this->markTestSkipped('Could not start PHP built-in server');
             return;
         }
+
+        // 测试进程结束时关闭自己拉起的服务器，避免遗留孤儿进程
+        self::$serverProcess = $process;
+        register_shutdown_function(static function (): void {
+            if (is_resource(self::$serverProcess)) {
+                proc_terminate(self::$serverProcess);
+                proc_close(self::$serverProcess);
+            }
+        });
 
         // 等待服务器就绪（最多 2 秒）
         for ($i = 0; $i < 20; $i++) {
