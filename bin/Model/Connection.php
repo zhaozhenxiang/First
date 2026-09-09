@@ -24,7 +24,11 @@ class Connection
         }
 
         $config = self::$config;
-        $dbh = new PDO($config['dsn'], $config['user'], $config['password']);
+        // 连接超时（秒）：数据库不可达时快速失败，而不是挂住请求
+        $options = [
+            PDO::ATTR_TIMEOUT => (int) ($config['timeout'] ?? 3),
+        ];
+        $dbh = new PDO($config['dsn'], $config['user'], $config['password'], $options);
         $dbh->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
         return self::$connection = $dbh;
