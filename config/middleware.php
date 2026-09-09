@@ -65,6 +65,7 @@ return [
         'csrf' => CsrfMiddleware::class,
         'throttle' => RateLimitMiddleware::class,
         'signed' => ValidateSignature::class,
+        'a' => \App\Middleware\A::class,
     ],
 
     /*
