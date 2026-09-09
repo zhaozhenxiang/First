@@ -6,6 +6,7 @@ namespace Tests;
 
 use Bin\App\App;
 use Bin\Auth\AuthManager;
+use Bin\Container\Attributes\RouteParameter;
 use Bin\Container\Container;
 use Bin\Exception\AuthorizationException;
 use Bin\Exception\ValidationException;
@@ -145,6 +146,47 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertEquals('id=42', $result->getContent());
     }
 
+    public function testDispatcherClosureRouteParameterAttributeReadsDifferentUrlKey(): void
+    {
+        $request = \Bin\Request\Request::capture();
+        $request->setUrlParam(['post' => '42']);
+        Container::getInstance()->instance(\Bin\Request\Request::class, $request);
+
+        $closure = fn (
+            #[RouteParameter('post')]
+            string $postId
+        ): string => "post={$postId}";
+
+        $route = new Route('GET', '/posts/{post}', $closure);
+        $result = $this->dispatcher->dispatchClosure($closure, $route);
+
+        $this->assertEquals('post=42', $result->getContent());
+    }
+
+    public function testDispatcherControllerRouteParameterAttributeReadsDifferentUrlKey(): void
+    {
+        $request = \Bin\Request\Request::capture();
+        $request->setUrlParam(['post' => '84']);
+        Container::getInstance()->instance(\Bin\Request\Request::class, $request);
+
+        $controller = new class {
+            public function show(
+                #[RouteParameter('post')]
+                string $postId
+            ): string {
+                return "post={$postId}";
+            }
+        };
+
+        $className = get_class($controller);
+        Container::getInstance()->instance($className, $controller);
+
+        $route = new Route('GET', '/posts/{post}', $className . '@show');
+        $result = $this->dispatcher->dispatch($className, 'show', $route);
+
+        $this->assertEquals('post=84', $result->getContent());
+    }
+
     public function testRouteActionDispatchUsesProvidedRequestInstance(): void
     {
         $_SERVER['REQUEST_METHOD'] = 'GET';
@@ -173,6 +215,36 @@ class DispatcherIntegrationTest extends TestCase
         $this->assertSame($request, $resolvedRequest);
         $this->assertNotSame($staleRequest, $resolvedRequest);
         $this->assertSame($request, App::getInstance()->make(Request::class));
+    }
+
+    public function testRouteActionDispatchResetsScopedBindingsBetweenRequests(): void
+    {
+        $originalServer = $_SERVER;
+        $seen = [];
+
+        try {
+            App::getInstance()->scoped(DispatcherIntegrationScopedProbe::class);
+
+            \Bin\Route\RouteCollection::get('/scoped', function (DispatcherIntegrationScopedProbe $probe) use (&$seen): string {
+                $seen[] = spl_object_id($probe);
+
+                return 'ok';
+            });
+
+            $_SERVER['REQUEST_METHOD'] = 'GET';
+            $_SERVER['REQUEST_URI'] = '/scoped';
+            RouteAction::dispatch(Request::capture());
+
+            $_SERVER['REQUEST_METHOD'] = 'GET';
+            $_SERVER['REQUEST_URI'] = '/scoped';
+            RouteAction::dispatch(Request::capture());
+
+            $this->assertCount(2, $seen);
+            $this->assertNotSame($seen[0], $seen[1]);
+        } finally {
+            $_SERVER = $originalServer;
+            App::getInstance()->forget(DispatcherIntegrationScopedProbe::class);
+        }
     }
 
     public function testRouteActionDispatchInstallsRequestUserResolverAndResetsAuthCache(): void
@@ -828,6 +900,10 @@ class IdentityInputRouteUser
     {
         return self::$users[(int) $id] ?? null;
     }
+}
+
+class DispatcherIntegrationScopedProbe
+{
 }
 
 class DispatcherIntegrationAuthUser

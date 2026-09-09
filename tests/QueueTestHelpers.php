@@ -142,3 +142,29 @@ class QueueTest_InjectedJob extends Job
         self::$value = '';
     }
 }
+
+class QueueTest_ScopedDependency
+{
+}
+
+class QueueTest_ScopedJob extends Job
+{
+    use Dispatchable;
+
+    /** @var int[] */
+    public static array $dependencyIds = [];
+
+    public function handle(?QueueTest_ScopedDependency $dependency = null): void
+    {
+        if ($dependency === null) {
+            throw new \RuntimeException('Scoped dependency was not injected');
+        }
+
+        self::$dependencyIds[] = spl_object_id($dependency);
+    }
+
+    public static function resetState(): void
+    {
+        self::$dependencyIds = [];
+    }
+}

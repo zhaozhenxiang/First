@@ -19,7 +19,15 @@ class SyncQueue implements QueueInterface
     {
         if ($job instanceof Job) {
             $job->setAttempts($job->getAttempts() + 1);
-            App::getInstance()->getContainer()->call([$job, 'handle']);
+
+            $container = App::getInstance()->getContainer();
+            $container->resetScope();
+
+            try {
+                $container->call([$job, 'handle']);
+            } finally {
+                $container->resetScope();
+            }
         }
 
         return true;
