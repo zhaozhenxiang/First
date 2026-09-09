@@ -83,6 +83,11 @@ class RouteCollection
             }
         }
 
+        // HEAD 请求回退到 GET 路由（RFC 语义：HEAD 只取响应头）
+        if ($method === 'HEAD') {
+            return self::resolve('GET', $path);
+        }
+
         // 兜底路由
         if (self::$fallbackRoute !== null) {
             return self::setCurrentRoute(self::$fallbackRoute);

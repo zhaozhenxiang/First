@@ -303,6 +303,16 @@ class RouteTest extends TestCase
         }
     }
 
+    public function testHeadRequestFallsBackToGetRoute(): void
+    {
+        Route::get('/head-target', static fn (): string => 'body');
+
+        $matched = $this->withServerRequest('HEAD', '/head-target', static fn () => Route::getRoute());
+
+        $this->assertSame('GET', $matched->getMethod());
+        $this->assertSame('/head-target', $matched->getPath());
+    }
+
     // === where 约束匹配 ===
 
     public function testWhereConstraintMatchesNumeric(): void

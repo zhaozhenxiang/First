@@ -82,6 +82,11 @@ class HttpKernel
         $factory = $this->app->make(\Bin\Response\ResponseFactory::class);
         $this->currentResponse = $factory->make($response);
 
+        // HEAD 请求只返回响应头，不返回响应体
+        if ($this->currentRequest->method() === 'HEAD') {
+            $this->currentResponse->setContent('');
+        }
+
         return $this->currentResponse;
     }
 
