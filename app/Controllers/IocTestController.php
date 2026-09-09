@@ -28,7 +28,7 @@ class IocTestController extends BaseController
         $a = $container->make('service');
         $b = $container->make('service');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'bind_make',
             'different_instances' => $a !== $b,
             'class' => get_class($a),
@@ -46,7 +46,7 @@ class IocTestController extends BaseController
         $a = $container->make('service');
         $b = $container->make('service');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'singleton',
             'same_instance' => $a === $b,
         ]);
@@ -67,7 +67,7 @@ class IocTestController extends BaseController
         $cached = $container->tagged('cache');
         $empty = $container->tagged('nonexistent');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'tagged_bindings',
             'count' => count($cached),
             'empty_tag' => $empty,
@@ -99,7 +99,7 @@ class IocTestController extends BaseController
         $container->bind('svc', \StdClass::class);
         $container->make('svc');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'resolving_callbacks',
             'order' => $log,
         ]);
@@ -121,7 +121,7 @@ class IocTestController extends BaseController
         $container->resetScope();
         $c = $container->make('svc');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'scoped_binding',
             'same_in_scope' => $a === $b,
             'different_after_reset' => $a !== $c,
@@ -145,7 +145,7 @@ class IocTestController extends BaseController
         $s2 = $container->make('singleton_svc');
         $sc2 = $container->make('scoped_svc');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'scoped_with_singleton',
             'singleton_survives' => $s1 === $s2,
             'scoped_resets' => $sc1 !== $sc2,
@@ -177,7 +177,7 @@ class IocTestController extends BaseController
         // AuditService 的依赖得到 CloudLogger
         $audit = $container->make(IocTestAuditService::class);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'conditional_binding',
             'default_logger' => get_class($default),
             'audit_logger' => get_class($audit->logger),
@@ -207,7 +207,7 @@ class IocTestController extends BaseController
             $notFoundThrown = true;
         }
 
-        return json_encode([
+        return $this->encode([
             'test' => 'psr11',
             'implements_interface' => $isPsr11,
             'has_bound' => $hasService,
@@ -237,7 +237,7 @@ class IocTestController extends BaseController
             $message = $e->getMessage();
         }
 
-        return json_encode([
+        return $this->encode([
             'test' => 'circular_dependency',
             'exception_thrown' => $thrown,
             'message_contains_circular' => str_contains($message, 'Circular dependency'),
@@ -258,7 +258,7 @@ class IocTestController extends BaseController
         $container->bind(IocTestControllerService::class);
         $result = $container->call(IocTestControllerService::class . '@handle', ['message' => 'hello']);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'method_injection',
             'call_result' => $result,
         ]);
@@ -283,7 +283,7 @@ class IocTestController extends BaseController
         // 重新绑定
         $container->bind('cache', IocTestFileLogger::class);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'rebinding_callback',
             'callback_fired' => $newInstance !== null,
             'new_instance_type' => get_class($newInstance),
@@ -307,7 +307,7 @@ class IocTestController extends BaseController
 
         $instance = $container->make('reporter');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'extend_decorator',
             'has_extra' => isset($instance->extra),
             'extra_value' => $instance->extra ?? null,
@@ -330,7 +330,7 @@ class IocTestController extends BaseController
         $a = App::getInstance()->make('ioc_test.service');
         $b = app('ioc_test.service');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'app_facade',
             'singleton_works' => $a === $b,
             'source' => $a->source,
@@ -358,7 +358,7 @@ class IocTestController extends BaseController
         $container->singletonIf('single', IocTestFileLogger::class);
         $sb = $container->make('single');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'conditional_register',
             'bindIf_no_override' => get_class($second) === 'stdClass',
             'singletonIf_no_override' => $sa === $sb,
@@ -379,7 +379,7 @@ class IocTestController extends BaseController
 
         $instance = $container->make('cache');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'alias_resolution',
             'alias_registered' => $hasAlias,
             'original_not_alias' => !$hasAliasOriginal,
@@ -425,7 +425,7 @@ class IocTestController extends BaseController
 
         $factoryResult = $container->make('svc.g');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'batch_operations',
             'bind_array_a' => $container->make('svc.a') instanceof IocTestFileLogger,
             'bind_array_b' => $container->make('svc.b') instanceof IocTestCloudLogger,
@@ -453,7 +453,7 @@ class IocTestController extends BaseController
 
         $consumer = $container->make(IocTestTaggedConsumer::class);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'contextual_give_tagged',
             'received_array' => is_array($consumer->loggers),
             'count' => count($consumer->loggers),
@@ -485,7 +485,7 @@ class IocTestController extends BaseController
         $gotInstance = $container->getInstanceOf('shared');
         $noInstance = $container->hasInstance('nonexistent');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'inspection_methods',
             'bound_before' => $boundBefore,
             'has_binding' => $hasBinding,
@@ -520,7 +520,7 @@ class IocTestController extends BaseController
         $container->flush();
         $bAfterFlush = $container->bound('svc.b');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'flush_forget',
             'resolved_before_forget' => $resolvedBefore,
             'resolved_after_forget' => !$resolvedAfter,
@@ -542,7 +542,7 @@ class IocTestController extends BaseController
         $isMock = $mock instanceof IocTestFileLogger;
         $sameInstance = $container->make('svc') === $mock;
 
-        return json_encode([
+        return $this->encode([
             'test' => 'mock_service',
             'mock_is_correct_type' => $isMock,
             'make_returns_mock' => $sameInstance,
@@ -560,7 +560,7 @@ class IocTestController extends BaseController
         $resolved = $container->facade('MyFacade');
         $nullForUnknown = $container->facade('UnknownFacade');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'facade_resolve',
             'facade_resolves' => $resolved instanceof IocTestFileLogger,
             'unknown_returns_null' => $nullForUnknown === null,
@@ -587,7 +587,7 @@ class IocTestController extends BaseController
         $container->bind(IocTestControllerService::class);
         $classAtResult = $container->call(IocTestControllerService::class . '@handle', ['message' => 'classat']);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'call_variants',
             'closure' => $closureResult,
             'array' => $arrayResult,
@@ -608,7 +608,7 @@ class IocTestController extends BaseController
         $a = $container->make('my.instance');
         $b = $container->make('my.instance');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'instance_binding',
             'same_instance' => $a === $b,
             'value_preserved' => $a->value === 'bound_instance',
@@ -635,7 +635,7 @@ class IocTestController extends BaseController
 
         $instance = $container->make('svc');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'multi_extender',
             'step' => $instance->step,
             'extra' => $instance->extra,
@@ -670,7 +670,7 @@ class IocTestController extends BaseController
         $container->make('svc');
         $container->make('svc');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'resolving_detail',
             'singleton_resolving_fired_once' => $count === 1,
         ]);
@@ -686,7 +686,7 @@ class IocTestController extends BaseController
 
         $a = $container->make(IocTestDeepA::class);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'deep_injection',
             'a_has_b' => isset($a->b),
             'b_has_c' => isset($a->b->c),
@@ -719,7 +719,7 @@ class IocTestController extends BaseController
         $s1 = $container->make('singleton_factory');
         $s2 = $container->make('singleton_factory');
 
-        return json_encode([
+        return $this->encode([
             'test' => 'closure_factory',
             'factory_creates_different' => $a !== $b,
             'singleton_factory_same' => $s1 === $s2,
@@ -740,7 +740,7 @@ class IocTestController extends BaseController
 
         $container->flush();
 
-        return json_encode([
+        return $this->encode([
             'test' => 'container_flush',
             'not_bound_a' => !$container->bound('svc.a'),
             'not_bound_b' => !$container->bound('svc.b'),
@@ -763,11 +763,19 @@ class IocTestController extends BaseController
 
         $second = $container->make(IocTestLoggerInterface::class);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'dependency_override',
             'first_was_file' => $first instanceof IocTestFileLogger,
             'second_is_cloud' => $second instanceof IocTestCloudLogger,
         ]);
+    }
+
+    /**
+     * 编码为 JSON，失败时抛出异常（避免 json_encode 返回 false 触发返回类型错误）
+     */
+    private function encode(array $data): string
+    {
+        return json_encode($data, JSON_THROW_ON_ERROR);
     }
 
     // ===== 28. 构建堆栈检测 =====
@@ -790,7 +798,7 @@ class IocTestController extends BaseController
         $container->bind(IocTestDeepA::class);
         $container->make(IocTestDeepA::class);
 
-        return json_encode([
+        return $this->encode([
             'test' => 'build_stack',
             'empty_initial' => empty($emptyStack),
             'not_in_stack' => !$notInStack,
