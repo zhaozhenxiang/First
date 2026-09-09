@@ -55,7 +55,7 @@ Route::get('/get/request', function(){
 });
 
 Route::get('/pick/{no}', 'AA@pickOne')->with('[0-9]+');
-Route::get('/pick2/{no}/{no}', 'AA@pick')->with('[0-9]+')->with('[0-9]+');
+Route::get('/pick2/{a}/{b}', 'AA@pick')->with('[0-9]+')->with('[0-9]+');
 
 //di
 Route::get('/get/di', 'BB@request');
