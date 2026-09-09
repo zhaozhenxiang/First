@@ -262,6 +262,47 @@ class RouteTest extends TestCase
         $this->assertFalse($route->withSuccess('/other'));
     }
 
+    // === 回归：旧式 with() 路由 / query string / 405 ===
+
+    public function testLegacyWithRouteMatchesLeadingSlashUrl(): void
+    {
+        $route = Route::get('/callback/{no}', static fn ($no) => $no)->with('[0-9]+');
+
+        $this->assertTrue($route->withSuccess('/callback/5'));
+        $this->assertSame(['5'], $this->getMatchedParams($route));
+        $this->assertFalse($route->withSuccess('/callback/abc'));
+    }
+
+    public function testLegacyWithMultiplePatternsMatch(): void
+    {
+        $route = Route::get('/pick2/{a}/{b}', static fn ($a, $b) => $a . $b)
+            ->with('[0-9]+')->with('[0-9]+');
+
+        $this->assertTrue($route->withSuccess('/pick2/1/2'));
+        $this->assertSame(['1', '2'], $this->getMatchedParams($route));
+    }
+
+    public function testQueryStringIsIgnoredWhenMatching(): void
+    {
+        Route::get('/qs', static fn (): string => 'ok');
+
+        $matched = $this->withServerRequest('GET', '/qs?page=2&sort=id', static fn () => Route::getRoute());
+
+        $this->assertSame('/qs', $matched->getPath());
+    }
+
+    public function testWrongMethodThrowsMethodNotAllowed(): void
+    {
+        Route::post('/only-post', static fn (): string => 'ok');
+
+        try {
+            $this->withServerRequest('GET', '/only-post', static fn () => Route::getRoute());
+            $this->fail('Expected MethodNotAllowedHttpException was not thrown');
+        } catch (\Bin\Exception\MethodNotAllowedHttpException $e) {
+            $this->assertSame(['Allow' => 'POST'], $e->getHeaders());
+        }
+    }
+
     // === where 约束匹配 ===
 
     public function testWhereConstraintMatchesNumeric(): void

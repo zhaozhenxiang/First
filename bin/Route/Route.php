@@ -428,7 +428,8 @@ class Route
         $segments = array_filter(explode('/', $prefix));
 
         if ($segments !== []) {
-            $pattern = '/^' . implode('\\/', array_map('preg_quote', $segments)) . '[\\/]?/';
+            // URL 可能带前导斜杠（REQUEST_URI），前缀剥离需兼容两种形式
+            $pattern = '/^\\/?' . implode('\\/', array_map('preg_quote', $segments)) . '[\\/]?/';
             $url = preg_replace($pattern, '', $url, 1);
         }
 

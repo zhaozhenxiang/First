@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bin\Route;
 
 use Bin\App\App;
+use Bin\Exception\MethodNotAllowedHttpException;
 use Bin\Exception\NotFoundHttpException;
 use Bin\Request\Request;
 use Exception;
@@ -54,7 +55,8 @@ class RouteCollection
      */
     public static function getRoute(): Route
     {
-        $path = getUrl();
+        // REQUEST_URI 含 query string，匹配只使用路径部分
+        $path = parse_url(getUrl(), PHP_URL_PATH) ?: '/';
         $method = strtoupper(getMethod());
 
         return self::resolve($method, $path);
@@ -86,7 +88,40 @@ class RouteCollection
             return self::setCurrentRoute(self::$fallbackRoute);
         }
 
+        // 路径存在但 HTTP 方法不匹配 → 405
+        $allowed = self::allowedMethodsForPath($method, $path);
+        if ($allowed !== []) {
+            throw new MethodNotAllowedHttpException("Method not allowed: {$method}", $allowed);
+        }
+
         throw new NotFoundHttpException('Route not found');
+    }
+
+    /**
+     * 收集匹配路径的其他 HTTP 方法（用于 405 响应的 Allow 头）
+     *
+     * @param  string  $currentMethod  当前请求方法
+     * @param  string  $path  请求路径
+     * @return array<string>
+     */
+    private static function allowedMethodsForPath(string $currentMethod, string $path): array
+    {
+        $allowed = [];
+
+        foreach (array_keys(self::$staticRoutes) as $key) {
+            [$method, $routePath] = explode(':', $key, 2);
+            if ($method !== $currentMethod && $routePath === $path) {
+                $allowed[] = $method;
+            }
+        }
+
+        foreach (self::$dynamicRoutes as $route) {
+            if ($route->getMethod() !== $currentMethod && $route->matches($path)) {
+                $allowed[] = $route->getMethod();
+            }
+        }
+
+        return array_values(array_unique($allowed));
     }
 
     private static function setCurrentRoute(Route $route): Route

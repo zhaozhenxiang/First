@@ -93,7 +93,7 @@ class ControllerDispatcher
      * 遍历反射参数，按优先级确定每个参数的来源：
      * - FormRequest → 创建并验证
      * - 路由模型绑定（显式/隐式）
-     * - URL 路由参数（按名称匹配）
+     * - URL 路由参数（按名称匹配；旧式 with() 路由为数字键，按位置匹配）
      * - 其他类型提示：留给 Container::call() 通过 make() 解析
      */
     protected function buildParameterMap(array $reflectionParams, Route $route): array
@@ -106,6 +106,13 @@ class ControllerDispatcher
             $request = Request::capture();
         }
         $urlParams = $request->getUrlParam() ?? [];
+        // 旧式 with() 路由的参数是位置索引（数字键），按声明顺序绑定
+        $positionalParams = array_values(array_filter(
+            $urlParams,
+            static fn (int|string $key): bool => is_int($key),
+            ARRAY_FILTER_USE_KEY
+        ));
+        $positionalIndex = 0;
         $parameters = [];
 
         foreach ($reflectionParams as $param) {
@@ -140,9 +147,11 @@ class ControllerDispatcher
                 continue;
             }
 
-            // 无类型/内置类型：从 URL 参数按名称映射
+            // 无类型/内置类型：从 URL 参数按名称映射，名称未命中时按位置兜底
             if (isset($urlParams[$name])) {
                 $parameters[$name] = $urlParams[$name];
+            } elseif ($positionalIndex < count($positionalParams)) {
+                $parameters[$name] = $positionalParams[$positionalIndex++];
             }
         }
 
