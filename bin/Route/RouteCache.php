@@ -11,7 +11,7 @@ class RouteCache
 {
     private const REQUIRED_ROUTE_KEYS = ['method', 'uri', 'action'];
     private const NULLABLE_STRING_KEYS = ['name', 'domain'];
-    private const ARRAY_KEYS = ['where', 'middleware', 'middleware_groups', 'excluded_middleware'];
+    private const ARRAY_KEYS = ['where', 'middleware', 'middleware_groups', 'excluded_middleware', 'scoped'];
     private const NULLABLE_ARRAY_KEYS = ['preg'];
 
     public static function path(?App $app = null): string

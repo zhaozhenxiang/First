@@ -107,6 +107,90 @@ class RouteEnhancementTest extends TestCase
     }
 
     // ================================================================
+    // 嵌套 + shallow resource
+    // ================================================================
+
+    public function testNestedResourceGeneratesParentScopedUris(): void
+    {
+        RouteCollection::resource('photos.comments', 'CommentController');
+
+        $allRoutes = RouteCollection::getRoutes();
+        $paths = array_map(fn(Route $r) => $r->getPath(), $allRoutes);
+
+        $this->assertTrue(in_array('/photos/{photo}/comments', $paths));
+        $this->assertTrue(in_array('/photos/{photo}/comments/create', $paths));
+        $this->assertTrue(in_array('/photos/{photo}/comments/{comment}', $paths));
+        $this->assertTrue(in_array('/photos/{photo}/comments/{comment}/edit', $paths));
+    }
+
+    public function testNestedResourceNamesComposeWithDots(): void
+    {
+        RouteCollection::resource('photos.comments', 'CommentController');
+
+        $this->assertNotNull(RouteCollection::namedRoute('photos.comments.index'));
+        $this->assertNotNull(RouteCollection::namedRoute('photos.comments.show'));
+        $this->assertNotNull(RouteCollection::namedRoute('photos.comments.store'));
+    }
+
+    public function testShallowResourceDropsParentPrefixForMemberActions(): void
+    {
+        RouteCollection::resource('photos.comments', 'CommentController', [
+            'shallow' => true,
+        ]);
+
+        $allRoutes = RouteCollection::getRoutes();
+        $paths = array_map(fn(Route $r) => $r->getPath(), $allRoutes);
+
+        // 嵌套动作保留父前缀
+        $this->assertTrue(in_array('/photos/{photo}/comments', $paths));
+        $this->assertTrue(in_array('/photos/{photo}/comments/create', $paths));
+
+        // 成员动作去掉父前缀
+        $this->assertTrue(in_array('/comments/{comment}', $paths));
+        $this->assertTrue(in_array('/comments/{comment}/edit', $paths));
+        $this->assertFalse(in_array('/photos/{photo}/comments/{comment}', $paths));
+    }
+
+    public function testNestedResourceWithParametersOption(): void
+    {
+        RouteCollection::resource('photos.comments', 'CommentController', [
+            'parameters' => [
+                'photos' => 'pic',
+                'comments' => 'remark',
+            ],
+        ]);
+
+        $allRoutes = RouteCollection::getRoutes();
+        $paths = array_map(fn(Route $r) => $r->getPath(), $allRoutes);
+
+        $this->assertTrue(in_array('/photos/{pic}/comments', $paths));
+        $this->assertTrue(in_array('/photos/{pic}/comments/{remark}', $paths));
+    }
+
+    public function testNestedResourceWithOnly(): void
+    {
+        $routes = RouteCollection::resource('photos.comments', 'CommentController', [
+            'only' => ['index', 'show'],
+        ]);
+
+        $this->assertCount(2, $routes);
+        $this->assertNotNull(RouteCollection::namedRoute('photos.comments.index'));
+        $this->assertNull(RouteCollection::namedRoute('photos.comments.destroy'));
+    }
+
+    public function testDeeplyNestedResourceBuildsAncestorChain(): void
+    {
+        RouteCollection::apiResource('photos.comments.reactions', 'ReactionController');
+
+        $allRoutes = RouteCollection::getRoutes();
+        $paths = array_map(fn(Route $r) => $r->getPath(), $allRoutes);
+
+        $this->assertTrue(in_array('/photos/{photo}/comments/{comment}/reactions', $paths));
+        $this->assertTrue(in_array('/photos/{photo}/comments/{comment}/reactions/{reaction}', $paths));
+        $this->assertNotNull(RouteCollection::namedRoute('photos.comments.reactions.show'));
+    }
+
+    // ================================================================
     // ResourceRegistrar
     // ================================================================
 
@@ -615,6 +699,115 @@ class RouteEnhancementTest extends TestCase
         $this->assertEquals('api.v1.users.show', $route->getName());
         $this->assertContains('api', $route->getMiddleware());
         $this->assertEquals(['id' => '[0-9]+'], $route->getWheres());
+    }
+
+    // ================================================================
+    // 路由组 controller 属性与组合审计
+    // ================================================================
+
+    public function testGroupControllerAttributeComposesBareMethodActions(): void
+    {
+        RouteCollection::group([
+            'controller' => 'PostController',
+        ], function (): void {
+            RouteCollection::get('/posts', 'index');
+            RouteCollection::get('/posts/{post}', 'show');
+            // 完整 action 不受影响
+            RouteCollection::get('/legacy', 'OtherController@list');
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertEquals('PostController@index', $routes[0]->getAction());
+        $this->assertEquals('PostController@show', $routes[1]->getAction());
+        $this->assertEquals('OtherController@list', $routes[2]->getAction());
+    }
+
+    public function testGroupControllerAttributeChildOverridesParent(): void
+    {
+        RouteCollection::group([
+            'controller' => 'ParentController',
+        ], function (): void {
+            RouteCollection::get('/outer', 'index');
+
+            RouteCollection::group([
+                'controller' => 'ChildController',
+            ], function (): void {
+                RouteCollection::get('/inner', 'show');
+            });
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertEquals('ParentController@index', $routes[0]->getAction());
+        $this->assertEquals('ChildController@show', $routes[1]->getAction());
+    }
+
+    public function testGroupControllerInheritsWhenChildOmitsIt(): void
+    {
+        RouteCollection::group([
+            'controller' => 'ParentController',
+            'prefix' => '/admin',
+        ], function (): void {
+            RouteCollection::group([
+                'prefix' => '/reports',
+            ], function (): void {
+                RouteCollection::get('/summary', 'summary');
+            });
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertEquals('/admin/reports/summary', $routes[0]->getPath());
+        $this->assertEquals('ParentController@summary', $routes[0]->getAction());
+    }
+
+    public function testGroupCompositionAuditsAllAttributes(): void
+    {
+        RouteCollection::group([
+            'prefix' => '/admin',
+            'name' => 'admin.',
+            'domain' => 'admin.example.com',
+            'middleware' => ['auth'],
+            'where' => ['id' => '\d+'],
+        ], function (): void {
+            RouteCollection::group([
+                'prefix' => '/users',
+                'name' => 'users.',
+                'middleware' => ['verified'],
+                'where' => ['id' => '[a-f0-9]+'],
+            ], function (): void {
+                RouteCollection::get('/{id}', 'show')->name('show');
+            });
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertCount(1, $routes);
+
+        $route = $routes[0];
+        $this->assertEquals('/admin/users/{id}', $route->getPath());
+        $this->assertEquals('admin.users.show', $route->getName());
+        $this->assertEquals('admin.example.com', $route->getDomain());
+        // middleware 累积，where 子覆盖父
+        $this->assertContains('auth', $route->getMiddleware());
+        $this->assertContains('verified', $route->getMiddleware());
+        $this->assertEquals(['id' => '[a-f0-9]+'], $route->getWheres());
+    }
+
+    public function testGroupDomainChildOverridesParent(): void
+    {
+        RouteCollection::group([
+            'domain' => 'parent.example.com',
+        ], function (): void {
+            RouteCollection::get('/outer', 'show');
+
+            RouteCollection::group([
+                'domain' => 'child.example.com',
+            ], function (): void {
+                RouteCollection::get('/inner', 'show');
+            });
+        });
+
+        $routes = RouteCollection::getRoutes();
+        $this->assertEquals('parent.example.com', $routes[0]->getDomain());
+        $this->assertEquals('child.example.com', $routes[1]->getDomain());
     }
 }
 

@@ -27,6 +27,12 @@ class ResourceRegistrar
     /** update 动作额外注册 PATCH */
     protected const array PATCH_ALIASES = ['update'];
 
+    /**
+     * 始终保留嵌套前缀的动作（需要父资源上下文）
+     * shallow 模式下 show/edit/update/destroy 会去掉父前缀
+     */
+    protected const array NESTED_ACTIONS = ['index', 'create', 'store'];
+
     public function register(string $name, string $controller, array $options = []): array
     {
         return $this->buildRoutes($name, $controller, $options, []);
@@ -44,10 +50,20 @@ class ResourceRegistrar
         $except = array_merge($options['except'] ?? [], $excludedActions);
         $names = $options['names'] ?? [];
         $parameters = $options['parameters'] ?? [];
+        $shallow = (bool) ($options['shallow'] ?? false);
 
-        // 预计算参数名（只算一次）
-        $paramName = $this->getParameterName($name, $parameters);
-        $base = '/' . trim($name, '/');
+        // 点分名称按段拆分：photos.comments → 祖先段各贡献 /{段}/{参数}
+        $segments = explode('.', $name);
+        $lastSegment = $segments[count($segments) - 1];
+
+        $parentPrefix = '';
+        foreach (array_slice($segments, 0, -1) as $ancestor) {
+            $ancestor = trim($ancestor, '/');
+            $parentPrefix .= '/' . $ancestor . '/{' . $this->getParameterName($ancestor, $parameters) . '}';
+        }
+
+        $paramName = $this->getParameterName($lastSegment, $parameters);
+        $base = '/' . trim($lastSegment, '/');
 
         foreach (self::RESOURCE_ACTIONS as $action => [$method, $uriSuffix]) {
             if ($only !== null && !in_array($action, $only, true)) {
@@ -57,7 +73,10 @@ class ResourceRegistrar
                 continue;
             }
 
-            $path = $base . $uriSuffix;
+            // shallow 模式下成员动作（show/edit/update/destroy）去掉父前缀
+            $keepNesting = !$shallow || in_array($action, self::NESTED_ACTIONS, true);
+
+            $path = ($keepNesting ? $parentPrefix : '') . $base . $uriSuffix;
             $path = str_replace('{id}', '{' . $paramName . '}', $path);
 
             $route = RouteCollection::action($method, $path, $controller . '@' . $action);
@@ -77,6 +96,8 @@ class ResourceRegistrar
 
     protected function getParameterName(string $resource, array $parameters): string
     {
+        $resource = trim($resource, '/');
+
         if (isset($parameters[$resource])) {
             $param = $parameters[$resource];
             if (str_contains($param, ':')) {
@@ -85,16 +106,10 @@ class ResourceRegistrar
             return $param;
         }
 
-        $singular = $this->singularize($resource);
-        if (str_contains($singular, '.')) {
-            $parts = explode('.', $singular);
-            $singular = end($parts);
-        }
-
-        return $singular;
+        return static::singularize($resource);
     }
 
-    protected function singularize(string $word): string
+    public static function singularize(string $word): string
     {
         if (str_ends_with($word, 'ies')) {
             return substr($word, 0, -3) . 'y';

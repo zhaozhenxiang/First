@@ -27,6 +27,12 @@ class Route
     /** @var array<string, mixed>|null 匹配的参数（延迟设置到 Request） */
     private ?array $matchedParams = null;
 
+    /** @var callable|null 隐式绑定未命中时的回调 */
+    private $missingCallback = null;
+
+    /** @var array<string, string|array<string, string>> scoped 嵌套绑定：子参数名 => 父参数名（或 [父参数名 => 外键]） */
+    private array $scoped = [];
+
     public function __construct(
         private string $method,
         private string $path,
@@ -225,6 +231,52 @@ class Route
     public function getWheres(): array
     {
         return $this->wheres;
+    }
+
+    /**
+     * 设置隐式绑定未命中回调
+     *
+     * 隐式模型绑定抛出 404 前调用，回调返回值将作为响应返回
+     *
+     * @param callable(\Bin\Exception\NotFoundHttpException): mixed $callback
+     */
+    public function missing(callable $callback): self
+    {
+        $this->missingCallback = $callback;
+
+        return $this;
+    }
+
+    /**
+     * 获取隐式绑定未命中回调
+     */
+    public function getMissingCallback(): ?callable
+    {
+        return $this->missingCallback;
+    }
+
+    /**
+     * 设置 scoped 嵌套绑定
+     *
+     * 用法：
+     *   $route->scoped(['comment' => 'post'])            // 外键默认 post_id
+     *   $route->scoped(['comment' => ['post' => 'blog_id']]) // 显式外键
+     */
+    public function scoped(array $bindings): self
+    {
+        $this->scoped = array_merge($this->scoped, $bindings);
+
+        return $this;
+    }
+
+    /**
+     * 获取 scoped 嵌套绑定
+     *
+     * @return array<string, string|array<string, string>>
+     */
+    public function getScoped(): array
+    {
+        return $this->scoped;
     }
 
     /**

@@ -67,10 +67,34 @@ class RouteBinding
 
     /**
      * 通过类名隐式解析模型
+     *
+     * @param array{foreign_key?: string, value?: mixed}|array{} $scope scoped 嵌套绑定上下文
      */
-    public static function resolveForClass(string $class, mixed $value): mixed
+    public static function resolveForClass(string $class, mixed $value, array $scope = []): mixed
     {
+        if (isset($scope['foreign_key'], $scope['value']) && method_exists($class, 'query')) {
+            return static::resolveScoped($class, $value, $scope['foreign_key'], $scope['value']);
+        }
+
         return static::resolveFromClass($class, $value);
+    }
+
+    /**
+     * 在父资源约束下解析子模型
+     *
+     * scoped 嵌套绑定：先按外键限定父资源，再按主键查找子模型
+     */
+    protected static function resolveScoped(string $class, mixed $value, string $foreignKey, mixed $parentValue): mixed
+    {
+        $result = $class::query()->where($foreignKey, $parentValue)->find($value);
+
+        if ($result === null) {
+            throw new \Bin\Exception\NotFoundHttpException(
+                "{$class} with ID {$value} not found within parent scope [{$foreignKey} = {$parentValue}]"
+            );
+        }
+
+        return $result;
     }
 
     /**

@@ -6,10 +6,13 @@ namespace Bin\Routing;
 
 use Bin\App\App;
 use Bin\Database\Model;
+use Bin\Exception\NotFoundHttpException;
 use Bin\Request\Request;
 use Bin\Response\Response;
+use Bin\Response\ResponseFactory;
 use Bin\Route\Route;
 use Bin\Route\RouteBinding;
+use Bin\Route\ResourceRegistrar;
 use Bin\Validation\FormRequest;
 
 /**
@@ -26,9 +29,12 @@ use Bin\Validation\FormRequest;
  */
 class ControllerDispatcher
 {
-    private function responseFactory(): \Bin\Response\ResponseFactory
+    /** @var Response|null 隐式绑定 missing 回调产生的响应（命中时短路调度） */
+    private ?Response $missingResponse = null;
+
+    private function responseFactory(): ResponseFactory
     {
-        return App::getInstance()->make(\Bin\Response\ResponseFactory::class);
+        return App::getInstance()->make(ResponseFactory::class);
     }
 
     /**
@@ -39,8 +45,13 @@ class ControllerDispatcher
     public function dispatch(string $controller, string $method, Route $route): mixed
     {
         $app = App::getInstance();
+        $this->missingResponse = null;
         $instance = $app->make($controller);
         $parameters = $this->resolveMethodParameters($controller, $method, $route);
+
+        if ($this->missingResponse !== null) {
+            return $this->missingResponse;
+        }
 
         $result = $app->getContainer()->call([$instance, $method], $parameters);
 
@@ -55,7 +66,12 @@ class ControllerDispatcher
     public function dispatchClosure(callable $closure, Route $route): mixed
     {
         $app = App::getInstance();
+        $this->missingResponse = null;
         $parameters = $this->resolveClosureParameters($closure, $route);
+
+        if ($this->missingResponse !== null) {
+            return $this->missingResponse;
+        }
 
         $result = $app->getContainer()->call($closure, $parameters);
 
@@ -136,9 +152,9 @@ class ControllerDispatcher
                     continue;
                 }
 
-                // 3. 隐式模型绑定
+                // 3. 隐式模型绑定（支持 scoped 嵌套约束与 missing 回调）
                 if (class_exists($typeName) && is_subclass_of($typeName, Model::class) && array_key_exists($name, $urlParams)) {
-                    $resolved = RouteBinding::resolveForClass($typeName, $urlParams[$name]);
+                    $resolved = $this->resolveImplicitBinding($route, $typeName, $name, $urlParams[$name], $urlParams);
                     if ($resolved !== null) {
                         $parameters[$name] = $resolved;
                         continue;
@@ -158,6 +174,70 @@ class ControllerDispatcher
         }
 
         return $parameters;
+    }
+
+    /**
+     * 解析隐式模型绑定（含 scoped 上下文与 missing 回调）
+     */
+    protected function resolveImplicitBinding(
+        Route $route,
+        string $typeName,
+        string $paramName,
+        mixed $value,
+        array $urlParams
+    ): mixed {
+        $scope = $this->resolveScopeContext($route, $paramName, $urlParams);
+
+        try {
+            return RouteBinding::resolveForClass($typeName, $value, $scope);
+        } catch (NotFoundHttpException $exception) {
+            $callback = $route->getMissingCallback();
+
+            if ($callback === null) {
+                throw $exception;
+            }
+
+            $result = $callback($exception);
+            $this->missingResponse = $this->responseFactory()->make($result);
+
+            return null;
+        }
+    }
+
+    /**
+     * 计算 scoped 嵌套绑定上下文
+     *
+     * scoped 映射两种形式：
+     * - 'comment' => 'post'：外键默认为 post_id
+     * - 'comment' => ['post' => 'blog_id']：显式外键
+     *
+     * @param array<string, mixed> $urlParams
+     * @return array{foreign_key?: string, value?: mixed}
+     */
+    protected function resolveScopeContext(Route $route, string $paramName, array $urlParams): array
+    {
+        $binding = $route->getScoped()[$paramName] ?? null;
+
+        if ($binding === null) {
+            return [];
+        }
+
+        if (is_array($binding)) {
+            $parentParam = (string) array_key_first($binding);
+            $foreignKey = (string) ($binding[$parentParam] ?? '');
+        } else {
+            $parentParam = (string) $binding;
+            $foreignKey = ResourceRegistrar::singularize($parentParam) . '_id';
+        }
+
+        if ($foreignKey === '' || !array_key_exists($parentParam, $urlParams)) {
+            return [];
+        }
+
+        return [
+            'foreign_key' => $foreignKey,
+            'value' => $urlParams[$parentParam],
+        ];
     }
 
     /**

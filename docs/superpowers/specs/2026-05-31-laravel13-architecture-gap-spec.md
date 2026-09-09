@@ -184,6 +184,13 @@ Acceptance criteria:
 First SHOULD close remaining high-value routing ergonomics before adding new
 ecosystem modules.
 
+> **Status note (2026-09-09):** Delivered per
+> `docs/superpowers/plans/2026-09-09-track-c-routing-parity.md` — nested
+> resource URIs with parent parameters, `shallow` nesting, implicit-binding
+> `missing()` callbacks, `scoped()` nested bindings (default and explicit
+> foreign keys), route-group `controller` attribute composition, and route
+> cache closure-rejection coverage with scoped round-trips.
+
 Acceptance criteria:
 
 - Resource routes support Laravel-like names, parameters, only/except,

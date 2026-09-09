@@ -37,11 +37,12 @@ class RouteCollection
      * - prefix: 按顺序拼接（/admin + /settings → /admin/settings）
      * - name: 按顺序拼接（admin. + settings. → admin.settings.）
      * - namespace: 按顺序拼接（App\Controllers + Admin → App\Controllers\Admin）
+     * - controller: 子非空覆盖父（裸方法名组合为 Controller@method）
      * - domain: 最后定义的覆盖前面的
      * - where: 数组合并（外层约束可被内层覆盖）
      * - middleware: 累积（所有层级合并）
      *
-     * @var array<int, array{prefix:string, name:string, namespace:string, domain:string, where:array<string,string>, middleware:array<string>, middleware_group:string|array<int, string>|null}>
+     * @var array<int, array{prefix:string, name:string, namespace:string, controller:string, domain:string, where:array<string,string>, middleware:array<string>, middleware_group:string|array<int, string>|null}>
      */
     private static array $groupStack = [];
 
@@ -161,6 +162,14 @@ class RouteCollection
         if ($groupAttrs !== null && $groupAttrs['prefix'] !== '') {
             $path = '/' . trim($groupAttrs['prefix'], '/') . '/' . trim($path, '/');
             $path = '/' . trim($path, '/');
+        }
+
+        // 应用命名空间前缀
+        if ($groupAttrs !== null && $groupAttrs['controller'] !== '') {
+            // 裸方法名（无 @、无命名空间分隔符）组合为 Controller@method
+            if (is_string($action) && $action !== '' && !str_contains($action, '@') && !str_contains($action, '\\')) {
+                $action = $groupAttrs['controller'] . '@' . $action;
+            }
         }
 
         // 应用命名空间前缀
@@ -362,6 +371,7 @@ class RouteCollection
      *   - middleware: 中间件列表（累积）
      *   - middleware_group: 中间件组名或列表（累积）
      *   - namespace: 控制器命名空间前缀（拼接）
+     *   - controller: 组控制器（子覆盖父，裸方法名组合为 Controller@method）
      *   - domain: 子域名约束（覆盖，最后定义的生效）
      *   - where: 参数正则约束（合并）
      */
@@ -387,6 +397,7 @@ class RouteCollection
      * - prefix: 父 + 子（用 / 拼接）
      * - name: 父 + 子（直接拼接）
      * - namespace: 父 + 子（用 \ 拼接）
+     * - controller: 子覆盖父（非空则覆盖）
      * - domain: 子覆盖父（非空则覆盖）
      * - where: 数组合并（子覆盖同名 key）
      * - middleware: 数组合并（累积）
@@ -399,6 +410,7 @@ class RouteCollection
             'prefix' => $new['prefix'] ?? '',
             'name' => $new['name'] ?? '',
             'namespace' => $new['namespace'] ?? '',
+            'controller' => $new['controller'] ?? '',
             'domain' => $new['domain'] ?? '',
             'where' => $new['where'] ?? [],
             'middleware' => isset($new['middleware'])
@@ -437,6 +449,11 @@ class RouteCollection
             // domain: 子非空则覆盖，否则继承父
             if ($merged['domain'] === '') {
                 $merged['domain'] = $parent['domain'] ?? '';
+            }
+
+            // controller: 子非空则覆盖，否则继承父
+            if ($merged['controller'] === '') {
+                $merged['controller'] = $parent['controller'] ?? '';
             }
 
             // where: 合并（子优先）
@@ -576,6 +593,7 @@ class RouteCollection
             'middleware' => $route->getMiddleware(),
             'middleware_groups' => $route->getMiddlewareGroups(),
             'excluded_middleware' => $route->getExcludedMiddleware(),
+            'scoped' => $route->getScoped(),
         ];
     }
 
@@ -628,6 +646,10 @@ class RouteCollection
 
         if (($data['excluded_middleware'] ?? []) !== []) {
             $route->withoutMiddleware($data['excluded_middleware']);
+        }
+
+        if (($data['scoped'] ?? []) !== []) {
+            $route->scoped($data['scoped']);
         }
 
         $name = $data['name'] ?? null;

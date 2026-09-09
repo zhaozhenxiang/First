@@ -676,6 +676,37 @@ class RouteTest extends TestCase
         });
     }
 
+    public function testRouteCollectionClosureRejectionMessageNamesTheUri(): void
+    {
+        Route::get('/closure-named/{id}', static fn (string $id): string => $id);
+
+        try {
+            Route::exportForCache();
+            $this->fail('Expected RuntimeException for closure route');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('/closure-named/{id}', $exception->getMessage());
+        }
+    }
+
+    public function testRouteCollectionExportsAndRestoresScopedBindings(): void
+    {
+        Route::get('/posts/{post}/comments/{comment}', 'CommentController@show')
+            ->scoped(['comment' => 'post'])
+            ->name('comments.show');
+
+        $payload = Route::exportForCache();
+
+        $this->assertSame(['comment' => 'post'], $payload['routes'][0]['scoped']);
+
+        Route::clear();
+        Route::loadFromCache($payload);
+
+        $routes = Route::getRoutes();
+
+        $this->assertCount(1, $routes);
+        $this->assertSame(['comment' => 'post'], $routes[0]->getScoped());
+    }
+
     public function testRouteCacheWritesLoadsAndClearsPayload(): void
     {
         $previousApp = \Bin\App\App::getInstance();
