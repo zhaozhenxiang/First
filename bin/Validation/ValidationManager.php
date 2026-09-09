@@ -31,6 +31,9 @@ class ValidationManager
     /** @var array<string, mixed> 验证通过的数据 */
     private array $validated = [];
 
+    /** @var array<string> 待剔除的字段（exclude 规则） */
+    private array $excluded = [];
+
     /** @var array<array{field: string, rules: mixed, callback: Closure}> 条件验证规则 */
     private array $conditionalRules = [];
 
@@ -39,6 +42,9 @@ class ValidationManager
 
     /** @var SessionManager|null Session 管理器 */
     private ?SessionManager $session = null;
+
+    /** @var \Bin\Localization\Translator|null 验证消息翻译器（显式注册后启用） */
+    private static ?\Bin\Localization\Translator $translator = null;
 
     /**
      * 验证规则映射
@@ -81,6 +87,11 @@ class ValidationManager
         'timezone' => 'validateTimezone',
         'prohibited' => 'validateProhibited',
         'distinct' => 'validateDistinct',
+        'accepted' => 'validateAccepted',
+        'required_if' => 'validateRequiredIf',
+        'required_with' => 'validateRequiredWith',
+        'unique' => 'validateUnique',
+        'exists' => 'validateExists',
     ];
 
     /**
@@ -128,6 +139,11 @@ class ValidationManager
         'timezone' => ':attribute 必须是有效的时区',
         'prohibited' => ':attribute 字段被禁止',
         'distinct' => ':attribute 字段有重复值',
+        'accepted' => ':attribute 必须被接受',
+        'required_if' => '当 :other 为指定值时 :attribute 字段是必填的',
+        'required_with' => '当 :values 存在时 :attribute 字段是必填的',
+        'unique' => ':attribute 已经被占用',
+        'exists' => ':attribute 无效',
     ];
 
     /**
@@ -149,12 +165,21 @@ class ValidationManager
     }
 
     /**
+     * 注册验证消息翻译器（传入 null 关闭本地化）
+     */
+    public static function setTranslator(?\Bin\Localization\Translator $translator): void
+    {
+        self::$translator = $translator;
+    }
+
+    /**
      * 验证数据
      */
     public function validate(): array
     {
         $this->errors = new MessageBag();
         $this->validated = [];
+        $this->excluded = [];
 
         // 处理条件验证
         foreach ($this->conditionalRules as $conditional) {
@@ -229,8 +254,17 @@ class ValidationManager
                     continue;
                 }
 
-                // 跳过非必填字段（如果值为空）
-                if (($value === null || $value === '') && $rule !== 'required' && !$this->isRequiredPresent($field)) {
+                // exclude 规则：从验证结果中剔除该字段（无论值是否为空）
+                if ($rule === 'exclude') {
+                    $this->excluded[] = $field;
+                    continue;
+                }
+
+                // 跳过非必填字段（如果值为空）；required 家族规则必须对空值执行
+                $requiredFamilyRules = ['required', 'accepted', 'required_if', 'required_with'];
+                if (($value === null || $value === '')
+                    && !in_array($rule, $requiredFamilyRules, true)
+                    && !$this->isRequiredPresent($field)) {
                     continue;
                 }
 
@@ -250,6 +284,10 @@ class ValidationManager
             $this->handleFailure();
         }
 
+        foreach ($this->excluded as $excludedField) {
+            unset($this->validated[$excludedField]);
+        }
+
         return $this->validated;
     }
 
@@ -260,7 +298,7 @@ class ValidationManager
     {
         $method = self::$ruleMethods[$rule] ?? null;
 
-        if ($method && method_exists($this, $method)) {
+        if ($method !== null && method_exists($this, $method)) {
             $result = $this->$method($field, $value, $parameters);
             if (!$result) {
                 $this->addError($field, $rule, $parameters);
@@ -272,6 +310,9 @@ class ValidationManager
                 $this->addError($field, $rule, $parameters);
                 return false;
             }
+        } else {
+            // 未知规则直接失败：静默放行会掩盖拼写错误和未实现的规则
+            throw new \InvalidArgumentException("Validation rule [{$rule}] is not supported.");
         }
 
         return true;
@@ -282,8 +323,15 @@ class ValidationManager
      */
     private function isRequiredPresent(string $field): bool
     {
-        $rules = is_string($this->rules[$field]) ? explode('|', $this->rules[$field]) : $this->rules[$field];
-        return in_array('required', $rules, true);
+        $rules = $this->rules[$field] ?? [];
+
+        if ($rules instanceof Rule) {
+            $rules = $rules->compile();
+        }
+
+        $rules = is_string($rules) ? explode('|', $rules) : $rules;
+
+        return is_array($rules) && in_array('required', $rules, true);
     }
 
     /**
@@ -293,6 +341,7 @@ class ValidationManager
     {
         $message = $this->customMessages["{$field}.{$rule}"]
             ?? $this->customMessages[$rule]
+            ?? $this->translatedMessage($rule)
             ?? self::$defaultMessages[$rule]
             ?? ':attribute 验证失败';
 
@@ -327,6 +376,22 @@ class ValidationManager
     private function replaceAttribute(string $message, string $attribute): string
     {
         return str_replace(':attribute', $attribute, $message);
+    }
+
+    /**
+     * 从翻译器解析验证消息（未注册翻译器或 key 缺失时返回 null）
+     */
+    private function translatedMessage(string $rule): ?string
+    {
+        if (self::$translator === null) {
+            return null;
+        }
+
+        $key = "validation.{$rule}";
+        $line = self::$translator->get($key);
+
+        // Translator::get() 在 key 缺失时原样返回 key
+        return $line === $key ? null : $line;
     }
 
     /**
@@ -692,6 +757,104 @@ class ValidationManager
         }
 
         return count($value) === count(array_unique($value));
+    }
+
+    private function validateAccepted(string $field, mixed $value): bool
+    {
+        return in_array($value, ['yes', 'on', '1', 1, true, 'true'], true);
+    }
+
+    /**
+     * required_if:other,v1,v2 — 当 other 等于任一列出的值时必填
+     */
+    private function validateRequiredIf(string $field, mixed $value, array $parameters): bool
+    {
+        if ($parameters === []) {
+            return true;
+        }
+
+        $other = $this->getValue($parameters[0]);
+        $expected = array_slice($parameters, 1);
+
+        if (!in_array($this->compareValue($other), array_map($this->compareValue(...), $expected), true)) {
+            return true;
+        }
+
+        return $this->validateRequired($field, $value);
+    }
+
+    /**
+     * required_with:f1,f2 — 当任一列出的字段存在且非空时必填
+     */
+    private function validateRequiredWith(string $field, mixed $value, array $parameters): bool
+    {
+        foreach ($parameters as $otherField) {
+            if ($this->validateRequired($otherField, $this->getValue($otherField))) {
+                return $this->validateRequired($field, $value);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * unique:table,column,except,idColumn — 数据库唯一性
+     */
+    private function validateUnique(string $field, mixed $value, array $parameters): bool
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        [$table, $column, $except, $idColumn] = array_pad($parameters, 4, null);
+        $column ??= $field;
+        $idColumn ??= 'id';
+
+        $sql = "SELECT COUNT(*) FROM {$table} WHERE {$column} = ?";
+        $bindings = [$value];
+
+        if ($except !== null && $except !== '') {
+            $sql .= " AND {$idColumn} != ?";
+            $bindings[] = $except;
+        }
+
+        return $this->databaseCount($sql, $bindings) === 0;
+    }
+
+    /**
+     * exists:table,column — 数据库存在性
+     */
+    private function validateExists(string $field, mixed $value, array $parameters): bool
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        [$table, $column] = array_pad($parameters, 2, null);
+        $column ??= $field;
+
+        return $this->databaseCount(
+            "SELECT COUNT(*) FROM {$table} WHERE {$column} = ?",
+            [$value]
+        ) > 0;
+    }
+
+    /**
+     * 规则参数比较前统一类型（'1' 与 1 视为相等）
+     */
+    private function compareValue(mixed $value): mixed
+    {
+        return is_string($value) && is_numeric($value)
+            ? (strpos($value, '.') === false ? (int) $value : (float) $value)
+            : $value;
+    }
+
+    private function databaseCount(string $sql, array $bindings): int
+    {
+        $statement = \Bin\Database\ConnectionManager::getConnection()->prepare($sql);
+        $statement->execute($bindings);
+
+        return (int) $statement->fetchColumn();
     }
 
     // ==================== 公共方法 ====================

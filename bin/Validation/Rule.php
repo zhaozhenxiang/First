@@ -58,6 +58,42 @@ class Rule
         return static::make()->addRule('exclude');
     }
 
+    public static function accepted(): static
+    {
+        return static::make()->addRule('accepted');
+    }
+
+    public static function requiredIf(string $field, string|int|float ...$values): static
+    {
+        return static::make()->addRule('required_if:' . implode(',', [$field, ...$values]));
+    }
+
+    public static function requiredWith(string ...$fields): static
+    {
+        return static::make()->addRule('required_with:' . implode(',', $fields));
+    }
+
+    public static function unique(string $table, ?string $column = null, string|int|null $except = null, ?string $idColumn = null): static
+    {
+        $params = [$table];
+        if ($column !== null || $except !== null || $idColumn !== null) {
+            $params[] = $column ?? '';
+            if ($except !== null || $idColumn !== null) {
+                $params[] = $except ?? '';
+                if ($idColumn !== null) {
+                    $params[] = $idColumn;
+                }
+            }
+        }
+
+        return static::make()->addRule('unique:' . implode(',', $params));
+    }
+
+    public static function exists(string $table, ?string $column = null): static
+    {
+        return static::make()->addRule('exists:' . implode(',', $column === null ? [$table] : [$table, $column]));
+    }
+
     // ==================== 类型 ====================
 
     public function string(): static

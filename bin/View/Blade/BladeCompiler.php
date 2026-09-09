@@ -16,6 +16,8 @@ namespace Bin\View\Blade;
  *   @extends/@section/@yield → 模板继承
  *   @include → 子视图包含
  *   @stack/@push/@prepend → 栈系统
+ *   @component/@slot/@endcomponent → 组件与插槽
+ *   <x-name> → 匿名组件（views/components/name.blade.php）
  */
 class BladeCompiler
 {
@@ -124,6 +126,9 @@ class BladeCompiler
         // 编译 @stack/@push/@prepend
         $template = $this->compileStacks($template);
 
+        // 编译组件（@component 与 <x-*> 匿名组件）
+        $template = $this->compileComponents($template, $relativeDir);
+
         // 编译其余 Blade 语法
         $template = $this->compileString($template);
 
@@ -201,6 +206,109 @@ class BladeCompiler
             },
             $template
         );
+    }
+
+    /**
+     * 编译组件指令
+     *
+     * - @component('name', [...]) ... @endcomponent
+     * - <x-name attr="v" :bound="expr">...</x-name>（匿名组件，自闭合支持）
+     */
+    protected function compileComponents(string $template, string $relativeDir): string
+    {
+        // 1. @component ... @endcomponent（由内向外迭代编译，支持嵌套）
+        $iterations = 0;
+        do {
+            $replaced = preg_replace_callback(
+                '/@component\s*\(\s*[\'"]([^\'"]+)[\'"]\s*(?:,\s*(\[\s*.*?\s*\]))?\s*\)((?:(?!@component\b).)*?)@endcomponent/s',
+                function ($matches) use ($relativeDir): string {
+                    $view = $matches[1];
+                    $data = $matches[2] ?? '[]';
+                    $content = $matches[3];
+
+                    $path = addslashes($this->resolveViewPath($view, $relativeDir));
+
+                    return '<?php \Bin\View\ComponentFactory::startComponent(\'' . $path . '\', ' . $data . '); ?>'
+                        . $content
+                        . '<?php echo \Bin\View\ComponentFactory::renderComponent(); ?>';
+                },
+                $template,
+                1,
+                $count
+            );
+
+            if ($replaced !== null) {
+                $template = $replaced;
+            }
+            $iterations++;
+        } while ($count > 0 && $iterations < 50);
+
+        // 2. 自闭合匿名组件 <x-name ... />
+        $template = preg_replace_callback(
+            '/<x-([\w\-\.]+)((?:\s+[^\s>\/]+(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?)*)\/>/',
+            function ($matches) use ($relativeDir): string {
+                return $this->compileAnonymousTag($matches[1], $matches[2] ?? '', '', $relativeDir);
+            },
+            $template
+        );
+
+        // 3. 成对匿名组件 <x-name ...> ... </x-name>
+        $template = preg_replace_callback(
+            '/<x-([\w\-\.]+)((?:\s+[^\s>\/]+(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?)*)>(.*?)<\/x-\1>/s',
+            function ($matches) use ($relativeDir): string {
+                return $this->compileAnonymousTag($matches[1], $matches[2] ?? '', $matches[3] ?? '', $relativeDir);
+            },
+            $template
+        );
+
+        return $template;
+    }
+
+    /**
+     * 编译单个匿名组件标签
+     */
+    protected function compileAnonymousTag(string $name, string $attributeString, string $content, string $relativeDir): string
+    {
+        $view = 'components.' . $name;
+        $path = addslashes($this->resolveViewPath($view, $relativeDir));
+        $dataExpression = $this->buildAttributeArray($attributeString);
+
+        return '<?php \Bin\View\ComponentFactory::startComponent(\'' . $path . '\', ' . $dataExpression . ', true); ?>'
+            . $content
+            . '<?php echo \Bin\View\ComponentFactory::renderComponent(); ?>';
+    }
+
+    /**
+     * 将标签属性字符串编译为 PHP 数组表达式
+     *
+     * 静态属性 type="error" → 'type' => 'error'
+     * 绑定属性 :message="$msg" → 'message' => ($msg)
+     * 裸属性 disabled → 'disabled' => true
+     */
+    protected function buildAttributeArray(string $attributeString): string
+    {
+        $parts = [];
+
+        // key=value（静态或 :绑定）
+        if (preg_match_all('/(:?)([\w\-]+)\s*=\s*("([^"]*)"|\'([^\']*)\')/', $attributeString, $matches, PREG_SET_ORDER) > 0) {
+            foreach ($matches as $set) {
+                $bound = $set[1] === ':';
+                $key = $set[2];
+                $value = $set[4] ?? $set[5] ?? '';
+
+                $parts[] = var_export($key, true) . ' => ' . ($bound ? '(' . $value . ')' : var_export($value, true));
+            }
+        }
+
+        // 裸属性（移除已匹配的 key=value 后剩余的单词）
+        $residual = preg_replace('/:?[\w\-]+\s*=\s*("[^"]*"|\'[^\']*\')/', '', $attributeString) ?? '';
+        if (preg_match_all('/[\w\-]+/', $residual, $bare) > 0) {
+            foreach ($bare[0] as $key) {
+                $parts[] = var_export($key, true) . ' => true';
+            }
+        }
+
+        return '[' . implode(', ', $parts) . ']';
     }
 
     /**
@@ -311,7 +419,28 @@ class BladeCompiler
             }
         }
 
-        return [$content, $depends];
+        // 组件依赖：@component('name') 与 <x-name>（name 中点号映射为目录分隔）
+        $componentViews = [];
+
+        if (preg_match_all('/@component\s*\(\s*[\'"]([^\'"]+)[\'"]/', $content, $matches) > 0) {
+            $componentViews = array_merge($componentViews, $matches[1]);
+        }
+
+        if (preg_match_all('/<x-([\w\-\.]+)/', $content, $matches) > 0) {
+            foreach ($matches[1] as $tag) {
+                $componentViews[] = 'components.' . $tag;
+            }
+        }
+
+        foreach ($componentViews as $view) {
+            $blade = $this->viewPath . '/' . str_replace('.', '/', $view) . '.blade.php';
+            if (file_exists($blade)) {
+                [, $componentDeps] = $this->readWithDependencies($blade);
+                $depends = array_merge($depends, $componentDeps);
+            }
+        }
+
+        return [$content, array_values(array_unique($depends))];
     }
 
     /**
@@ -394,6 +523,10 @@ class BladeCompiler
             // method / csrf
             '/@method\s*\([\'"](.+?)[\'"]\)/' => '<input type="hidden" name="_method" value="$1">',
             '/@csrf\b/'                        => '<?php echo \\Bin\\Middleware\\CsrfMiddleware::field(); ?>',
+
+            // 组件插槽
+            '/@slot\s*\(\s*[\'"](\w+)[\'"]\s*\)/' => '<?php \Bin\View\ComponentFactory::slot(\'$1\'); ?>',
+            '/@endslot\b/'                          => '<?php \Bin\View\ComponentFactory::endSlot(); ?>',
 
             // 每循环变量
             '/\$loop\b/' => '$__loop',

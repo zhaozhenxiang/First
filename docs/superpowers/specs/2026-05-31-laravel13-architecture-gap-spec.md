@@ -207,6 +207,16 @@ Acceptance criteria:
 First SHOULD prioritize developer-facing parity in validation and views because
 these are used in nearly every web application.
 
+> **Status note (2026-09-09):** Delivered per
+> `docs/superpowers/plans/2026-09-09-track-d-validation-blade.md` — unknown
+> validation rules now fail loudly instead of silently passing; `exclude`,
+> `accepted`, `required_if`, `required_with`, `unique`, and `exists` rules
+> implemented with `Rule` builder support; validation messages resolve through
+> an opt-in `Translator` hook with full `en`/`zh` message files; Blade gains
+> `@component`/`@slot`, anonymous `<x-*>` components with static/bound/bare
+> attributes, `ComponentAttributeBag` with class merging, and component-aware
+> cache invalidation. Class-based components and `@props` remain future work.
+
 Acceptance criteria:
 
 - Validation supports the common Laravel rule set used by forms and APIs:
