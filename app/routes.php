@@ -16,7 +16,7 @@ Route::get('/callback/{no}', function($a){
     return __LINE__ . $a;
 })->with('[0-9]+');
 
-Route::get('/get/view', 'AA@BB');
+Route::get('/get/view', 'AA@index');
 Route::get('/rel', 'AA@rel');
 
 //post请求
@@ -32,7 +32,7 @@ Route::getArray(['/rel1' => 'AA@rel', '/a' => 'AA@postA']);
 
 //设置status
 Route::get('/get/200', function(){
-    return ((new Response())->setStatus('200'));
+    return ((new Response())->setStatus(200));
 });
 
 //使用app容器类
@@ -43,18 +43,15 @@ Route::get('/get/app', function(){
 //request
 Route::get('/get/request', function(){
     $a = new Request;
-    var_dump($a->getHeader());
+    var_dump($a->header());
     var_dump($a->getPath());
     var_dump($a->getStartTime());
-    var_dump($a->getRequestType());
-    var_dump($a->getData());
-    var_dump($a->getField('a'));
-    spl_autoload_register();
-    var_dump(spl_autoload_functions());
+    var_dump($a->method());
+    var_dump($a->all());
+    var_dump($a->input('a'));
     var_dump(app('Request'));
     app('Request')->getPath();
     app('Request')->getPath();
-    var_dump(\Request::getPath());
 });
 
 Route::get('/pick/{no}', 'AA@pickOne')->with('[0-9]+');

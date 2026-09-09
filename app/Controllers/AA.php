@@ -11,7 +11,7 @@ class AA extends BaseController
 {
     public function index()
     {
-        return View::make('index.php')->with('a', User::select('select * from test', 'data'));
+        return View::make('index.php')->with('a', User::select('select * from users', []));
     }
 
     public function rel()

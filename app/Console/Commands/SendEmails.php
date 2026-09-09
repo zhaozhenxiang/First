@@ -19,7 +19,7 @@ class SendEmails extends Command
     {
         $argument = $this->argument('argument');
 
-        $this->info("Hello from SendEmails!");
+        $this->info("Hello from SendEmails! {$argument}");
 
         return 0;
     }
