@@ -57,6 +57,14 @@ class TestRunner
 
         $this->duration = microtime(true) - $this->startTime;
 
+        if ($this->filter !== null
+            && $this->results === []
+            && $this->skipped === 0
+            && $this->incomplete === 0
+        ) {
+            echo "\nWarning: no tests matched filter '{$this->filter}'\n";
+        }
+
         return $this->createSummary();
     }
 
@@ -165,8 +173,8 @@ class TestRunner
 
         $methods = $suite->getTestMethods();
 
-        // 应用 filter 过滤
-        if ($this->filter !== null) {
+        // 应用 filter 过滤（filter 命中类名时保留该套件全部测试，支持 --filter=RouteTest 跑整个文件）
+        if ($this->filter !== null && !str_contains($className, $this->filter)) {
             $methods = array_filter($methods, fn(string $m) => str_contains($m, $this->filter));
         }
 
@@ -191,6 +199,13 @@ class TestRunner
             $className::tearDownAfterClass();
         } catch (Throwable $e) {
             echo "Error in tearDownAfterClass for {$className}: {$e->getMessage()}\n";
+        }
+
+        // 每个套件结束后向 stderr 输出进度。stdout 必须保持缓冲到结束：
+        // 输出一旦离开缓冲区就会发送响应头，进程内的 session 测试将无法启动会话
+        if (PHP_SAPI === 'cli') {
+            $executed = $this->passed + $this->failed + $this->errors + $this->skipped + $this->incomplete;
+            fwrite(STDERR, "[tests] {$className} done ({$executed} executed)\n");
         }
     }
 

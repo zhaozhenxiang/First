@@ -61,6 +61,37 @@ class TestCommandScriptTest extends TestCase
         $this->assertEquals(0, $exitCode);
     }
 
+    public function testFilterMatchesTestClassName(): void
+    {
+        $script = basePath('test');
+
+        $command = 'php ' . escapeshellarg($script) . ' --filter=ExampleTest';
+
+        $output = [];
+        $exitCode = 0;
+        exec($command, $output, $exitCode);
+
+        $rendered = implode("\n", $output);
+
+        $this->assertEquals(0, $exitCode);
+        $this->assertStringContainsString('✓ 11 passed', $rendered);
+    }
+
+    public function testFilterWarnsWhenNothingMatches(): void
+    {
+        $script = basePath('test');
+
+        $command = 'php ' . escapeshellarg($script) . ' --filter=NoSuchTestAnywhere';
+
+        $output = [];
+        $exitCode = 0;
+        exec($command, $output, $exitCode);
+
+        $rendered = implode("\n", $output);
+
+        $this->assertStringContainsString("no tests matched filter 'NoSuchTestAnywhere'", $rendered);
+    }
+
     public function testRootTestScriptRunsCookieSuiteWithoutHeaderWarnings(): void
     {
         $script = basePath('test');
