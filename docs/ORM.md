@@ -676,3 +676,20 @@ $user->roles()->attach([1, 2]);
 // 删除
 $user->delete();
 ```
+
+## 行为说明（2026-09 修复后）
+
+本轮修复后以下语义与 Laravel Eloquent 对齐，迁移旧代码时请注意：
+
+- **标识符包裹**：SQL 编译器对表名/列名统一反引号包裹（MySQL/SQLite 兼容）。断言 `toSql()` 字符串的代码需要包含反引号，例如 `` `users` ``。
+- **belongsTo 默认外键**：按关系名推导（`user()` → `user_id`）。外键为 NULL 时关系返回 `null`，而不是目标表第一行。
+- **eager 加载返回类型**：`with()` 加载的一对多关系返回 `Collection`（与懒加载一致，不再是裸数组）；`isset($model->relation)` 对已加载关系返回 `true`。
+- **嵌套 eager 加载**：`with('a.b')` 对任意数量的父模型恒定 2 条关系查询（此前第二层按父模型逐条查询）。
+- **全局作用域**：`update()` / `delete()` / `increment()` / `decrement()` 等查询级写操作会应用全局作用域；软删除模型上 `Model::where(...)->delete()` 执行软删除（UPDATE `deleted_at`），`withTrashed()->delete()` 才是物理删除。按主键的 `save()` / `forceDelete()` 不受作用域限制。
+- **实例方法**：`$model->update([...])` 等价于 `fill + save`（按主键）；`$model->increment()/decrement()` 按主键约束执行并同步内存属性。原始 SQL 接口更名为 `Model::updateSql($sql, $params)`（原 `Model::update($sql, $params)`，避免与实例方法冲突）。
+- **操作符白名单**：`where()` 的操作符参数必须是合法 SQL 操作符，非法值抛 `InvalidArgumentException`；`where('col', '=', null)` 编译为 `IS NULL`。
+- **空 whereIn**：`whereIn('col', [])` 编译为 `0 = 1`（`whereNotIn` 为 `1 = 1`），不再是非法的 `IN ()`。
+- **morphMap**：全局生效，通过 `Model::enforceMorphMap(['alias' => ModelClass::class])` 设置（或 `Relation::enforceMorphMap`）；`Model::enforceMorphMap([], false)` 整体重置。中间表的多态类型值统一存 `getMorphClass()`（别名优先）。
+- **trait 引导递归**：父类（如中间基类）`use SoftDeletes` 对子类同样生效。
+- **迁移**：`foreignId('user_id')->constrained('users')->cascadeOnDelete()` 流式链可用；`migrate fresh` 会同时清掉 migrations 台账表；`$table->nullable()` / `$table->default()` 蓝图级方法已移除（会静默影响所有列），请使用列级链式调用。
+- **Seeder**：文件 seeder 命名空间固定为 `Database\Seeders`，按文件名发现。
