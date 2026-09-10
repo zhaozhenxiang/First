@@ -35,6 +35,10 @@ class ConnectionManager
 
         $dsn = $config['driver'] . ':dbname=' . $config['dbname'] . ';host=' . $config['host'] . ';port=' . $config['port'];
 
+        if (!empty($config['charset'])) {
+            $dsn .= ';charset=' . $config['charset'];
+        }
+
         // 连接超时（秒）：数据库不可达时快速失败，而不是挂住请求
         $options = [
             PDO::ATTR_TIMEOUT => (int) ($config['timeout'] ?? 3),
@@ -42,6 +46,7 @@ class ConnectionManager
 
         $dbh = new PDO($dsn, $config['user'], $config['pass'], $options);
         $dbh->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         return self::$connection = $dbh;
     }

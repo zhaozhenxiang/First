@@ -71,7 +71,8 @@ trait SoftDeletes
         // 临时禁用软删除
         $this->isSoftDeleted = false;
 
-        $result = static::query()->where($this->getKeyName(), $this->getKey())->delete() > 0;
+        // 无作用域查询：软删除作用域会排除已软删的行，导致无法强制删除
+        $result = $this->newUnscopedQuery()->where($this->getKeyName(), $this->getKey())->delete() > 0;
 
         if ($result) {
             $this->exists = false;
@@ -208,12 +209,23 @@ trait SoftDeletes
 
     /**
      * 模型初始化时添加软删除全局作用域
+     *
+     * 同一个作用域同时完成两件事（对齐 Eloquent SoftDeletingScope）：
+     * 1. 读查询过滤已软删记录（whereNull deleted_at）；
+     * 2. 注册 onDelete 替换行为，让查询级 `Model::where(...)->delete()`
+     *    变为软删除 UPDATE，而不是物理 DELETE。
+     * withTrashed() 移除该作用域后，两个行为一并失效（可硬删）。
      */
     protected static function bootSoftDeletes(): void
     {
         static::addGlobalScope('soft_delete', function (QueryBuilder $query) {
             $model = new static();
             $query->whereNull($model->getQualifiedDeletedAtColumn());
+
+            $deletedAt = $model->getDeletedAtColumn();
+            $query->onDelete(
+                fn (QueryBuilder $q) => $q->update([$deletedAt => date('Y-m-d H:i:s')])
+            );
         });
     }
 }

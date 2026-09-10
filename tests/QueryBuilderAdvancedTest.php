@@ -30,7 +30,7 @@ class QueryBuilderAdvancedTest extends TestCase
             ->whereColumn('updated_at', '>', 'created_at')
             ->toSql();
 
-        $this->assertStringContainsString('updated_at > created_at', $sql);
+        $this->assertStringContainsString('`updated_at` > `created_at`', $sql);
     }
 
     public function testWhereColumnTwoArgs(): void
@@ -39,7 +39,7 @@ class QueryBuilderAdvancedTest extends TestCase
             ->whereColumn('first_name', 'last_name')
             ->toSql();
 
-        $this->assertStringContainsString('first_name = last_name', $sql);
+        $this->assertStringContainsString('`first_name` = `last_name`', $sql);
     }
 
     public function testOrWhereColumn(): void
@@ -49,17 +49,17 @@ class QueryBuilderAdvancedTest extends TestCase
             ->orWhereColumn('col3', '=', 'col4')
             ->toSql();
 
-        $this->assertStringContainsString('col1 = col2', $sql);
-        $this->assertStringContainsString('OR col3 = col4', $sql);
+        $this->assertStringContainsString('`col1` = `col2`', $sql);
+        $this->assertStringContainsString('OR `col3` = `col4`', $sql);
     }
 
     public function testWhereRaw(): void
     {
         $sql = $this->query->from('users')
-            ->whereRaw('id > ? AND status = ?', [1, 'active'])
+            ->whereRaw('`id` > ? AND `status` = ?', [1, 'active'])
             ->toSql();
 
-        $this->assertStringContainsString('id > ? AND status = ?', $sql);
+        $this->assertStringContainsString('`id` > ? AND `status` = ?', $sql);
     }
 
     public function testWhereRawBindings(): void
@@ -74,10 +74,10 @@ class QueryBuilderAdvancedTest extends TestCase
     {
         $sql = $this->query->from('users')
             ->where('id', 1)
-            ->orWhereRaw('status = ?', ['active'])
+            ->orWhereRaw('`status` = ?', ['active'])
             ->toSql();
 
-        $this->assertStringContainsString('OR status = ?', $sql);
+        $this->assertStringContainsString('OR `status` = ?', $sql);
     }
 
     public function testWhereExists(): void
@@ -147,7 +147,7 @@ class QueryBuilderAdvancedTest extends TestCase
             })
             ->toSql();
 
-        $this->assertStringContainsString('active = ?', $sql);
+        $this->assertStringContainsString('`active` = ?', $sql);
         $this->assertEquals(0, $this->query->getBindings()[0]);
     }
 
@@ -179,7 +179,7 @@ class QueryBuilderAdvancedTest extends TestCase
             ->whereNot('status', 'active')
             ->toSql();
 
-        $this->assertStringContainsString('NOT status = ?', $sql);
+        $this->assertStringContainsString('NOT `status` = ?', $sql);
     }
 
     public function testWhereInSubquery(): void
@@ -190,7 +190,7 @@ class QueryBuilderAdvancedTest extends TestCase
             })
             ->toSql();
 
-        $this->assertStringContainsString('id IN (SELECT', $sql);
+        $this->assertStringContainsString('`id` IN (SELECT', $sql);
     }
 
     public function testWhereNotInSubquery(): void
@@ -201,7 +201,7 @@ class QueryBuilderAdvancedTest extends TestCase
             })
             ->toSql();
 
-        $this->assertStringContainsString('id NOT IN (SELECT', $sql);
+        $this->assertStringContainsString('`id` NOT IN (SELECT', $sql);
     }
 
     // ========================================
@@ -244,8 +244,8 @@ class QueryBuilderAdvancedTest extends TestCase
         $sql = $query1->union($query2)->toSql();
 
         $this->assertStringContainsString('UNION', $sql);
-        $this->assertStringContainsString('SELECT name FROM users', $sql);
-        $this->assertStringContainsString('SELECT name FROM admins', $sql);
+        $this->assertStringContainsString('SELECT `name` FROM `users`', $sql);
+        $this->assertStringContainsString('SELECT `name` FROM `admins`', $sql);
     }
 
     public function testUnionAll(): void
@@ -464,8 +464,8 @@ class QueryBuilderAdvancedTest extends TestCase
             ->whereNotIn('role', ['banned', 'suspended'])
             ->toSql();
 
-        $this->assertStringContainsString('status = ?', $sql);
-        $this->assertStringContainsString('age >= 18', $sql);
+        $this->assertStringContainsString('`status` = ?', $sql);
+        $this->assertStringContainsString('`age` >= `18`', $sql);
         $this->assertStringContainsString('EXISTS', $sql);
         $this->assertStringContainsString('NOT IN', $sql);
     }
@@ -482,8 +482,8 @@ class QueryBuilderAdvancedTest extends TestCase
             ->lockForUpdate()
             ->toSql();
 
-        $this->assertStringContainsString('SELECT id, name, email', $sql);
-        $this->assertStringContainsString('active = ?', $sql);
+        $this->assertStringContainsString('SELECT `id`, `name`, `email`', $sql);
+        $this->assertStringContainsString('`active` = ?', $sql);
         $this->assertStringContainsString('created_at > ?', $sql);
         $this->assertStringContainsString('FIELD(status', $sql);
         $this->assertStringContainsString('LIMIT 10', $sql);

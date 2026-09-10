@@ -10,6 +10,24 @@ namespace Bin\Database\QueryBuilder;
 trait CompilesQueries
 {
     /**
+     * 包裹 SQL 标识符（反引号，MySQL/SQLite 兼容）
+     *
+     * 只包裹裸标识符；包含括号、空格（别名）、反引号或 "*" 的表达式原样返回，
+     * 因此 DATE(col)、RAND()、"users as u"、Raw 表达式都不受影响。
+     */
+    protected function wrap(string $identifier): string
+    {
+        if ($identifier === '' || $identifier === '*' || str_contains($identifier, '(') || str_contains($identifier, '`') || str_contains($identifier, ' ')) {
+            return $identifier;
+        }
+
+        return implode('.', array_map(
+            fn (string $part): string => $part === '*' ? $part : '`' . str_replace('`', '', $part) . '`',
+            explode('.', $identifier)
+        ));
+    }
+
+    /**
      * 构建 UPDATE SQL
      */
     protected function grammarUpdate(array $values): string
@@ -17,12 +35,12 @@ trait CompilesQueries
         $columns = [];
 
         foreach (array_keys($values) as $key) {
-            $columns[] = "{$key} = ?";
+            $columns[] = $this->wrap($key) . " = ?";
         }
 
         $columns = implode(', ', $columns);
 
-        return "UPDATE {$this->from} SET {$columns} {$this->compileWheres()}";
+        return "UPDATE {$this->wrap($this->from)} SET {$columns} {$this->compileWheres()}";
     }
 
     /**
@@ -30,11 +48,13 @@ trait CompilesQueries
      */
     protected function grammarSelect(): string
     {
-        $columns = $this->columns === ['*'] ? '*' : implode(', ', $this->columns);
+        $columns = $this->columns === ['*']
+            ? '*'
+            : implode(', ', array_map(fn ($column) => $this->wrap((string) $column), $this->columns));
 
         $distinct = $this->distinct ? 'DISTINCT ' : '';
 
-        $sql = "SELECT {$distinct}{$columns} FROM {$this->from}";
+        $sql = "SELECT {$distinct}{$columns} FROM {$this->wrap($this->from)}";
 
         $sql .= $this->compileJoins();
 
@@ -98,13 +118,18 @@ trait CompilesQueries
      */
     protected function grammarAggregate(): string
     {
-        $column = $this->aggregate['columns'];
+        $column = $this->wrap($this->aggregate['columns']);
 
         if ($this->aggregate['function'] !== 'count') {
             $column = "IFNULL({$column}, 0)";
         }
 
-        return "SELECT {$this->aggregate['function']}({$column}) AS aggregate FROM {$this->from} {$this->compileWheres()}";
+        // JOIN 必须保留：带 join 的 count/sum 若丢掉 join 条件会得到静默错误的聚合值
+        return "SELECT {$this->aggregate['function']}({$column}) AS aggregate FROM {$this->wrap($this->from)}"
+            . $this->compileJoins()
+            . $this->compileWheres()
+            . $this->compileGroups()
+            . $this->compileHavings();
     }
 
     /**
@@ -119,10 +144,10 @@ trait CompilesQueries
         $joins = [];
 
         foreach ($this->joins as $join) {
-            $table = $join['table'];
-            $first = $join['first'];
+            $table = $this->wrap($join['table']);
+            $first = $this->wrap($join['first']);
             $operator = $join['operator'];
-            $second = $join['second'];
+            $second = $this->wrap($join['second']);
             $type = strtoupper($join['type']);
 
             $joins[] = "{$type} JOIN {$table} ON {$first} {$operator} {$second}";
@@ -164,20 +189,21 @@ trait CompilesQueries
         $not = !empty($where['not']) ? 'NOT ' : '';
 
         return match ($where['type']) {
-            'Basic' => ($not ? "NOT " : '') . "{$where['column']} {$where['operator']} ?",
+            'Basic' => ($not ? 'NOT ' : '') . $this->wrap($where['column']) . " {$where['operator']} ?",
             'Nested' => "({$where['query']->compileWheres()})",
-            'Column' => ($not ? "NOT " : '') . "{$where['first']} {$where['operator']} {$where['second']}",
+            'Column' => ($not ? 'NOT ' : '') . $this->wrap($where['first']) . " {$where['operator']} " . $this->wrap($where['second']),
             'Raw' => $where['sql'],
-            'In' => "{$where['column']} IN (" . rtrim(str_repeat('?,', count($where['values'])), ',') . ')',
-            'NotIn' => "{$where['column']} NOT IN (" . rtrim(str_repeat('?,', count($where['values'])), ',') . ')',
-            'InSub' => "{$where['column']} IN ({$where['query']->toSql()})",
-            'NotInSub' => "{$where['column']} NOT IN ({$where['query']->toSql()})",
-            'Null' => "{$where['column']} IS NULL",
-            'NotNull' => "{$where['column']} IS NOT NULL",
-            'Between' => "{$where['column']} BETWEEN ? AND ?",
-            'NotBetween' => "{$where['column']} NOT BETWEEN ? AND ?",
-            'Exists' => "EXISTS ({$where['query']->toSql()})",
-            'NotExists' => "NOT EXISTS ({$where['query']->toSql()})",
+            'Sub' => $this->wrap($where['column']) . " {$where['operator']} (" . $where['query']->toSql() . ')',
+            'In' => $this->wrap($where['column']) . ' IN (' . rtrim(str_repeat('?,', count($where['values'])), ',') . ')',
+            'NotIn' => $this->wrap($where['column']) . ' NOT IN (' . rtrim(str_repeat('?,', count($where['values'])), ',') . ')',
+            'InSub' => $this->wrap($where['column']) . ' IN (' . $where['query']->toSql() . ')',
+            'NotInSub' => $this->wrap($where['column']) . ' NOT IN (' . $where['query']->toSql() . ')',
+            'Null' => $this->wrap($where['column']) . ' IS NULL',
+            'NotNull' => $this->wrap($where['column']) . ' IS NOT NULL',
+            'Between' => $this->wrap($where['column']) . ' BETWEEN ? AND ?',
+            'NotBetween' => $this->wrap($where['column']) . ' NOT BETWEEN ? AND ?',
+            'Exists' => 'EXISTS (' . $where['query']->toSql() . ')',
+            'NotExists' => 'NOT EXISTS (' . $where['query']->toSql() . ')',
             default => '',
         };
     }
@@ -187,7 +213,11 @@ trait CompilesQueries
      */
     protected function compileGroups(): string
     {
-        return empty($this->groups) ? '' : ' GROUP BY ' . implode(', ', $this->groups);
+        if (empty($this->groups)) {
+            return '';
+        }
+
+        return ' GROUP BY ' . implode(', ', array_map(fn ($group) => $this->wrap((string) $group), $this->groups));
     }
 
     /**
@@ -201,12 +231,17 @@ trait CompilesQueries
 
         $havings = [];
 
-        foreach ($this->havings as $having) {
+        foreach ($this->havings as $index => $having) {
             if (isset($having['type']) && $having['type'] === 'Raw') {
-                $havings[] = "{$having['boolean']} {$having['sql']}";
+                $condition = $having['sql'];
             } else {
-                $havings[] = "{$having['boolean']} {$having['column']} {$having['operator']} ?";
+                $condition = $this->wrap($having['column']) . " {$having['operator']} ?";
             }
+
+            // 首个条件前不能带 AND/OR，否则产生非法 SQL（HAVING and total > ?）
+            $havings[] = $index === 0
+                ? $condition
+                : strtoupper($having['boolean'] ?? 'and') . ' ' . $condition;
         }
 
         return ' HAVING ' . implode(' ', $havings);
@@ -227,7 +262,7 @@ trait CompilesQueries
             if (isset($order['type']) && $order['type'] === 'Raw') {
                 $orders[] = $order['sql'];
             } else {
-                $orders[] = "{$order['column']} {$order['direction']}";
+                $orders[] = $this->wrap($order['column']) . ' ' . $order['direction'];
             }
         }
 

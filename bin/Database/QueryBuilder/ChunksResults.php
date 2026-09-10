@@ -48,7 +48,11 @@ trait ChunksResults
         $lastId = 0;
 
         do {
-            $results = $this->where($column, '>', $lastId)
+            // 每轮克隆：既不污染调用方 builder，也让本轮追加的 where/orderBy 随轮丢弃；
+            // 重置已有排序，保证按 ID 分块的顺序确定性
+            $results = $this->clone()
+                ->where($column, '>', $lastId)
+                ->resetOrders()
                 ->orderBy($column)
                 ->limit($count)
                 ->get();

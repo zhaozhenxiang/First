@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Bin\Database\QueryBuilder;
 
+use InvalidArgumentException;
+
 /**
  * WHERE 条件构建 Trait
  *
@@ -14,8 +16,11 @@ trait BuildsWhereClauses
 {
     /**
      * WHERE 条件
+     *
+     * 支持数组、闭包嵌套、两参数/三参数形式。三参数形式下操作符必须是白名单成员；
+     * `where('col', '=', null)` 会转换为 IS NULL（避免把 '=' 误当值绑定）。
      */
-    public function where(array|string $column, mixed $operator = null, mixed $value = null, string $boolean = 'and'): self
+    public function where(array|string|\Closure $column, mixed $operator = null, mixed $value = null, string $boolean = 'and'): self
     {
         // 数组形式：where(['id' => 1, 'name' => 'foo'])
         if (is_array($column)) {
@@ -31,20 +36,59 @@ trait BuildsWhereClauses
         }
 
         // 两参数形式：where('id', 1) => where('id', '=', 1)
-        if ($value === null) {
+        if (func_num_args() === 2) {
             $value = $operator;
             $operator = '=';
+        }
+
+        // 值为 null 的等值/不等值条件转换为 IS NULL / IS NOT NULL
+        if ($value === null && in_array(strtolower((string) $operator), ['=', '<>', '!='], true)) {
+            return $this->whereNull($column, $boolean, strtolower((string) $operator) !== '=');
+        }
+
+        // 操作符白名单：防止操作符位注入（与 Laravel 保持一致的集合）
+        if (!in_array(strtolower((string) $operator), $this->operators(), true)) {
+            throw new InvalidArgumentException(
+                sprintf('Illegal operator [%s] for column [%s].', (string) $operator, $column)
+            );
+        }
+
+        // 值为闭包时构建标量子查询：where('id', '=', function($q) { ... })
+        if ($value instanceof \Closure) {
+            $query = $this->forNestedWhere();
+            $value($query);
+
+            $type = 'Sub';
+            $this->wheres[] = compact('type', 'column', 'operator', 'query', 'boolean');
+            $this->bindings = array_merge($this->bindings, $query->bindings);
+
+            return $this;
         }
 
         $type = 'Basic';
 
         $this->wheres[] = compact('type', 'column', 'operator', 'value', 'boolean');
 
-        if (!($value instanceof \Closure)) {
-            $this->addBinding($value, 'where');
-        }
+        $this->addBinding($value, 'where');
 
         return $this;
+    }
+
+    /**
+     * 合法 SQL 操作符白名单
+     *
+     * @return list<string>
+     */
+    protected function operators(): array
+    {
+        return [
+            '=', '<', '>', '<=', '>=', '<>', '!=', '<=>',
+            'like', 'like binary', 'not like', 'ilike', 'not ilike',
+            'rlike', 'not rlike', 'regexp', 'not regexp',
+            '~', '~*', '!~', '!~*', 'similar to', 'not similar to',
+            'not ilike', '~~*', '!~~*',
+            '&', '|', '^', '<<', '>>',
+        ];
     }
 
     /**
@@ -85,29 +129,49 @@ trait BuildsWhereClauses
      */
     public function orWhere(array|string $column, mixed $operator = null, mixed $value = null): self
     {
+        // 两参数形式在转发前归一化，避免 where() 的操作符白名单误判
+        if (func_num_args() === 2) {
+            $value = $operator;
+            $operator = '=';
+        }
+
         return $this->where($column, $operator, $value, 'or');
     }
 
     /**
      * WHERE IN 条件（支持数组和闭包子查询）
+     *
+     * 空数组是合法输入：IN () 是非法 SQL，编译为恒假/恒真条件（与 Laravel 一致）。
      */
     public function whereIn(string $column, array|\Closure $values, string $boolean = 'and', bool $not = false): self
     {
-        $type = $not ? 'NotInSub' : 'InSub';
-
         if ($values instanceof \Closure) {
+            $type = $not ? 'NotInSub' : 'InSub';
+
             $query = $this->forNestedWhere();
             $values($query);
 
             $this->wheres[] = compact('type', 'column', 'query', 'boolean');
             $this->bindings = array_merge($this->bindings, $query->bindings);
-        } else {
-            $type = $not ? 'NotIn' : 'In';
-            $this->wheres[] = compact('type', 'column', 'values', 'boolean');
 
-            foreach ($values as $value) {
-                $this->addBinding($value, 'where');
-            }
+            return $this;
+        }
+
+        if (empty($values)) {
+            $this->wheres[] = [
+                'type' => 'Raw',
+                'sql' => $not ? '1 = 1' : '0 = 1',
+                'boolean' => $boolean,
+            ];
+
+            return $this;
+        }
+
+        $type = $not ? 'NotIn' : 'In';
+        $this->wheres[] = compact('type', 'column', 'values', 'boolean');
+
+        foreach ($values as $value) {
+            $this->addBinding($value, 'where');
         }
 
         return $this;
@@ -254,6 +318,13 @@ trait BuildsWhereClauses
      */
     public function whereNot(string|array $column, mixed $operator = null, mixed $value = null, string $boolean = 'and'): self
     {
+        // 两参数形式：whereNot('col', $value)。在转发前归一化，避免 where() 的
+        // 操作符白名单把两参形式的值误判为操作符。
+        if (func_num_args() === 2) {
+            $value = $operator;
+            $operator = '=';
+        }
+
         return $this->where($column, $operator, $value, $boolean)->not();
     }
 

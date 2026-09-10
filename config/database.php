@@ -13,6 +13,7 @@ return [
             'user' => env('DB_USERNAME', 'root'),
             'pass' => env('DB_PASSWORD', ''),
             'dbname' => env('DB_DATABASE', 'test'),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
         ],
     ],
 ];

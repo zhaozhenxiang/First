@@ -34,11 +34,12 @@ class DatabaseServiceProvider extends ServiceProvider
 
     /**
      * 启动数据库服务
+     *
+     * 连接保持懒加载：首次使用 db.connection / db.query 时才建立 PDO 连接，
+     * 避免每个请求都为不触及数据库的路径支付连接握手开销。
      */
     public function boot(): void
     {
-        // 初始化数据库连接
-        $this->app->make('db.connection');
     }
 
     /**

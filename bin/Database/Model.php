@@ -389,6 +389,12 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public static function firstWhere(string $column, mixed $operator = null, mixed $value = null): mixed
     {
+        // 两参数形式在转发前归一化，避免查询构建器的操作符白名单误判
+        if (func_num_args() === 2) {
+            $value = $operator;
+            $operator = '=';
+        }
+
         return static::where($column, $operator, $value)->first();
     }
 
@@ -603,7 +609,9 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
             return true;
         }
 
-        $result = $query->where($this->getKeyName(), $this->getKey())->update($dirty) > 0;
+        // 按主键的持久化写入使用无全局作用域的查询：
+        // 软删除等作用域（deleted_at IS NULL）会阻止对已软删行的恢复性更新
+        $result = $this->newUnscopedQuery()->where($this->getKeyName(), $this->getKey())->update($dirty) > 0;
 
         if ($result) {
             // 触发 updated 事件
@@ -645,6 +653,23 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     protected function newQuery(): QueryBuilder
     {
         return static::query();
+    }
+
+    /**
+     * 创建无全局作用域的查询构建器
+     *
+     * 用于按主键的持久化写入（save/forceDelete）：作用域面向批量读/写，
+     * 不应阻止模型对自身主键行的更新（如恢复软删记录）。
+     */
+    protected function newUnscopedQuery(): QueryBuilder
+    {
+        $query = static::query();
+
+        foreach (array_keys($query->getScopes()) as $identifier) {
+            $query->withoutGlobalScope($identifier);
+        }
+
+        return $query;
     }
 
     /**

@@ -196,6 +196,12 @@ abstract class Relation
             return $this;
         }
 
+        // 两参数形式在转发前归一化，避免查询构建器的操作符白名单误判
+        if (func_num_args() === 2) {
+            $value = $operator;
+            $operator = '=';
+        }
+
         $this->query->where($column, $operator, $value);
 
         return $this;

@@ -80,6 +80,12 @@ class QueryBuilder
     /** @var array<string, array{relation: string, column: string, alias: string, constraints: ?\Closure}> withAggregate 统计 */
     protected array $withAggregates = [];
 
+    /** @var bool 全局作用域是否已应用（保证幂等，避免复用 builder 时重复叠加条件） */
+    protected bool $scopesApplied = false;
+
+    /** @var \Closure|null 查询级 delete() 的替换行为（如软删除转 update） */
+    protected ?\Closure $onDelete = null;
+
     public function __construct(PDO $connection, string $modelClass = '')
     {
         $this->connection = $connection;
@@ -134,10 +140,16 @@ class QueryBuilder
     }
 
     /**
-     * 应用全局作用域
+     * 应用全局作用域（幂等：同一 builder 只应用一次，克隆后重新应用）
      */
     public function applyScopes(): self
     {
+        if ($this->scopesApplied) {
+            return $this;
+        }
+
+        $this->scopesApplied = true;
+
         foreach ($this->scopes as $identifier => $callback) {
             if (!in_array($identifier, $this->removedScopes)) {
                 $callback($this);
@@ -254,6 +266,12 @@ class QueryBuilder
      */
     public function orderBy(string $column, string $direction = 'asc'): self
     {
+        $direction = strtolower($direction);
+
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            throw new InvalidArgumentException("Order direction must be 'asc' or 'desc', got [{$direction}].");
+        }
+
         $this->orders[] = compact('column', 'direction');
         return $this;
     }
@@ -608,31 +626,38 @@ class QueryBuilder
     }
 
     /**
-     * 聚合查询
+     * 聚合查询（count/max/min/avg/sum）
+     *
+     * 直接执行聚合 SQL 而不经过模型水合：聚合行不是真实模型数据，
+     * 水合会触发伪造的 retrieved 事件并浪费一次模型构造。
      */
     protected function aggregate(string $function, string $columns = '*'): mixed
     {
+        $this->applyScopes();
+
         $this->aggregate = compact('function', 'columns');
 
         $previousColumns = $this->columns;
 
-        $results = $this->get();
+        $sql = $this->toSql();
+        $bindings = $this->getBindings();
 
         $this->aggregate = null;
         $this->columns = $previousColumns;
 
-        if ($results->isEmpty()) {
-            return 0;
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000);
+
+            return $row === false ? 0 : ($row['aggregate'] ?? 0);
+        } catch (\Throwable $e) {
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, 0, false, $e->getMessage());
+            throw $e;
         }
-
-        $result = $results->first();
-
-        if ($result instanceof Model) {
-            $key = 'aggregate';
-            return $result->{$key};
-        }
-
-        return $result['aggregate'] ?? 0;
     }
 
     /**
@@ -650,10 +675,10 @@ class QueryBuilder
         }
 
         $keys = array_keys(reset($values));
-        $columns = implode(', ', $keys);
-        $parameters = implode(', ', array_map(fn($key) => ":{$key}", $keys));
+        $columns = implode(', ', array_map(fn ($key) => $this->wrap((string) $key), $keys));
+        $parameters = implode(', ', array_map(fn ($key) => ":{$key}", $keys));
 
-        $sql = "INSERT INTO {$this->from} ({$columns}) VALUES ({$parameters})";
+        $sql = "INSERT INTO {$this->wrap($this->from)} ({$columns}) VALUES ({$parameters})";
 
         $startTime = microtime(true);
         try {
@@ -689,6 +714,13 @@ class QueryBuilder
      */
     public function update(array $values): int
     {
+        if (empty($values)) {
+            throw new InvalidArgumentException('Update requires at least one column.');
+        }
+
+        // 写操作必须应用全局作用域：否则软删除/租户隔离等作用域会被静默绕过
+        $this->applyScopes();
+
         $sql = $this->grammarUpdate($values);
 
         $bindings = array_values($values);
@@ -713,10 +745,19 @@ class QueryBuilder
 
     /**
      * 删除记录
+     *
+     * 全局作用域会被应用；若作用域注册了 onDelete 替换行为（软删除），
+     * 则执行该行为而不是物理 DELETE。
      */
     public function delete(): int
     {
-        $sql = "DELETE FROM {$this->from} {$this->compileWheres()}";
+        $this->applyScopes();
+
+        if ($this->onDelete !== null) {
+            return ($this->onDelete)($this);
+        }
+
+        $sql = "DELETE FROM {$this->wrap($this->from)} {$this->compileWheres()}";
 
         $bindings = $this->getBindings();
 
@@ -758,12 +799,14 @@ class QueryBuilder
      */
     private function buildIncrementQuery(string $column, string $operator, int $amount, array $extra): int
     {
-        $sql = "UPDATE {$this->from} SET {$column} = {$column} {$operator} ?";
+        $this->applyScopes();
+
+        $sql = "UPDATE {$this->wrap($this->from)} SET {$this->wrap($column)} = {$this->wrap($column)} {$operator} ?";
 
         if (!empty($extra)) {
             $sets = [];
             foreach (array_keys($extra) as $key) {
-                $sets[] = "{$key} = ?";
+                $sets[] = $this->wrap($key) . ' = ?';
             }
             $sql .= ', ' . implode(', ', $sets);
         }
@@ -779,11 +822,53 @@ class QueryBuilder
     }
 
     /**
+     * 注册查询级 delete() 的替换行为
+     *
+     * 回调接收当前 builder，返回受影响行数。软删除等作用域用它把
+     * `Model::where(...)->delete()` 转换为 UPDATE deleted_at。
+     */
+    public function onDelete(\Closure $callback): self
+    {
+        $this->onDelete = $callback;
+
+        return $this;
+    }
+
+    /**
+     * 清空已有排序
+     */
+    public function resetOrders(): self
+    {
+        $this->orders = [];
+
+        return $this;
+    }
+
+    /**
      * 检查记录是否存在
      */
     public function exists(): bool
     {
-        return $this->count() > 0;
+        $this->applyScopes();
+
+        $query = $this->clone()->limit(1);
+
+        $sql = $query->toSql();
+        $bindings = $query->getBindings();
+
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000);
+
+            return $row !== false;
+        } catch (\Throwable $e) {
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, 0, false, $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
@@ -831,14 +916,15 @@ class QueryBuilder
     }
 
     /**
-     * 获取绑定参数
+     * 获取绑定参数（顺序与占位符在 SQL 中出现的顺序一致：where → having → order → union）
      */
     public function getBindings(): array
     {
         return array_merge(
             $this->bindings['where'] ?? [],
             $this->bindings['having'] ?? [],
-            $this->bindings['order'] ?? []
+            $this->bindings['order'] ?? [],
+            $this->bindings['union'] ?? []
         );
     }
 
@@ -877,6 +963,11 @@ class QueryBuilder
         }
 
         $this->unionQueries[] = ['query' => $query, 'all' => $all];
+
+        // 子查询的绑定必须并入主查询，否则执行时占位符数量与绑定数不匹配
+        foreach ($query->getBindings() as $binding) {
+            $this->addBinding($binding, 'union');
+        }
 
         return $this;
     }
@@ -980,6 +1071,8 @@ class QueryBuilder
         $this->eagerLoads = $this->deepCloneArray($this->eagerLoads);
         $this->unionQueries = $this->deepCloneArray($this->unionQueries);
         $this->lock = $this->lock;
+        // 克隆体允许重新应用全局作用域（幂等标记不随克隆传递）
+        $this->scopesApplied = false;
     }
 
     /**

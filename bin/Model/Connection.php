@@ -30,9 +30,9 @@ class Connection
         ];
         $dbh = new PDO($config['dsn'], $config['user'], $config['password'], $options);
         $dbh->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         return self::$connection = $dbh;
-//        return self::$conncection = $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     }
 
     public function reconnection($config)

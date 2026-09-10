@@ -35,8 +35,8 @@ class QueryBuilderTest extends TestCase
             ->select(['id', 'name'])
             ->toSql();
 
-        $this->assertStringContainsString('SELECT id, name', $sql);
-        $this->assertStringContainsString('FROM users', $sql);
+        $this->assertStringContainsString('SELECT `id`, `name`', $sql);
+        $this->assertStringContainsString('FROM `users`', $sql);
     }
 
     public function testWhere(): void
@@ -45,7 +45,7 @@ class QueryBuilderTest extends TestCase
             ->where('status', 'active')
             ->toSql();
 
-        $this->assertStringContainsString('WHERE status = ?', $sql);
+        $this->assertStringContainsString('WHERE `status` = ?', $sql);
     }
 
     public function testOrWhere(): void
@@ -73,7 +73,7 @@ class QueryBuilderTest extends TestCase
             ->orderBy('created_at', 'desc')
             ->toSql();
 
-        $this->assertStringContainsString('ORDER BY created_at desc', $sql);
+        $this->assertStringContainsString('ORDER BY `created_at` desc', $sql);
     }
 
     public function testLimit(): void
@@ -100,7 +100,7 @@ class QueryBuilderTest extends TestCase
             ->join('posts', 'users.id', '=', 'posts.user_id')
             ->toSql();
 
-        $this->assertStringContainsString('JOIN posts ON users.id = posts.user_id', $sql);
+        $this->assertStringContainsString('JOIN `posts` ON `users`.`id` = `posts`.`user_id`', $sql);
     }
 
     public function testLeftJoin(): void
@@ -131,12 +131,12 @@ class QueryBuilderTest extends TestCase
             ->limit(10)
             ->toSql();
 
-        $this->assertStringContainsString('SELECT users.id, users.name, posts.title', $sql);
-        $this->assertStringContainsString('FROM users', $sql);
-        $this->assertStringContainsString('JOIN posts ON users.id = posts.user_id', $sql);
-        $this->assertStringContainsString('WHERE users.status = ?', $sql);
-        $this->assertStringContainsString('posts.published = ?', $sql);
-        $this->assertStringContainsString('ORDER BY users.created_at desc', $sql);
+        $this->assertStringContainsString('SELECT `users`.`id`, `users`.`name`, `posts`.`title`', $sql);
+        $this->assertStringContainsString('FROM `users`', $sql);
+        $this->assertStringContainsString('JOIN `posts` ON `users`.`id` = `posts`.`user_id`', $sql);
+        $this->assertStringContainsString('WHERE `users`.`status` = ?', $sql);
+        $this->assertStringContainsString('`posts`.`published` = ?', $sql);
+        $this->assertStringContainsString('ORDER BY `users`.`created_at` desc', $sql);
         $this->assertStringContainsString('LIMIT 10', $sql);
     }
 }
