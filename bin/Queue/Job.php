@@ -20,6 +20,9 @@ abstract class Job
     /** @var int 重试间隔秒数 */
     public int $retryAfter = 90;
 
+    /** @var int|array<int, int> 重试退避：固定秒数或按尝试次数的秒数表（超出取末值），0 表示使用 retryAfter */
+    public int|array $backoff = 0;
+
     /** @var string 目标队列名 */
     public string $queue = 'default';
 
@@ -137,6 +140,7 @@ abstract class Job
             'maxTries' => $this->maxTries,
             'timeout' => $this->timeout,
             'retryAfter' => $this->retryAfter,
+            'backoff' => $this->backoff,
             'queue' => $this->queue,
             'delay' => $this->delay,
             'attempts' => $this->attempts,

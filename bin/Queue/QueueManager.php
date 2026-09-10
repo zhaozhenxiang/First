@@ -6,6 +6,7 @@ namespace Bin\Queue;
 
 use Bin\Queue\Contracts\QueueInterface;
 use Bin\Queue\Drivers\DatabaseQueue;
+use Bin\Queue\Drivers\RedisQueue;
 use Bin\Queue\Drivers\SyncQueue;
 use RuntimeException;
 
@@ -115,6 +116,7 @@ class QueueManager
         return match ($driver) {
             'sync' => $this->createSyncDriver($config),
             'database' => $this->createDatabaseDriver($name, $config),
+            'redis' => $this->createRedisDriver($name, $config),
             default => throw new RuntimeException("Unsupported queue driver: {$driver}"),
         };
     }
@@ -125,6 +127,18 @@ class QueueManager
     protected function createSyncDriver(array $config): SyncQueue
     {
         return new SyncQueue();
+    }
+
+    /**
+     * 创建 redis 驱动（要求 ext-redis，与 Cache\RedisStore 同一策略）
+     */
+    protected function createRedisDriver(string $name, array $config): RedisQueue
+    {
+        return new RedisQueue(
+            null,
+            (string) ($config['prefix'] ?? 'queues:'),
+            $config
+        );
     }
 
     /**

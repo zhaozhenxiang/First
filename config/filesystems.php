@@ -29,6 +29,17 @@ return [
             'url' => env('APP_URL') . '/storage',
         ],
 
+        // FTP 磁盘（基于内置 ftp:// 流包装器，无需扩展）：
+        // 'ftp' => [
+        //     'driver' => 'ftp',
+        //     'host' => env('FTP_HOST'),
+        //     'username' => env('FTP_USERNAME'),
+        //     'password' => env('FTP_PASSWORD'),
+        //     'port' => 21,
+        //     'root' => '/',
+        //     'ssl' => false,
+        // ],
+
     ],
 
 ];

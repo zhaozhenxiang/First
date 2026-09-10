@@ -236,6 +236,18 @@ Acceptance criteria:
 First SHOULD extend queue, mail, filesystem, cache, and HTTP client through
 driver contracts and manager factories, not one-off service code.
 
+> **Status note (2026-09-10):** Queue/filesystem portion delivered per
+> `docs/superpowers/plans/2026-09-10-track-e-queue-filesystem-drivers.md` —
+> worker backoff (int or per-attempt schedule) and timeout enforcement
+> (`pcntl_alarm`, `--timeout` on `queue:work`); a contract-based Redis queue
+> driver (list + delayed zset, ext-redis required loudly per the
+> `Cache\RedisStore` precedent, connection injectable for tests); an FTP
+> filesystem adapter over built-in stream wrappers conforming to the existing
+> `FilesystemAdapter` contract. Queued mailable delivery was already
+> implemented and stays green. Remaining Track E items: notifications
+> (next, after the now-stable mail/queue contracts), queue batching/chains,
+> and S3/SFTP-style adapters.
+
 Acceptance criteria:
 
 - Queue drivers are contract-based and cover sync, database, and at least one

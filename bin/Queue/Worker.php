@@ -20,6 +20,9 @@ use RuntimeException;
  */
 class Worker
 {
+    /** @var int 默认任务超时秒数 */
+    public const int DEFAULT_TIMEOUT = 60;
+
     protected bool $shouldQuit = false;
     protected int $processed = 0;
     protected int $failed = 0;
@@ -31,6 +34,11 @@ class Worker
         if (function_exists('pcntl_signal')) {
             pcntl_signal(SIGTERM, [$this, 'handleSignal']);
             pcntl_signal(SIGINT, [$this, 'handleSignal']);
+
+            // 异步信号投递：SIGALRM 可中断阻塞中的任务
+            if (function_exists('pcntl_async_signals')) {
+                pcntl_async_signals(true);
+            }
         }
     }
 
@@ -42,10 +50,11 @@ class Worker
         array $queues = ['default'],
         int $tries = 3,
         int $sleep = 1,
-        bool $once = false
+        bool $once = false,
+        int $timeout = self::DEFAULT_TIMEOUT
     ): int {
         while (!$this->shouldQuit) {
-            $processed = $this->runNextJob($connection, $queues, $tries);
+            $processed = $this->runNextJob($connection, $queues, $tries, $timeout);
 
             if ($once) {
                 return $processed ? 0 : 1;
@@ -66,8 +75,12 @@ class Worker
     /**
      * 按优先级队列处理下一个任务
      */
-    public function runNextJob(string $connection, array $queues = ['default'], int $tries = 3): bool
-    {
+    public function runNextJob(
+        string $connection,
+        array $queues = ['default'],
+        int $tries = 3,
+        int $timeout = self::DEFAULT_TIMEOUT
+    ): bool {
         foreach ($queues as $queue) {
             $queueName = trim((string) $queue);
             if ($queueName === '') {
@@ -85,7 +98,7 @@ class Worker
                 continue;
             }
 
-            $this->process($job, $connection, $queueName, $tries);
+            $this->process($job, $connection, $queueName, $tries, $timeout);
             $this->processed++;
 
             return true;
@@ -97,19 +110,26 @@ class Worker
     /**
      * 启动 daemon 模式
      */
-    public function daemon(string $connection, string $queue = 'default', int $tries = 3, int $sleep = 1): void
-    {
+    public function daemon(
+        string $connection,
+        string $queue = 'default',
+        int $tries = 3,
+        int $sleep = 1,
+        int $timeout = self::DEFAULT_TIMEOUT
+    ): void {
         $queues = array_map('trim', explode(',', $queue));
-        $this->run($connection, $queues, $tries, $sleep, false);
+        $this->run($connection, $queues, $tries, $sleep, false, $timeout);
     }
 
     /**
      * 处理单个任务
      */
-    public function process(Job $job, string $connection, string $queue, int $tries = 3): void
+    public function process(Job $job, string $connection, string $queue, int $tries = 3, int $timeout = self::DEFAULT_TIMEOUT): void
     {
         $container = App::getInstance()->getContainer();
         $container->resetScope();
+
+        $alarmSet = $this->startTimeoutAlarm($job, $timeout);
 
         try {
             $container->call([$job, 'handle']);
@@ -117,8 +137,51 @@ class Worker
         } catch (\Throwable $e) {
             $this->handleFailure($job, $connection, $queue, $e, $tries);
         } finally {
+            if ($alarmSet) {
+                pcntl_alarm(0);
+            }
             $container->resetScope();
         }
+    }
+
+    /**
+     * 为任务注册超时闹钟（pcntl 不可用时超时不强制）
+     *
+     * @return bool 是否已设置闹钟
+     */
+    protected function startTimeoutAlarm(Job $job, int $workerTimeout): bool
+    {
+        if (!function_exists('pcntl_alarm') || !function_exists('pcntl_signal')) {
+            return false;
+        }
+
+        $effective = $this->effectiveTimeout($job, $workerTimeout);
+
+        if ($effective <= 0) {
+            return false;
+        }
+
+        pcntl_signal(SIGALRM, static function (): never {
+            throw new QueueTimeoutException('Queue job timed out.');
+        });
+
+        pcntl_alarm($effective);
+
+        return true;
+    }
+
+    /**
+     * 计算生效超时：worker 与任务取较小值，任务 timeout <= 0 时沿用 worker 值
+     */
+    protected function effectiveTimeout(Job $job, int $workerTimeout): int
+    {
+        $workerTimeout = max(0, $workerTimeout);
+
+        if ($job->timeout <= 0) {
+            return $workerTimeout;
+        }
+
+        return $workerTimeout > 0 ? min($workerTimeout, $job->timeout) : $job->timeout;
     }
 
     /**
@@ -149,7 +212,30 @@ class Worker
             return;
         }
 
-        $this->manager->connection($connection)->release($job, $job->retryAfter);
+        $this->manager->connection($connection)->release($job, $this->calculateBackoff($job));
+    }
+
+    /**
+     * 计算释放延迟
+     *
+     * backoff 为 0 时沿用 retryAfter；正整数固定间隔；
+     * 数组按尝试次数取值（第 1 次失败取 backoff[0]），超出取末值
+     */
+    protected function calculateBackoff(Job $job): int
+    {
+        $backoff = $job->backoff;
+
+        if (is_int($backoff)) {
+            return $backoff > 0 ? $backoff : $job->retryAfter;
+        }
+
+        if ($backoff === []) {
+            return $job->retryAfter;
+        }
+
+        $index = max(0, $job->getAttempts() - 1);
+
+        return $backoff[min($index, count($backoff) - 1)];
     }
 
     /**

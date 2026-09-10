@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bin\Filesystem;
 
+use Bin\Filesystem\Drivers\FtpDriver;
 use Bin\Filesystem\Drivers\LocalDriver;
 use RuntimeException;
 
@@ -105,6 +106,7 @@ class StorageManager
 
         $adapter = match ($driver) {
             'local' => $this->createLocalAdapter($config),
+            'ftp' => $this->createFtpAdapter($config),
             default => throw new RuntimeException("Unsupported filesystem driver: {$driver}"),
         };
 
@@ -120,6 +122,22 @@ class StorageManager
         $url = $config['url'] ?? '';
 
         return new LocalDriver($root, $url);
+    }
+
+    /**
+     * 创建 FTP 适配器（基于内置 ftp:// 流包装器，无需扩展）
+     */
+    protected function createFtpAdapter(array $config): FtpDriver
+    {
+        return new FtpDriver(
+            (string) ($config['host'] ?? '127.0.0.1'),
+            (string) ($config['username'] ?? 'anonymous'),
+            (string) ($config['password'] ?? ''),
+            (int) ($config['port'] ?? 21),
+            (string) ($config['root'] ?? '/'),
+            (bool) ($config['ssl'] ?? false),
+            (string) ($config['url'] ?? '')
+        );
     }
 
     /**
