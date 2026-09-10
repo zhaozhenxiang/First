@@ -103,7 +103,7 @@ class BelongsTo extends Relation
     /**
      * 匹配关系
      */
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 
@@ -121,7 +121,7 @@ class BelongsTo extends Relation
     /**
      * 构建字典
      */
-    protected function buildDictionary(array $results): array
+    protected function buildDictionary(iterable $results): array
     {
         $dictionary = [];
 
@@ -130,6 +130,31 @@ class BelongsTo extends Relation
         }
 
         return $dictionary;
+    }
+
+    /**
+     * 关系聚合子查询：反向外键关联
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        $relatedTable = $this->query->getTable();
+        $col = $function === 'count' ? '*' : $column;
+
+        return "SELECT {$function}({$col}) FROM {$relatedTable}"
+            . " WHERE {$relatedTable}.{$this->parentKey} = {$parentTable}.{$this->foreignKey}";
+    }
+
+    /**
+     * 为 whereHas 生成 EXISTS 子查询
+     */
+    public function getExistenceQuery(string $parentTable): array
+    {
+        $relatedTable = $this->query->getTable();
+
+        return [
+            "SELECT 1 FROM {$relatedTable} WHERE {$relatedTable}.{$this->parentKey} = {$parentTable}.{$this->foreignKey}",
+            [],
+        ];
     }
 
     /**

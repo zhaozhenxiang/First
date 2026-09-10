@@ -72,9 +72,23 @@ abstract class Relation
     abstract public function initRelation(array $models, string $relation): array;
 
     /**
-     * 匹配关系
+     * 匹配关系（$results 为模型集合，可能是 Collection 或数组）
      */
-    abstract public function match(array $models, array $results, string $relation): array;
+    abstract public function match(array $models, iterable $results, string $relation): array;
+
+    /**
+     * 生成 withCount/withSum 等关系聚合的关联子查询 SQL
+     *
+     * 子类按自身的连接语义覆写（hasMany 直接关联、belongsToMany 需要
+     * JOIN 中间表等），返回形如：
+     *   SELECT COUNT(*) FROM related WHERE related.fk = {parentTable}.lk
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        throw new \BadMethodCallException(
+            static::class . ' does not support aggregate sub-queries.'
+        );
+    }
 
     /**
      * 获取查询构建器
@@ -109,12 +123,21 @@ abstract class Relation
     }
 
     /**
-     * 禁用约束
+     * 获取无约束版本的关系对象
+     *
+     * 约束在构造函数中已经应用，仅克隆并翻转标志是无效的：
+     * 必须重置查询条件后让子类按"无约束"语义重建必要的 JOIN。
      */
     public function withoutConstraints(): self
     {
         $relation = clone $this;
         $relation->constraints = false;
+
+        $relation->query = $relation->query->clone();
+        $relation->query->resetSelect();
+
+        $relation->addConstraints();
+
         return $relation;
     }
 
@@ -139,6 +162,42 @@ abstract class Relation
     protected static bool $constraintsEnabled = true;
 
     /**
+     * 全局 morph 别名映射（alias => 模型类名）
+     *
+     * @var array<string, class-string>
+     */
+    protected static array $morphMap = [];
+
+    /**
+     * 设置/合并全局 morph 别名映射
+     *
+     * @param array<string, class-string> $map
+     * @param bool $merge false 时整体替换（用于重置/测试清理）
+     */
+    public static function enforceMorphMap(array $map, bool $merge = true): void
+    {
+        static::$morphMap = $merge ? array_merge(static::$morphMap, $map) : $map;
+    }
+
+    /**
+     * 获取全局 morph 别名映射
+     *
+     * @return array<string, class-string>
+     */
+    public static function getMorphMap(): array
+    {
+        return static::$morphMap;
+    }
+
+    /**
+     * 清空全局 morph 别名映射（用于测试）
+     */
+    public static function flushMorphMap(): void
+    {
+        static::$morphMap = [];
+    }
+
+    /**
      * 检查约束是否启用
      */
     public static function isConstraintsEnabled(): bool
@@ -147,17 +206,12 @@ abstract class Relation
     }
 
     /**
-     * 获取关系
+     * 获取渴望加载结果（保持 Collection 类型，与懒加载一致；
+     * match 内部按需迭代）
      */
     public function getEager(): mixed
     {
-        $result = $this->get();
-
-        if ($result instanceof Collection) {
-            return $result->toArray();
-        }
-
-        return $result;
+        return $this->get();
     }
 
     /**

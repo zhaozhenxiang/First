@@ -260,21 +260,13 @@ trait BuildsRelationships
                 return $model->$relation();
             });
 
-            $relationTable = $relationObj->getQuery()->getTable();
-            $foreignKey = $relationObj->getForeignKeyName();
-            $localKey = $relationObj->getLocalKey();
-
-            // 构建子查询：SELECT function(column) FROM relation_table WHERE fk = parent.lk
-            if ($function === 'count') {
-                $subSelect = "SELECT COUNT(*) FROM {$relationTable} WHERE {$relationTable}.{$foreignKey} = {$parentTable}.{$localKey}";
-            } else {
-                $subSelect = "SELECT {$function}({$column}) FROM {$relationTable} WHERE {$relationTable}.{$foreignKey} = {$parentTable}.{$localKey}";
-            }
+            // 关系对象按自身语义（直接外键 / 中间表 JOIN / through JOIN）生成聚合子查询
+            $subSelect = $relationObj->getAggregateSubQuery($parentTable, $column, $function);
 
             // 如果有约束，添加到子查询
             if ($config['constraints'] !== null) {
                 $subQuery = new self($this->connection, $relationObj->getQuery()->modelClass);
-                $subQuery->from($relationTable);
+                $subQuery->from($relationObj->getQuery()->getTable());
                 $config['constraints']($subQuery);
 
                 $constraintSql = $subQuery->compileWheres();
@@ -363,6 +355,9 @@ trait BuildsRelationships
 
     /**
      * 加载嵌套关系
+     *
+     * 第一层批量加载后，把所有父模型的关联模型收拢成一批统一递归加载——
+     * 否则每个父模型一条 SQL，嵌套 with 会退化成 N+1。
      */
     protected function eagerLoadRelationNested(array $models, string $name, ?\Closure $constraints): array
     {
@@ -373,32 +368,34 @@ trait BuildsRelationships
         $segments = explode('.', $name);
 
         $first = array_shift($segments);
+        $nested = implode('.', $segments);
 
-        // 先加载第一层
-        $relation = $models[0]->{$first}();
+        // 先加载第一层（一条 SQL）
+        $models = $this->eagerLoadRelationOne($models, $first, $constraints);
 
-        if ($constraints !== null) {
-            $constraints($relation);
+        if ($nested === '') {
+            return $models;
         }
 
-        $models = $relation->initRelation($models, $first);
-        $relation->addEagerConstraints($models);
-        $results = $relation->getEager();
-        $models = $relation->match($models, $results, $first);
+        // 收拢所有第一层结果，作为下一层的批量输入
+        $batch = [];
+        foreach ($models as $model) {
+            $related = $model->getRelation($first);
 
-        // 递归加载嵌套关系
-        if (!empty($segments)) {
-            foreach ($models as $model) {
-                $related = $model->getRelation($first);
-
-                if ($related instanceof Model) {
-                    $loaded = $this->eagerLoadRelationNested([$related], implode('.', $segments), $constraints);
-                    $model->setRelation($first, $loaded[0] ?? $related);
-                } elseif (is_array($related) && !empty($related)) {
-                    $loaded = $this->eagerLoadRelationNested($related, implode('.', $segments), $constraints);
-                    $model->setRelation($first, $loaded);
+            if ($related instanceof Model) {
+                $batch[] = $related;
+            } elseif ($related instanceof \Bin\Database\Collection) {
+                foreach ($related as $item) {
+                    if ($item instanceof Model) {
+                        $batch[] = $item;
+                    }
                 }
             }
+        }
+
+        if (!empty($batch)) {
+            // 关联对象在父模型的关系中被引用，原地加载即可生效
+            $this->eagerLoadRelationNested($batch, $nested, $constraints);
         }
 
         return $models;

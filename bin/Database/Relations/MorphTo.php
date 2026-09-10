@@ -136,7 +136,7 @@ class MorphTo extends Relation
     /**
      * 匹配关系（由 eagerLoad() 单独处理，此方法为空操作）
      */
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         return $models;
     }
@@ -226,11 +226,11 @@ class MorphTo extends Relation
     }
 
     /**
-     * 解析多态类型到模型类名
+     * 解析多态类型到模型类名（考虑全局 morphMap 别名）
      */
     protected function resolveMorphClass(string $type): string
     {
-        $map = Model::getMorphMap();
+        $map = Relation::getMorphMap();
 
         return $map[$type] ?? $type;
     }
@@ -244,7 +244,8 @@ class MorphTo extends Relation
     public function associate(Model $model): Model
     {
         $this->parent->setAttribute($this->foreignKey, $model->getKey());
-        $this->parent->setAttribute($this->morphType, get_class($model));
+        // 存 morphClass（别名优先），与查询侧的解析保持一致
+        $this->parent->setAttribute($this->morphType, $model->getMorphClass());
 
         return $this->parent;
     }

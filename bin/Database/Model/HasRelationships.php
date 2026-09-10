@@ -91,11 +91,9 @@ trait HasRelationships
      */
     public function getMorphClass(): string
     {
-        $morphMap = static::$morphMap[static::class] ?? [];
-
         $className = static::class;
 
-        foreach ($morphMap as $alias => $class) {
+        foreach (Relations\Relation::getMorphMap() as $alias => $class) {
             if ($class === $className) {
                 return $alias;
             }
@@ -358,6 +356,9 @@ trait HasRelationships
 
     /**
      * 定义多态多对多反向关系
+     *
+     * 外键默认为当前模型的 FK（如 Tag::posts → 中间表 tag_id），
+     * 相关键为 {name}_id（taggable_id）——与 Eloquent 语义一致。
      */
     protected function morphedByMany(
         string $related,
@@ -370,10 +371,10 @@ trait HasRelationships
     ): Relations\MorphToMany {
         $instance = new $related();
         $table = $table ?? $name . 's';
-        $foreignPivotKey = $foreignPivotKey ?? $instance->getForeignKey();
+        $foreignPivotKey = $foreignPivotKey ?? $this->getForeignKey();
         $relatedPivotKey = $relatedPivotKey ?? $name . '_id';
-        $parentKey = $parentKey ?? $instance->getKeyName();
-        $relatedKey = $relatedKey ?? $this->getKeyName();
+        $parentKey = $parentKey ?? $this->getKeyName();
+        $relatedKey = $relatedKey ?? $instance->getKeyName();
 
         $query = $instance->newQuery();
 
@@ -447,19 +448,19 @@ trait HasRelationships
     }
 
     /**
-     * 获取多态映射
+     * 获取多态映射（全局）
      */
     public static function getMorphMap(): array
     {
-        return static::$morphMap[static::class] ?? [];
+        return Relations\Relation::getMorphMap();
     }
 
     /**
-     * 设置多态映射
+     * 设置多态映射（全局，alias => 模型类名；$merge=false 时整体替换）
      */
-    public static function enforceMorphMap(array $map): void
+    public static function enforceMorphMap(array $map, bool $merge = true): void
     {
-        static::$morphMap[static::class] = $map;
+        Relations\Relation::enforceMorphMap($map, $merge);
     }
 
     /**

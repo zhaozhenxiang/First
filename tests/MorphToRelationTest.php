@@ -149,7 +149,7 @@ class MorphToRelationTest extends TestCase
         $this->assertEquals('First Post', $result->title);
 
         // 清理
-        Model::enforceMorphMap([]);
+        Model::enforceMorphMap([], false);
     }
 
     // === Associate / Dissociate ===

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bin\Database\Relations;
 
+use Bin\Database\Collection;
 use Bin\Database\Model;
 use Bin\Database\Pivot;
 use Bin\Database\QueryBuilder;
@@ -215,7 +216,7 @@ class BelongsToMany extends Relation
     public function initRelation(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->setRelation($relation, []);
+            $model->setRelation($relation, new Collection());
         }
 
         return $models;
@@ -224,7 +225,7 @@ class BelongsToMany extends Relation
     /**
      * 匹配关系
      */
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 
@@ -232,7 +233,7 @@ class BelongsToMany extends Relation
             $key = $model->getAttribute($this->parentKey);
 
             if (isset($dictionary[$key])) {
-                $model->setRelation($relation, $dictionary[$key]);
+                $model->setRelation($relation, new Collection($dictionary[$key]));
             }
         }
 
@@ -242,7 +243,7 @@ class BelongsToMany extends Relation
     /**
      * 构建字典
      */
-    protected function buildDictionary(array $results): array
+    protected function buildDictionary(iterable $results): array
     {
         $dictionary = [];
 
@@ -301,7 +302,7 @@ class BelongsToMany extends Relation
             $this->relatedPivotKey => $id,
         ];
 
-        $insert = array_merge($insert, $pivotData);
+        $insert = array_merge($insert, $this->timestampPivotColumns(), $pivotData);
 
         return $this->newPivotQuery()->insert($insert);
     }
@@ -326,9 +327,27 @@ class BelongsToMany extends Relation
      */
     public function updateExistingPivot(int $id, array $attributes): bool
     {
+        $attributes = array_merge($this->timestampPivotColumns(updatedOnly: true), $attributes);
+
         return $this->newPivotQuery()
             ->where($this->relatedPivotKey, $id)
             ->update($attributes) > 0;
+    }
+
+    /**
+     * withTimestamps 时生成需要写入的 pivot 时间戳列
+     *
+     * @return array<string, string>
+     */
+    protected function timestampPivotColumns(bool $updatedOnly = false): array
+    {
+        if (!$this->withTimestamps) {
+            return [];
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        return $updatedOnly ? ['updated_at' => $now] : ['created_at' => $now, 'updated_at' => $now];
     }
 
     /**
@@ -368,6 +387,52 @@ class BelongsToMany extends Relation
         return (new QueryBuilder($this->query->getConnection()))
             ->from($this->table)
             ->where($this->foreignPivotKey, $this->parent->getKey());
+    }
+
+    /**
+     * 获取外键
+     */
+    public function getForeignKeyName(): string
+    {
+        return $this->foreignPivotKey;
+    }
+
+    /**
+     * 获取本地键
+     */
+    public function getLocalKey(): string
+    {
+        return $this->parentKey;
+    }
+
+    /**
+     * 关系聚合子查询：需要 JOIN 中间表
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        $relatedTable = $this->query->getTable();
+        $pivot = $this->table;
+        $col = $function === 'count' ? '*' : $column;
+
+        return "SELECT {$function}({$col}) FROM {$relatedTable}"
+            . " INNER JOIN {$pivot} ON {$relatedTable}.{$this->relatedKey} = {$pivot}.{$this->relatedPivotKey}"
+            . " WHERE {$pivot}.{$this->foreignPivotKey} = {$parentTable}.{$this->parentKey}";
+    }
+
+    /**
+     * 为 whereHas 生成 EXISTS 子查询（需要 JOIN 中间表）
+     */
+    public function getExistenceQuery(string $parentTable): array
+    {
+        $relatedTable = $this->query->getTable();
+        $pivot = $this->table;
+
+        return [
+            "SELECT 1 FROM {$relatedTable}"
+                . " INNER JOIN {$pivot} ON {$relatedTable}.{$this->relatedKey} = {$pivot}.{$this->relatedPivotKey}"
+                . " WHERE {$pivot}.{$this->foreignPivotKey} = {$parentTable}.{$this->parentKey}",
+            [],
+        ];
     }
 
     /**

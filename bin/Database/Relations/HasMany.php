@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Bin\Database\Relations;
 
+use Bin\Database\Collection;
 use Bin\Database\Model;
 use Bin\Database\QueryBuilder;
+use RuntimeException;
 
 /**
  * Has Many 关系
@@ -26,7 +28,7 @@ class HasMany extends HasOneOrMany
     public function initRelation(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->setRelation($relation, []);
+            $model->setRelation($relation, new Collection());
         }
 
         return $models;
@@ -35,7 +37,7 @@ class HasMany extends HasOneOrMany
     /**
      * 匹配关系
      */
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 
@@ -43,7 +45,7 @@ class HasMany extends HasOneOrMany
             $key = $model->getAttribute($this->localKey);
 
             if (isset($dictionary[$key])) {
-                $model->setRelation($relation, $dictionary[$key]);
+                $model->setRelation($relation, new Collection($dictionary[$key]));
             }
         }
 
@@ -67,7 +69,11 @@ class HasMany extends HasOneOrMany
     {
         $model = new $this->related($attributes);
 
-        return $this->save($model) ? $model : null;
+        if (!$this->save($model)) {
+            throw new RuntimeException('Failed to create [' . $this->related . '] via hasMany relation.');
+        }
+
+        return $model;
     }
 
     /**

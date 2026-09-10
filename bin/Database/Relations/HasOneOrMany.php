@@ -72,7 +72,7 @@ abstract class HasOneOrMany extends Relation
     /**
      * 构建字典
      */
-    protected function buildDictionary(array $results): array
+    protected function buildDictionary(iterable $results): array
     {
         $dictionary = [];
 
@@ -103,6 +103,18 @@ abstract class HasOneOrMany extends Relation
     public function getForeignKeyName(): string
     {
         return $this->foreignKey;
+    }
+
+    /**
+     * 关系聚合子查询：直接外键关联
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        $relatedTable = $this->query->getTable();
+        $col = $function === 'count' ? '*' : $column;
+
+        return "SELECT {$function}({$col}) FROM {$relatedTable}"
+            . " WHERE {$relatedTable}.{$this->foreignKey} = {$parentTable}.{$this->localKey}";
     }
 
     /**

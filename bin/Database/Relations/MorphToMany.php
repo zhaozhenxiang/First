@@ -41,7 +41,7 @@ class MorphToMany extends BelongsToMany
         if ($this->constraints) {
             $this->query
                 ->where("{$this->table}.{$this->foreignPivotKey}", '=', $this->parent->getKey())
-                ->where("{$this->table}.{$this->morphType}", '=', $this->getMorphClass());
+                ->where("{$this->table}.{$this->morphType}", '=', $this->morphClassValue());
         }
     }
 
@@ -51,15 +51,23 @@ class MorphToMany extends BelongsToMany
 
         $this->query
             ->whereIn("{$this->table}.{$this->foreignPivotKey}", $keys)
-            ->where("{$this->table}.{$this->morphType}", '=', $this->getMorphClass());
+            ->where("{$this->table}.{$this->morphType}", '=', $this->morphClassValue());
     }
 
-    protected function getMorphClass(): string
+    /**
+     * 中间表存储的多态类型值（考虑 morphMap 别名）
+     *
+     * 正向（morphToMany）存父模型类型；反向（morphedByMany）存相关模型类型。
+     */
+    protected function morphClassValue(): string
     {
         if ($this->inverse) {
-            return $this->query->getModelClass();
+            $relatedClass = $this->query->getModelClass();
+
+            return (new $relatedClass())->getMorphClass();
         }
-        return get_class($this->parent);
+
+        return $this->parent->getMorphClass();
     }
 
     public function attach(int $id, array $pivotData = []): bool
@@ -67,12 +75,48 @@ class MorphToMany extends BelongsToMany
         $insert = [
             $this->foreignPivotKey => $this->parent->getKey(),
             $this->relatedPivotKey => $id,
-            $this->morphType => $this->getMorphClass(),
+            $this->morphType => $this->morphClassValue(),
         ];
 
-        $insert = array_merge($insert, $pivotData);
+        $insert = array_merge($insert, $this->timestampPivotColumns(), $pivotData);
 
         return $this->newPivotQuery()->insert($insert);
+    }
+
+    /**
+     * 中间表查询必须带多态类型约束，
+     * 否则共享同一中间表的其他类型行会被 sync/detach 误删
+     */
+    protected function newPivotQuery(): QueryBuilder
+    {
+        $morphClass = str_replace("'", "''", $this->morphClassValue());
+
+        return parent::newPivotQuery()
+            ->where("{$this->table}.{$this->morphType}", '=', $morphClass);
+    }
+
+    /**
+     * 关系聚合子查询：附加多态类型条件
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        $base = parent::getAggregateSubQuery($parentTable, $column, $function);
+
+        $morphClass = str_replace("'", "''", $this->morphClassValue());
+
+        return $base . " AND {$this->table}.{$this->morphType} = '{$morphClass}'";
+    }
+
+    /**
+     * 为 whereHas 生成 EXISTS 子查询：附加多态类型条件
+     */
+    public function getExistenceQuery(string $parentTable): array
+    {
+        [$sql, $bindings] = parent::getExistenceQuery($parentTable);
+
+        $morphClass = str_replace("'", "''", $this->morphClassValue());
+
+        return [$sql . " AND {$this->table}.{$this->morphType} = '{$morphClass}'", $bindings];
     }
 
     public function getForeignKeyName(): string

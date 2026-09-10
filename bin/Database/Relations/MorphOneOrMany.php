@@ -34,7 +34,7 @@ abstract class MorphOneOrMany extends Relation
     {
         if ($this->constraints) {
             $this->query
-                ->where($this->morphType, '=', get_class($this->parent))
+                ->where($this->morphType, '=', $this->parent->getMorphClass())
                 ->where($this->morphId, '=', $this->parent->getAttribute($this->localKey));
         }
     }
@@ -42,7 +42,7 @@ abstract class MorphOneOrMany extends Relation
     public function addEagerConstraints(array $models): void
     {
         $this->query
-            ->where($this->morphType, '=', get_class($models[0]))
+            ->where($this->morphType, '=', $models[0]->getMorphClass())
             ->whereIn($this->morphId, $this->getKeys($models, $this->localKey));
     }
 
@@ -58,7 +58,7 @@ abstract class MorphOneOrMany extends Relation
         return array_unique($keys);
     }
 
-    protected function buildDictionary(array $results): array
+    protected function buildDictionary(iterable $results): array
     {
         $dictionary = [];
         foreach ($results as $result) {
@@ -68,6 +68,19 @@ abstract class MorphOneOrMany extends Relation
             }
         }
         return $dictionary;
+    }
+
+    /**
+     * 关系聚合子查询：附加多态类型条件
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        $base = parent::getAggregateSubQuery($parentTable, $column, $function);
+
+        $morphClass = str_replace("'", "''", $this->parent->getMorphClass());
+        $relatedTable = $this->query->getTable();
+
+        return $base . " AND {$relatedTable}.{$this->morphType} = '{$morphClass}'";
     }
 
     public function getForeignKeyName(): string

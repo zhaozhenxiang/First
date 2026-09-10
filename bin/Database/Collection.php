@@ -39,6 +39,75 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     }
 
     /**
+     * 追加元素到末尾
+     */
+    public function push(mixed $value): self
+    {
+        $this->items[] = $value;
+
+        return $this;
+    }
+
+    /**
+     * 按 key 设置元素
+     */
+    public function put(mixed $key, mixed $value): self
+    {
+        $this->items[$key] = $value;
+
+        return $this;
+    }
+
+    /**
+     * 按 key 获取元素
+     */
+    public function get(mixed $key, mixed $default = null): mixed
+    {
+        return $this->items[$key] ?? $default;
+    }
+
+    /**
+     * 按 key 移除元素
+     */
+    public function forget(mixed $key): self
+    {
+        unset($this->items[$key]);
+
+        return $this;
+    }
+
+    /**
+     * 只保留指定 key
+     */
+    public function only(array|string $keys): self
+    {
+        $keys = is_array($keys) ? $keys : func_get_args();
+
+        return new static(array_intersect_key($this->items, array_flip($keys)));
+    }
+
+    /**
+     * 排除指定 key
+     */
+    public function except(array|string $keys): self
+    {
+        $keys = is_array($keys) ? $keys : func_get_args();
+
+        return new static(array_diff_key($this->items, array_flip($keys)));
+    }
+
+    /**
+     * 获取所有模型的主键
+     */
+    public function modelKeys(): array
+    {
+        return array_map(
+            fn ($item) => $item instanceof \Bin\Database\Model ? $item->getKey() : null,
+            $this->items
+        );
+    }
+
+    /**
      * 获取指定列的值
      */
     public function pluck(string $column, ?string $key = null): array

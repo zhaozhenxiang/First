@@ -6,6 +6,7 @@ namespace Bin\Database\Relations;
 
 use Bin\Database\Model;
 use Bin\Database\QueryBuilder;
+use RuntimeException;
 
 /**
  * Has One 关系
@@ -35,7 +36,7 @@ class HasOne extends HasOneOrMany
     /**
      * 匹配关系
      */
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 
@@ -67,6 +68,10 @@ class HasOne extends HasOneOrMany
     {
         $model = new $this->related($attributes);
 
-        return $this->save($model) ? $model : null;
+        if (!$this->save($model)) {
+            throw new RuntimeException('Failed to create [' . $this->related . '] via hasOne relation.');
+        }
+
+        return $model;
     }
 }

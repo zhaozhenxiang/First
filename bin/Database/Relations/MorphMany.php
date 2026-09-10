@@ -11,27 +11,38 @@ use Bin\Database\Collection;
  */
 class MorphMany extends MorphOneOrMany
 {
+    /**
+     * 获取结果
+     */
     public function getResults(): mixed
     {
         return $this->query->get();
     }
 
+    /**
+     * 初始化关系
+     */
     public function initRelation(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->setRelation($relation, []);
+            $model->setRelation($relation, new Collection());
         }
+
         return $models;
     }
 
-    public function match(array $models, array $results, string $relation): array
+    /**
+     * 匹配关系
+     */
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 
         foreach ($models as $model) {
             $key = $model->getAttribute($this->localKey);
+
             if (isset($dictionary[$key])) {
-                $model->setRelation($relation, $dictionary[$key]);
+                $model->setRelation($relation, new Collection($dictionary[$key]));
             }
         }
 

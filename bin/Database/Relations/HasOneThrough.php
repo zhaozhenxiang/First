@@ -25,7 +25,7 @@ class HasOneThrough extends HasManyThrough
         return $models;
     }
 
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 

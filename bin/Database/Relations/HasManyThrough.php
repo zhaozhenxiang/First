@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bin\Database\Relations;
 
+use Bin\Database\Collection;
 use Bin\Database\Model;
 use Bin\Database\QueryBuilder;
 
@@ -84,32 +85,45 @@ class HasManyThrough extends Relation
 
     public function getResults(): mixed
     {
-        return $this->query->get();
+        // 懒加载路径同样要剥离辅助列，否则 __through_key 会泄漏进 toArray()/JSON
+        return $this->stripThroughKey($this->query->get());
     }
 
     public function initRelation(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->setRelation($relation, []);
+            $model->setRelation($relation, new Collection());
         }
         return $models;
     }
 
-    public function match(array $models, array $results, string $relation): array
+    public function match(array $models, iterable $results, string $relation): array
     {
         $dictionary = $this->buildDictionary($results);
 
         foreach ($models as $model) {
             $key = $model->getAttribute($this->localKey);
             if (isset($dictionary[$key])) {
-                $model->setRelation($relation, $dictionary[$key]);
+                $model->setRelation($relation, new Collection($dictionary[$key]));
             }
         }
 
         return $models;
     }
 
-    protected function buildDictionary(array $results): array
+    /**
+     * 从结果模型中剥离 __through_key 辅助列
+     */
+    protected function stripThroughKey(Collection $results): Collection
+    {
+        foreach ($results as $model) {
+            $model->offsetUnset('__through_key');
+        }
+
+        return $results;
+    }
+
+    protected function buildDictionary(iterable $results): array
     {
         $dictionary = [];
         foreach ($results as $model) {
@@ -142,6 +156,19 @@ class HasManyThrough extends Relation
     public function getLocalKey(): string
     {
         return $this->localKey;
+    }
+
+    /**
+     * 关系聚合子查询：复用 through JOIN 语义
+     */
+    public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
+    {
+        [$sql] = $this->getExistenceQuery($parentTable);
+
+        $col = $function === 'count' ? '*' : $column;
+        $farTable = $this->query->getTable();
+
+        return "SELECT {$function}({$col}) FROM {$farTable}" . substr($sql, strlen("SELECT 1 FROM {$farTable}"));
     }
 
     /**
