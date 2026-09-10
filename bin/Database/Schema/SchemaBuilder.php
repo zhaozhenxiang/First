@@ -55,7 +55,7 @@ class SchemaBuilder
      */
     public function drop(string $table): void
     {
-        $sql = "DROP TABLE {$this->prefix}{$table}";
+        $sql = 'DROP TABLE ' . $this->wrapId($this->prefix . $table);
 
         $this->execute($sql);
     }
@@ -65,7 +65,7 @@ class SchemaBuilder
      */
     public function dropIfExists(string $table): void
     {
-        $sql = "DROP TABLE IF EXISTS {$this->prefix}{$table}";
+        $sql = 'DROP TABLE IF EXISTS ' . $this->wrapId($this->prefix . $table);
 
         $this->execute($sql);
     }
@@ -75,7 +75,7 @@ class SchemaBuilder
      */
     public function rename(string $from, string $to): void
     {
-        $sql = "RENAME TABLE {$this->prefix}{$from} TO {$this->prefix}{$to}";
+        $sql = 'RENAME TABLE ' . $this->wrapId($this->prefix . $from) . ' TO ' . $this->wrapId($this->prefix . $to);
 
         $this->execute($sql);
     }
@@ -209,6 +209,26 @@ class SchemaBuilder
     }
 
     /**
+     * 包裹 DDL 标识符（反引号），保留字列名/表名不再产生语法错误
+     */
+    protected function wrapId(string $identifier): string
+    {
+        if ($identifier === '' || str_contains($identifier, '`')) {
+            return $identifier;
+        }
+
+        return '`' . str_replace('.', '`.`', $identifier) . '`';
+    }
+
+    /**
+     * 转义 SQL 字符串字面量（单引号翻倍，MySQL/SQLite 兼容）
+     */
+    protected function quoteString(mixed $value): string
+    {
+        return "'" . str_replace("'", "''", (string) $value) . "'";
+    }
+
+    /**
      * 构建创建表 SQL
      */
     protected function buildCreateTable(Blueprint $blueprint): string
@@ -217,11 +237,37 @@ class SchemaBuilder
 
         $commands = $this->getCommandsSql($blueprint);
 
-        $sql = "CREATE TABLE {$blueprint->getTable()} (";
+        // foreignId()->constrained() 声明的外键在列定义中携带，这里一并生成
+        foreach ($blueprint->getColumns() as $column) {
+            if ($column instanceof ForeignIdDefinition && $column->hasForeignKey()) {
+                $commands[] = $this->getForeignIdSql($column);
+            }
+        }
+
+        $sql = 'CREATE TABLE ' . $this->wrapId($blueprint->getTable()) . ' (';
 
         $sql .= implode(', ', array_merge($columns, $commands));
 
         $sql .= ") ENGINE={$blueprint->getEngine()} DEFAULT CHARSET={$blueprint->getCharset()} COLLATE={$blueprint->getCollation()}";
+
+        return $sql;
+    }
+
+    /**
+     * foreignId 流式链生成的外键子句
+     */
+    protected function getForeignIdSql(ForeignIdDefinition $column): string
+    {
+        $sql = 'FOREIGN KEY (' . $this->wrapId((string) $column->name) . ') REFERENCES '
+            . $this->wrapId($column->foreignTable) . '(' . $this->wrapId($column->foreignColumn) . ')';
+
+        if ($column->onDelete !== null) {
+            $sql .= " ON DELETE {$column->onDelete}";
+        }
+
+        if ($column->onUpdate !== null) {
+            $sql .= " ON UPDATE {$column->onUpdate}";
+        }
 
         return $sql;
     }
@@ -245,7 +291,7 @@ class SchemaBuilder
      */
     protected function getColumnSql(ColumnDefinition $column): string
     {
-        $sql = "{$column->name} {$this->getColumnType($column)}";
+        $sql = $this->wrapId((string) $column->name) . ' ' . $this->getColumnType($column);
 
         if ($column->unsigned) {
             $sql .= ' UNSIGNED';
@@ -269,12 +315,11 @@ class SchemaBuilder
             $sql .= ' UNIQUE';
         }
 
-        if ($column->default !== null) {
-            $sql .= ' DEFAULT ' . $this->getDefaultValue($column->default);
-        }
-
+        // DEFAULT 子句只能出现一次：显式默认值与 CURRENT_TIMESTAMP 互斥使用
         if ($column->useCurrent) {
             $sql .= ' DEFAULT CURRENT_TIMESTAMP';
+        } elseif ($column->default !== null) {
+            $sql .= ' DEFAULT ' . $this->getDefaultValue($column->default);
         }
 
         if ($column->useCurrentOnUpdate) {
@@ -282,7 +327,7 @@ class SchemaBuilder
         }
 
         if ($column->comment !== null) {
-            $sql .= " COMMENT '{$column->comment}'";
+            $sql .= ' COMMENT ' . $this->quoteString($column->comment);
         }
 
         return $sql;
@@ -311,12 +356,12 @@ class SchemaBuilder
             'LONGTEXT' => 'LONGTEXT',
             'MEDIUMTEXT' => 'MEDIUMTEXT',
             'TINYTEXT' => 'TINYTEXT',
-            'DECIMAL' => "DECIMAL({$precision}, {$scale})",
+            'DECIMAL' => 'DECIMAL(' . ($precision ?? 8) . ', ' . ($scale ?? 2) . ')',
             'DOUBLE' => 'DOUBLE' . ($precision && $scale ? "({$precision}, {$scale})" : ''),
             'FLOAT' => 'FLOAT' . ($precision && $scale ? "({$precision}, {$scale})" : ''),
             'BOOLEAN' => 'TINYINT(1)',
-            'ENUM' => "ENUM('" . implode("', '", $allowed) . "')",
-            'SET' => "SET('" . implode("', '", $allowed) . "')",
+            'ENUM' => 'ENUM(' . implode(', ', array_map(fn ($v) => $this->quoteString($v), $allowed)) . ')',
+            'SET' => 'SET(' . implode(', ', array_map(fn ($v) => $this->quoteString($v), $allowed)) . ')',
             'DATE' => 'DATE',
             'DATETIME' => 'DATETIME' . ($precision ? "({$precision})" : ''),
             'TIME' => 'TIME' . ($precision ? "({$precision})" : ''),
@@ -352,7 +397,7 @@ class SchemaBuilder
             return (string) $value;
         }
 
-        return "'{$value}'";
+        return $this->quoteString($value);
     }
 
     /**
@@ -374,13 +419,16 @@ class SchemaBuilder
      */
     protected function getCommandSql(Blueprint $blueprint, array $command): string
     {
+        $wrapColumns = fn (array $columns) => implode(', ', array_map(fn ($c) => $this->wrapId($c), $columns));
+
         return match ($command['type']) {
-            'primary' => "PRIMARY KEY (" . implode(', ', (array) $command['columns']) . ")",
-            'unique' => "UNIQUE KEY " . ($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'unique')) . " (" . implode(', ', (array) $command['columns']) . ")",
-            'index' => "KEY " . ($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'index')) . " (" . implode(', ', (array) $command['columns']) . ")",
-            'foreign' => "FOREIGN KEY (" . implode(', ', (array) $command['columns']) . ") REFERENCES {$command['on']}({$command['references']})" .
-                ($command['onDelete'] ? " ON DELETE {$command['onDelete']}" : '') .
-                ($command['onUpdate'] ? " ON UPDATE {$command['onUpdate']}" : ''),
+            'primary' => 'PRIMARY KEY (' . $wrapColumns((array) $command['columns']) . ')',
+            'unique' => 'UNIQUE KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'unique')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'index' => 'KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'index')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'foreign' => 'FOREIGN KEY (' . $wrapColumns((array) $command['columns']) . ') REFERENCES '
+                . $this->wrapId((string) $command['on']) . '(' . $this->wrapId((string) $command['references']) . ')'
+                . ($command['onDelete'] ? " ON DELETE {$command['onDelete']}" : '')
+                . ($command['onUpdate'] ? " ON UPDATE {$command['onUpdate']}" : ''),
             default => '',
         };
     }
@@ -405,15 +453,26 @@ class SchemaBuilder
 
         // 添加列
         foreach ($blueprint->getColumns() as $column) {
-            $sql = "ALTER TABLE {$table} ADD COLUMN " . $this->getColumnSql($column);
+            $sql = 'ALTER TABLE ' . $this->wrapId($table) . ' ADD COLUMN ' . $this->getColumnSql($column);
 
             if ($column->after) {
-                $sql .= " AFTER {$column->after}";
+                $sql .= ' AFTER ' . $this->wrapId($column->after);
             } elseif ($column->first) {
                 $sql .= ' FIRST';
             }
 
             $this->execute($sql);
+        }
+
+        // foreignId()->constrained() 声明的外键（改表路径）
+        foreach ($blueprint->getColumns() as $column) {
+            if ($column instanceof ForeignIdDefinition && $column->hasForeignKey()) {
+                $this->execute(
+                    'ALTER TABLE ' . $this->wrapId($table) . ' ADD CONSTRAINT '
+                    . $this->wrapId($this->createIndexName($table, [(string) $column->name], 'foreign'))
+                    . ' ' . $this->getForeignIdSql($column)
+                );
+            }
         }
 
         // 执行命令
@@ -427,21 +486,33 @@ class SchemaBuilder
      */
     protected function executeCommand(string $table, array $command): void
     {
+        $wrapColumns = fn (array $columns) => implode(', ', array_map(fn ($c) => $this->wrapId($c), $columns));
+
+        // dropForeign 的数组形式：MySQL 要求每个外键一条语句
+        if ($command['type'] === 'dropForeign') {
+            foreach ((array) $command['index'] as $index) {
+                $this->execute('ALTER TABLE ' . $this->wrapId($table) . ' DROP FOREIGN KEY ' . $this->wrapId($index));
+            }
+
+            return;
+        }
+
         $sql = match ($command['type']) {
-            'renameColumn' => "ALTER TABLE {$table} RENAME COLUMN {$command['from']} TO {$command['to']}",
-            'dropColumn' => "ALTER TABLE {$table} DROP COLUMN " . implode(', ', $command['columns']),
-            'renameTable' => "RENAME TABLE {$table} TO {$this->prefix}{$command['to']}",
-            'dropPrimary' => "ALTER TABLE {$table} DROP PRIMARY KEY",
-            'dropUnique' => "ALTER TABLE {$table} DROP INDEX {$command['index']}",
-            'dropIndex' => "ALTER TABLE {$table} DROP INDEX {$command['index']}",
-            'dropForeign' => "ALTER TABLE {$table} DROP FOREIGN KEY " . implode(', ', $command['index']),
-            'primary' => "ALTER TABLE {$table} ADD PRIMARY KEY (" . implode(', ', (array) $command['columns']) . ")",
-            'unique' => "ALTER TABLE {$table} ADD UNIQUE KEY " . ($command['name'] ?? $this->createIndexName($table, $command['columns'], 'unique')) . " (" . implode(', ', (array) $command['columns']) . ")",
-            'index' => "ALTER TABLE {$table} ADD KEY " . ($command['name'] ?? $this->createIndexName($table, $command['columns'], 'index')) . " (" . implode(', ', (array) $command['columns']) . ")",
-            'foreign' => "ALTER TABLE {$table} ADD CONSTRAINT " . ($command['name'] ?? $this->createIndexName($table, $command['columns'], 'foreign')) .
-                " FOREIGN KEY (" . implode(', ', (array) $command['columns']) . ") REFERENCES {$command['on']}({$command['references']})" .
-                ($command['onDelete'] ? " ON DELETE {$command['onDelete']}" : '') .
-                ($command['onUpdate'] ? " ON UPDATE {$command['onUpdate']}" : ''),
+            'renameColumn' => 'ALTER TABLE ' . $this->wrapId($table) . ' RENAME COLUMN ' . $this->wrapId($command['from']) . ' TO ' . $this->wrapId($command['to']),
+            'dropColumn' => 'ALTER TABLE ' . $this->wrapId($table) . ' DROP COLUMN ' . $wrapColumns($command['columns']),
+            'renameTable' => 'RENAME TABLE ' . $this->wrapId($table) . ' TO ' . $this->wrapId($this->prefix . $command['to']),
+            'dropPrimary' => 'ALTER TABLE ' . $this->wrapId($table) . ' DROP PRIMARY KEY',
+            'dropUnique' => 'ALTER TABLE ' . $this->wrapId($table) . ' DROP INDEX ' . $this->wrapId($command['index']),
+            'dropIndex' => 'ALTER TABLE ' . $this->wrapId($table) . ' DROP INDEX ' . $this->wrapId($command['index']),
+            'primary' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD PRIMARY KEY (' . $wrapColumns((array) $command['columns']) . ')',
+            'unique' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD UNIQUE KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'unique')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'index' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'index')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'foreign' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD CONSTRAINT '
+                . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'foreign'))
+                . ' FOREIGN KEY (' . $wrapColumns((array) $command['columns']) . ') REFERENCES '
+                . $this->wrapId((string) $command['on']) . '(' . $this->wrapId((string) $command['references']) . ')'
+                . ($command['onDelete'] ? " ON DELETE {$command['onDelete']}" : '')
+                . ($command['onUpdate'] ? " ON UPDATE {$command['onUpdate']}" : ''),
             default => '',
         };
 

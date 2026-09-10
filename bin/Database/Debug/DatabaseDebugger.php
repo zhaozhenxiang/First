@@ -158,9 +158,11 @@ class DatabaseDebugger
             return null;
         }
 
-        usort(self::$queries, fn($a, $b) => $b->time <=> $a->time);
+        // 在副本上排序：原地 usort 会永久破坏日志的时间顺序
+        $sorted = self::$queries;
+        usort($sorted, fn($a, $b) => $b->time <=> $a->time);
 
-        return self::$queries[0];
+        return $sorted[0];
     }
 
     /**

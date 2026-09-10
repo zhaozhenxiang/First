@@ -48,9 +48,7 @@ class Migrator
 
         $count = count($pending);
         echo "Migrated: {$count}\n";
-    }
-
-    /**
+    }    /**
      * 回滚最后一次迁移
      */
     public function rollback(int $steps = 1): void
@@ -127,7 +125,7 @@ class Migrator
         try {
             $stmt = $this->connection->query("SELECT migration FROM {$this->table} ORDER BY id ASC");
             return $stmt->fetchAll(PDO::FETCH_COLUMN);
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             return [];
         }
     }
@@ -151,25 +149,48 @@ class Migrator
     }
 
     /**
-     * 运行待执行的迁移
+     * 运行待执行的迁移（同一轮 run 共用一个递增的 batch 号）
      */
     protected function runPending(array $pending): void
     {
+        $batch = $this->nextBatchNumber();
+
         foreach ($pending as $name => $file) {
-            $this->runUp($name, $file);
+            $this->runUp($name, $file, $batch);
         }
     }
 
     /**
      * 运行单个迁移
+     *
+     * up() 与台账记录放在一起：迁移失败时不留下"半执行"状态
+     * （MySQL 的 DDL 会隐式提交，事务包裹在支持 DDL 事务的驱动上才有实效）。
      */
-    protected function runUp(string $name, string $file): void
+    protected function runUp(string $name, string $file, ?int $batch = null): void
     {
         $migration = $this->resolve($file);
 
-        $migration->up();
+        $connection = $this->connection;
 
-        $this->recordMigration($name);
+        $execute = function () use ($migration, $name, $batch): void {
+            $migration->up();
+            $this->recordMigration($name, $batch);
+        };
+
+        if ($connection->inTransaction()) {
+            $execute();
+        } else {
+            $connection->beginTransaction();
+            try {
+                $execute();
+                $connection->commit();
+            } catch (\Throwable $e) {
+                if ($connection->inTransaction()) {
+                    $connection->rollBack();
+                }
+                throw $e;
+            }
+        }
 
         echo "Migrated: {$name}\n";
     }
@@ -263,11 +284,25 @@ class Migrator
     /**
      * 记录迁移
      */
-    protected function recordMigration(string $name): void
+    protected function recordMigration(string $name, ?int $batch = null): void
     {
-        $stmt = $this->connection->prepare("INSERT INTO {$this->table} (migration, batch) VALUES (?, 1)");
+        $stmt = $this->connection->prepare("INSERT INTO {$this->table} (migration, batch) VALUES (?, ?)");
 
-        $stmt->execute([$name]);
+        $stmt->execute([$name, $batch ?? $this->nextBatchNumber()]);
+    }
+
+    /**
+     * 下一个 batch 号（每轮 run 递增）
+     */
+    protected function nextBatchNumber(): int
+    {
+        try {
+            $stmt = $this->connection->query("SELECT COALESCE(MAX(batch), 0) FROM {$this->table}");
+
+            return (int) $stmt->fetchColumn() + 1;
+        } catch (\Throwable) {
+            return 1;
+        }
     }
 
     /**
@@ -304,7 +339,7 @@ class Migrator
         try {
             $stmt = $this->connection->query("SELECT 1 FROM {$this->table} LIMIT 1");
             return true;
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             return false;
         }
     }

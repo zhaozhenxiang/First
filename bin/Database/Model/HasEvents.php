@@ -154,15 +154,12 @@ trait HasEvents
 
     /**
      * 获取 EventDispatcher 实例
+     *
+     * 必须与 ModelEventDispatcher 使用同一个实例，
+     * 否则 withoutEvents() 会清空一个没有任何监听器的分发器。
      */
     protected static function getEventDispatcher(): EventDispatcher
     {
-        $app = \Bin\App\App::getInstance();
-
-        try {
-            return $app->make('events');
-        } catch (\Throwable) {
-                return new EventDispatcher();
-            }
+        return ModelEventDispatcher::dispatcher();
     }
 }

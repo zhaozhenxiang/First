@@ -59,11 +59,15 @@ class Blueprint
     }
 
     /**
-     * 添加外键
+     * 添加外键列（支持 constrained()/references()/on()/cascadeOnDelete() 流式链）
      */
-    public function foreignId(string $column): ColumnDefinition
+    public function foreignId(string $column): ForeignIdDefinition
     {
-        return $this->unsignedBigInteger($column);
+        $definition = new ForeignIdDefinition($this, $column);
+
+        $this->columnDefinitions[] = $definition;
+
+        return $definition;
     }
 
     /**
@@ -496,29 +500,27 @@ class Blueprint
     }
 
     /**
-     * 可为 null
+     * 可为 null —— 已移除
+     *
+     * Blueprint 级 nullable() 会静默修改之前定义的所有列（包括 id()），
+     * 与 Laravel 语义相悖（Laravel 中该方法不存在，误用应立即报错）。
+     * 可空性请逐列设置：$table->string('x')->nullable()。
      */
     public function nullable(): self
     {
-        foreach ($this->columnDefinitions as $column) {
-            if ($column->name !== null && !$column->nullable) {
-                $column->nullable = true;
-            }
-        }
-        return $this;
+        throw new \BadMethodCallException(
+            'Blueprint::nullable() 会影响所有已定义列，已被移除。请使用列级 $table->string(\'x\')->nullable()。'
+        );
     }
 
     /**
-     * 默认值
+     * 默认值 —— 已移除（理由同 nullable()）
      */
     public function default(mixed $value): self
     {
-        foreach ($this->columnDefinitions as $column) {
-            if ($column->name !== null) {
-                $column->default = $value;
-            }
-        }
-        return $this;
+        throw new \BadMethodCallException(
+            'Blueprint::default() 会影响所有已定义列，已被移除。请使用列级 $table->string(\'x\')->default($value)。'
+        );
     }
 
     /**

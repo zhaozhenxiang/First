@@ -159,7 +159,7 @@ class Schema
      */
     public static function transaction(callable $callback): mixed
     {
-        $connection = Model::getConnection();
+        $connection = ConnectionManager::getConnection();
 
         try {
             $connection->beginTransaction();
@@ -167,7 +167,9 @@ class Schema
             $connection->commit();
             return $result;
         } catch (\Throwable $e) {
-            $connection->rollBack();
+            if ($connection->inTransaction()) {
+                $connection->rollBack();
+            }
             throw $e;
         }
     }

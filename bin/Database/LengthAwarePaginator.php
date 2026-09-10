@@ -208,7 +208,8 @@ class LengthAwarePaginator implements ArrayAccess, Countable, IteratorAggregate,
             $query[$this->pageName] = $page;
         }
 
-        $url = $this->path;
+        // 剥离 path 中可能携带的 query string，避免拼出 /search?q=foo?page=2
+        $url = strtok($this->path, '?') ?: $this->path;
 
         if (!empty($query)) {
             $url .= '?' . http_build_query($query);

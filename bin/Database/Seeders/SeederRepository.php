@@ -87,11 +87,13 @@ class SeederRepository
 
     /**
      * 路径转类名
+     *
+     * Seeder 文件由 SeederCreator 生成，命名空间固定为 Database\Seeders
+     * （与 database/seeders/ 下现有文件一致），直接按文件名推导。
      */
     private static function pathToClassName(string $path): string
     {
-        $path = str_replace([basePath(), '.php', '/'], ['', '', '\\'], $path);
-        return self::$appNamespace . $path;
+        return 'Database\\Seeders\\' . basename($path, '.php');
     }
 
     /**

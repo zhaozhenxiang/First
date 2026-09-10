@@ -36,6 +36,17 @@ class ModelEventDispatcher
     }
 
     /**
+     * 公开的分发器访问入口
+     *
+     * 模型事件监听与 withoutEvents 等必须操作同一个分发器实例，
+     * 否则会出现"监听注册在 A 实例、事件抑制作用于 B 实例"的错位。
+     */
+    public static function dispatcher(): EventDispatcher
+    {
+        return static::getDispatcher();
+    }
+
+    /**
      * 注册事件监听器
      */
     public static function listen(string $event, callable $callback): void

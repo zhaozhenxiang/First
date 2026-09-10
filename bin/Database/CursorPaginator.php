@@ -250,13 +250,16 @@ class CursorPaginator implements ArrayAccess, Countable, IteratorAggregate, Json
             return '';
         }
 
-        $nextUrl = htmlspecialchars($this->nextPageUrl());
+        // JS 上下文内不能用 HTML 转义：用 json_encode 生成合法的 JS 字符串字面量，
+        // 同时中和引号逃逸与 </script> 注入
+        $containerJson = json_encode($container);
+        $nextUrlJson = json_encode($this->nextPageUrl());
 
         return <<<HTML
 <script>
 (function() {
     var loading = false;
-    var container = document.querySelector('{$container}');
+    var container = document.querySelector({$containerJson});
 
     window.addEventListener('scroll', function() {
         if (loading) return;
@@ -264,7 +267,7 @@ class CursorPaginator implements ArrayAccess, Countable, IteratorAggregate, Json
         if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
             loading = true;
 
-            fetch('{$nextUrl}', {
+            fetch({$nextUrlJson}, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
             .then(response => response.text())

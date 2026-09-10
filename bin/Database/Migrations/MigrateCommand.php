@@ -9,7 +9,7 @@ declare(strict_types=1);
  * 用法:
  * php migrate migrate              # 运行所有待执行的迁移
  * php migrate rollback             # 回滚最后一次迁移
- * php migrate rollback:step 3      # 回滚最近3次迁移
+ * php migrate rollback step 3      # 回滚最近3次迁移
  * php migrate reset                # 回滚所有迁移
  * php migrate refresh              # 回滚并重新运行所有迁移
  * php migrate fresh                # 删除所有表并重新运行迁移
@@ -67,7 +67,7 @@ class MigrateCommand
         try {
             $this->getMigrator()->run();
             return 0;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             echo "Error: {$e->getMessage()}\n";
             return 1;
         }
@@ -88,7 +88,7 @@ class MigrateCommand
                 $this->getMigrator()->rollback();
             }
             return 0;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             echo "Error: {$e->getMessage()}\n";
             return 1;
         }
@@ -104,7 +104,7 @@ class MigrateCommand
         try {
             $this->getMigrator()->reset();
             return 0;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             echo "Error: {$e->getMessage()}\n";
             return 1;
         }
@@ -120,7 +120,7 @@ class MigrateCommand
         try {
             $this->getMigrator()->refresh();
             return 0;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             echo "Error: {$e->getMessage()}\n";
             return 1;
         }
@@ -128,6 +128,9 @@ class MigrateCommand
 
     /**
      * 删除所有表并重新运行
+     *
+     * migrations 台账表也一并删除——否则 run() 会认为迁移已全部执行，
+     * fresh 之后打印 "Nothing to migrate" 而留下一个空库。
      */
     protected function fresh(): int
     {
@@ -136,13 +139,9 @@ class MigrateCommand
         try {
             Schema::disableForeignKeyConstraints();
 
-            $tables = Schema::getTables();
-
-            foreach ($tables as $table) {
-                if ($table !== 'migrations') {
-                    Schema::dropIfExists($table);
-                    echo "Dropped table: {$table}\n";
-                }
+            foreach (Schema::getTables() as $table) {
+                Schema::dropIfExists($table);
+                echo "Dropped table: {$table}\n";
             }
 
             Schema::enableForeignKeyConstraints();
@@ -151,7 +150,7 @@ class MigrateCommand
 
             $this->getMigrator()->run();
             return 0;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Schema::enableForeignKeyConstraints();
             echo "Error: {$e->getMessage()}\n";
             return 1;
@@ -193,7 +192,7 @@ class MigrateCommand
             $path = $this->getCreator()->create($name, $table);
             echo "Created migration: {$path}\n";
             return 0;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             echo "Error: {$e->getMessage()}\n";
             return 1;
         }

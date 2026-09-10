@@ -29,6 +29,11 @@ class MigrationCreator
 
         $path = $this->path . '/' . $filename;
 
+        // 时间戳精度为秒：同秒创建的两个迁移会静默覆盖，必须显式报错
+        if (file_exists($path)) {
+            throw new \RuntimeException("Migration already exists: {$path}");
+        }
+
         $stub = $this->getStub($table);
 
         $stub = $this->populateStub($name, $stub, $table);
