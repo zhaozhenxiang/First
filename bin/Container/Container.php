@@ -6,6 +6,8 @@ namespace Bin\Container;
 
 use Bin\Container\Exceptions\BindingResolutionException;
 use Bin\Container\Exceptions\CircularDependencyException;
+use Bin\Container\Exceptions\ContainerException;
+use Bin\Container\Exceptions\ContextualAttributeResolutionException;
 use Bin\Container\Exceptions\NotFoundException;
 use Bin\Contracts\ContainerInterface;
 use Bin\Contracts\ContextualAttribute;
@@ -39,7 +41,7 @@ class Container implements ContainerInterface, PsrContainerInterface
 
     /**
      * 已绑定的服务
-     * @var array<string, array{concrete: callable|string, shared: bool}>
+     * @var array<string, array{concrete: callable|string, shared: bool, scoped?: bool}>
      */
     protected array $bindings = [];
 
@@ -114,6 +116,16 @@ class Container implements ContainerInterface, PsrContainerInterface
      * @var string[]
      */
     protected array $buildStack = [];
+
+    /**
+     * 构建堆栈的 concrete 帧（用于上下文绑定查找）
+     *
+     * buildStack 记录解析请求使用的抽象名，concreteStack 同步记录
+     * 每一帧的抽象名与 concrete（闭包绑定时退化为抽象名），供上下文绑定
+     * 按 when(具体类名) 注册的键命中
+     * @var array<int, array{abstract: string, concrete: string}>
+     */
+    protected array $concreteStack = [];
 
     /**
      * 已解析标记
@@ -294,11 +306,18 @@ class Container implements ContainerInterface, PsrContainerInterface
      */
     public function resolving(string|callable $abstract, ?callable $callback = null): void
     {
-        if ($abstract instanceof \Closure || is_callable($abstract)) {
+        if ($callback === null) {
             $this->globalResolvingCallbacks[] = $abstract;
-        } else {
-            $this->resolvingCallbacks[$abstract][] = $callback;
+            return;
         }
+
+        if (!is_string($abstract)) {
+            throw new \InvalidArgumentException(
+                'resolving() expects an abstract name string when a callback is given'
+            );
+        }
+
+        $this->resolvingCallbacks[$abstract][] = $callback;
     }
 
     /**
@@ -306,27 +325,30 @@ class Container implements ContainerInterface, PsrContainerInterface
      */
     public function afterResolving(string|callable $abstract, ?callable $callback = null): void
     {
-        if ($abstract instanceof \Closure || is_callable($abstract)) {
+        if ($callback === null) {
             $this->globalAfterResolvingCallbacks[] = $abstract;
-        } else {
-            $this->afterResolvingCallbacks[$abstract][] = $callback;
+            return;
         }
+
+        if (!is_string($abstract)) {
+            throw new \InvalidArgumentException(
+                'afterResolving() expects an abstract name string when a callback is given'
+            );
+        }
+
+        $this->afterResolvingCallbacks[$abstract][] = $callback;
     }
 
     // ===== 重绑定回调 =====
 
     /**
      * 注册重绑定回调
+     *
+     * 仅在绑定被覆盖（rebound）时触发，对齐 Laravel 语义
      */
     public function rebinding(string $abstract, \Closure $callback): void
     {
         $this->reboundCallbacks[$abstract][] = $callback;
-
-        // 如果已有实例，立即触发
-        if ($this->hasInstance($abstract)) {
-            $instance = $this->make($abstract);
-            $callback($this, $instance);
-        }
     }
 
     /**
@@ -389,8 +411,7 @@ class Container implements ContainerInterface, PsrContainerInterface
             throw new CircularDependencyException($abstract, $this->buildStack);
         }
 
-        $needsContextualBuild = !empty($this->buildStack)
-            && isset($this->contextual[end($this->buildStack)][$abstract]);
+        [$needsContextualBuild] = $this->contextualLookup($abstract);
 
         // 返回已缓存的实例
         if (isset($this->instances[$abstract]) && !$needsContextualBuild) {
@@ -405,11 +426,16 @@ class Container implements ContainerInterface, PsrContainerInterface
         $concrete = $this->getConcrete($abstract);
 
         $this->buildStack[] = $abstract;
+        $this->concreteStack[] = [
+            'abstract' => $abstract,
+            'concrete' => is_string($concrete) ? $concrete : $abstract,
+        ];
 
         try {
             $object = $this->build($concrete, $abstract);
         } finally {
             array_pop($this->buildStack);
+            array_pop($this->concreteStack);
         }
 
         // 触发扩展回调
@@ -440,7 +466,16 @@ class Container implements ContainerInterface, PsrContainerInterface
     protected function build(callable|string $concrete, string $abstract): object
     {
         if ($concrete instanceof Closure) {
-            return $concrete($this, $this);
+            $result = $concrete($this, $this);
+
+            if (!is_object($result)) {
+                throw new BindingResolutionException(
+                    $abstract,
+                    "Binding [{$abstract}] closure must return an object, " . get_debug_type($result) . ' returned'
+                );
+            }
+
+            return $result;
         }
 
         return $this->buildWithReflection($concrete);
@@ -454,7 +489,9 @@ class Container implements ContainerInterface, PsrContainerInterface
         if (!class_exists($concrete)) {
             throw new BindingResolutionException($concrete, "Class [{$concrete}] does not exist");
         }
-        $reflector = new ReflectionClass($concrete);        if (!$reflector->isInstantiable()) {
+        $reflector = new ReflectionClass($concrete);
+
+        if (!$reflector->isInstantiable()) {
             throw new BindingResolutionException($concrete, "Class [{$concrete}] is not instantiable");
         }
 
@@ -474,11 +511,9 @@ class Container implements ContainerInterface, PsrContainerInterface
             $instances = $this->resolveDependencies($dependencies);
         } catch (CircularDependencyException $e) {
             throw $e;
+        } catch (ContextualAttributeResolutionException $e) {
+            throw $e;
         } catch (BindingResolutionException $e) {
-            if (str_starts_with($e->getMessage(), 'Contextual attribute [')) {
-                throw $e;
-            }
-
             throw BindingResolutionException::dependencyFailed($concrete, $e->getAbstract(), $e);
         }
 
@@ -505,32 +540,32 @@ class Container implements ContainerInterface, PsrContainerInterface
                 $abstract = $type->getName();
 
                 // 检查上下文绑定
-                if (!empty($this->buildStack)) {
-                    $buildingClass = end($this->buildStack);
+                [$hasContextual, $contextual] = $this->contextualLookup($abstract);
 
-                    if (isset($this->contextual[$buildingClass][$abstract])) {
-                        $results[] = $this->resolveContextualBindingValue(
-                            $this->contextual[$buildingClass][$abstract]
-                        );
-                        continue;
-                    }
+                if ($hasContextual) {
+                    $results[] = $this->resolveContextualBindingValue($contextual);
+                    continue;
                 }
 
-                $results[] = $this->make($abstract);
+                // 类类型依赖解析失败时，可选参数回退默认值（对齐 Laravel resolveClass()）
+                try {
+                    $results[] = $this->make($abstract);
+                } catch (BindingResolutionException $e) {
+                    if ($dependency->isDefaultValueAvailable()) {
+                        $results[] = $dependency->getDefaultValue();
+                    } else {
+                        throw $e;
+                    }
+                }
                 continue;
             }
 
             // 检查上下文绑定（按参数名）
-            if (!empty($this->buildStack)) {
-                $buildingClass = end($this->buildStack);
-                $paramName = $dependency->getName();
+            [$hasContextual, $contextual] = $this->contextualLookup($dependency->getName());
 
-                if (isset($this->contextual[$buildingClass][$paramName])) {
-                    $results[] = $this->resolveContextualBindingValue(
-                        $this->contextual[$buildingClass][$paramName]
-                    );
-                    continue;
-                }
+            if ($hasContextual) {
+                $results[] = $this->resolveContextualBindingValue($contextual);
+                continue;
             }
 
             if ($dependency->isDefaultValueAvailable()) {
@@ -631,19 +666,35 @@ class Container implements ContainerInterface, PsrContainerInterface
 
     /**
      * 解析方法参数
+     *
+     * 优先级：显式命名参数 > 上下文属性 > 变长收集 > 位置参数（数字下标，
+     * 按声明顺序）> 容器注入 > 默认值。位置参数绑定到类类型参数时，仅当
+     * 值是该类型的实例才消费（对齐 Laravel），避免标量错位注入对象参数
      */
     protected function resolveMethodParameters(array $dependencies, array $parameters): array
     {
         $results = [];
 
+        $positional = array_values(array_filter(
+            $parameters,
+            fn (int|string $key): bool => is_int($key),
+            ARRAY_FILTER_USE_KEY
+        ));
+        $positionalIndex = 0;
+
         foreach ($dependencies as $dependency) {
             $name = $dependency->getName();
 
-            // 显式参数优先
+            // 显式命名参数优先
             if (array_key_exists($name, $parameters)) {
                 $results[] = $parameters[$name];
                 continue;
             }
+
+            $type = $dependency->getType();
+            $classType = $type instanceof \ReflectionNamedType && !$type->isBuiltin()
+                ? $type->getName()
+                : null;
 
             [$hasAttribute, $attributeValue] = $this->resolveContextualAttribute($dependency);
             if ($hasAttribute) {
@@ -651,19 +702,41 @@ class Container implements ContainerInterface, PsrContainerInterface
                 continue;
             }
 
-            $type = $dependency->getType();
+            // 变长参数收集剩余全部位置参数
+            if ($dependency->isVariadic()) {
+                if ($positionalIndex < count($positional)) {
+                    array_push($results, ...array_slice($positional, $positionalIndex));
+                }
+                continue;
+            }
 
-            if ($type !== null && $type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
-                $results[] = $this->make($type->getName());
+            // 位置参数按声明顺序填充
+            if ($positionalIndex < count($positional)) {
+                $next = $positional[$positionalIndex];
+
+                if ($classType === null || (is_object($next) && $next instanceof $classType)) {
+                    $results[] = $next;
+                    $positionalIndex++;
+                    continue;
+                }
+            }
+
+            if ($classType !== null) {
+                // 类类型依赖解析失败时，可选参数回退默认值（对齐 Laravel resolveClass()）
+                try {
+                    $results[] = $this->make($classType);
+                } catch (BindingResolutionException $e) {
+                    if ($dependency->isDefaultValueAvailable()) {
+                        $results[] = $dependency->getDefaultValue();
+                    } else {
+                        throw $e;
+                    }
+                }
                 continue;
             }
 
             if ($dependency->isDefaultValueAvailable()) {
                 $results[] = $dependency->getDefaultValue();
-                continue;
-            }
-
-            if ($dependency->isVariadic()) {
                 continue;
             }
 
@@ -700,7 +773,7 @@ class Container implements ContainerInterface, PsrContainerInterface
 
             return [true, $instance->resolve($this, $parameter)];
         } catch (Throwable $exception) {
-            throw new BindingResolutionException(
+            throw new ContextualAttributeResolutionException(
                 $parameterName,
                 "Contextual attribute [{$attributeName}] failed resolving parameter [{$parameterName}]: {$exception->getMessage()}",
                 0,
@@ -720,6 +793,31 @@ class Container implements ContainerInterface, PsrContainerInterface
         }
 
         return $concrete;
+    }
+
+    /**
+     * 在当前构建帧中查找依赖的上下文绑定实现
+     *
+     * 先按帧的 concrete 类名匹配（when(具体类名) 注册，对齐 Laravel），
+     * 再按帧的抽象名匹配（兼容旧式 contextual() 与字符串绑定名）
+     *
+     * @return array{0: bool, 1: mixed} [是否命中, 实现]
+     */
+    protected function contextualLookup(string $dependency): array
+    {
+        if ($this->concreteStack === []) {
+            return [false, null];
+        }
+
+        $frame = end($this->concreteStack);
+
+        foreach ([$frame['concrete'], $frame['abstract']] as $parent) {
+            if (isset($this->contextual[$parent][$dependency])) {
+                return [true, $this->contextual[$parent][$dependency]];
+            }
+        }
+
+        return [false, null];
     }
 
     /**
@@ -828,13 +926,25 @@ class Container implements ContainerInterface, PsrContainerInterface
 
     /**
      * PSR-11 get
+     *
+     * 未绑定的未知标识符抛 NotFoundException；
+     * 已绑定/可构建但解析失败抛 ContainerException
      */
     public function get(string $id): mixed
     {
+        if (!$this->bound($id) && !class_exists($id) && !interface_exists($id)) {
+            throw new NotFoundException($id, "Identifier [{$id}] is not bound to the container");
+        }
+
         try {
             return $this->make($id);
         } catch (BindingResolutionException $e) {
-            throw new NotFoundException($id, $e->getMessage(), 0, $e);
+            throw new ContainerException(
+                $id,
+                "Entry [{$id}] is registered but could not be resolved: {$e->getMessage()}",
+                0,
+                $e
+            );
         }
     }
 
@@ -891,6 +1001,8 @@ class Container implements ContainerInterface, PsrContainerInterface
 
         if (isset($this->instances[$abstract])) {
             $this->instances[$abstract] = $callback($this->instances[$abstract], $this);
+        } elseif (isset($this->scopedInstances[$abstract])) {
+            $this->scopedInstances[$abstract] = $callback($this->scopedInstances[$abstract], $this);
         }
     }
 
@@ -1029,6 +1141,7 @@ class Container implements ContainerInterface, PsrContainerInterface
         $this->reboundCallbacks = [];
         $this->resolved = [];
         $this->buildStack = [];
+        $this->concreteStack = [];
         $this->parameterContextStack = [];
     }
 
@@ -1199,21 +1312,5 @@ class Container implements ContainerInterface, PsrContainerInterface
     public function getBuildStack(): array
     {
         return $this->buildStack;
-    }
-
-    /**
-     * 魔术方法调用
-     */
-    public function __call(string $method, array $parameters): mixed
-    {
-        return $this->make($method);
-    }
-
-    /**
-     * 静态方法调用
-     */
-    public static function __callStatic(string $method, array $parameters): mixed
-    {
-        return self::getInstance()->$method(...$parameters);
     }
 }

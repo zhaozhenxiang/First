@@ -395,6 +395,175 @@ class IocContainerTest extends TestCase
 
         $this->assertSame($a, $b);
     }
+
+    // ===== 容器优化回归测试（2026-09） =====
+
+    public function testContextualBindingWithNonClassAbstract(): void
+    {
+        $this->container->bind(IocHelper_Logger::class);
+        $this->container->bind('report.service', IocHelper_ServiceWithDep::class);
+
+        $this->container->when(IocHelper_ServiceWithDep::class)
+            ->needs(IocHelper_Logger::class)
+            ->give(function () {
+                $logger = new IocHelper_Logger();
+                $logger->level = 'debug';
+                return $logger;
+            });
+
+        $service = $this->container->make('report.service');
+        $this->assertEquals(
+            'debug',
+            $service->logger->level,
+            'when(具体类名) 注册的上下文绑定应在字符串抽象名绑定下生效'
+        );
+    }
+
+    public function testResolvingPerAbstractWithCallableStringAbstract(): void
+    {
+        $fired = false;
+        // 'strlen' 是真实函数名（可调用字符串），不应被误判为全局回调
+        $this->container->resolving('strlen', function ($object, $container) use (&$fired) {
+            $fired = true;
+        });
+
+        $this->container->bind('strlen', IocHelper_Simple::class);
+        $this->container->make('strlen');
+
+        $this->assertTrue($fired, '按抽象名回调应被注册并触发');
+    }
+
+    public function testCallPositionalParameters(): void
+    {
+        $target = new IocHelper_PositionalTarget();
+
+        $result = $this->container->call([$target, 'combine'], ['first', 'second']);
+        $this->assertEquals('first:second:default', $result);
+    }
+
+    public function testCallMixedNamedAndPositionalParameters(): void
+    {
+        $target = new IocHelper_PositionalTarget();
+
+        $result = $this->container->call([$target, 'combine'], ['tail' => '!', 'head']);
+        $this->assertEquals('head:default:!', $result);
+    }
+
+    public function testCallPositionalSkipsClassTypedParameterUnlessInstanceMatches(): void
+    {
+        $this->container->bind(IocHelper_Logger::class);
+        $target = new IocHelper_PositionalTarget();
+
+        // 标量位置参数不应错位注入 Logger 参数，而应流向后续标量参数
+        $result = $this->container->call([$target, 'greet'], ['hello']);
+        $this->assertEquals('info:hello', $result);
+
+        // 位置值是 Logger 实例时才被类类型参数消费
+        $logger = new IocHelper_Logger();
+        $logger->level = 'debug';
+        $result = $this->container->call([$target, 'greet'], [$logger, 'hello']);
+        $this->assertEquals('debug:hello', $result);
+    }
+
+    public function testCallVariadicPositionalSpread(): void
+    {
+        $target = new IocHelper_PositionalTarget();
+
+        $result = $this->container->call([$target, 'listing'], ['a', 'b', 'c']);
+        $this->assertEquals('a,b,c', $result);
+    }
+
+    public function testExtendAppliesToResolvedScopedInstance(): void
+    {
+        $this->container->scoped('scoped_svc', IocHelper_Simple::class);
+        $this->container->make('scoped_svc');
+
+        $replacement = new IocHelper_Simple();
+        $replacement->name = 'extended';
+        $this->container->extend('scoped_svc', fn () => $replacement);
+
+        $this->assertSame($replacement, $this->container->make('scoped_svc'));
+    }
+
+    public function testOptionalDependencyFallsBackToDefaultWhenUnresolvable(): void
+    {
+        $service = $this->container->make(IocHelper_OptionalBrokenDep::class);
+
+        $this->assertNull($service->dep, '可选类依赖解析失败应回退默认值');
+    }
+
+    public function testOptionalDependencyCycleFallsBackToDefault(): void
+    {
+        $b = $this->container->make(IocHelper_CycleRequired::class);
+
+        $this->assertInstanceOf(IocHelper_CycleOptional::class, $b->a);
+        $this->assertNull($b->a->b, '循环依赖检测命中时可选参数应回退默认值而非抛异常');
+    }
+
+    public function testGetBoundButBrokenEntryThrowsContainerException(): void
+    {
+        $this->container->bind('broken', IocHelper_BrokenDeps::class);
+
+        try {
+            $this->container->get('broken');
+            $this->fail('Expected exception');
+        } catch (\Bin\Container\Exceptions\NotFoundException $e) {
+            $this->fail('已绑定但解析失败的条目不应抛 NotFoundException');
+        } catch (\Bin\Container\Exceptions\ContainerException $e) {
+            $this->assertEquals('broken', $e->getAbstract());
+        }
+    }
+
+    public function testGetUnknownIdentifierStillThrowsNotFound(): void
+    {
+        $thrown = null;
+
+        try {
+            $this->container->get('SomeNonExistentClass67890');
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf(
+            \Bin\Container\Exceptions\NotFoundException::class,
+            $thrown,
+            '未绑定的未知标识符应抛 NotFoundException'
+        );
+    }
+
+    public function testRebindingDoesNotFireImmediatelyOnRegistration(): void
+    {
+        $this->container->singleton('cache', IocHelper_FileCache::class);
+        $this->container->make('cache');
+
+        $fires = 0;
+        $this->container->rebinding('cache', function () use (&$fires) {
+            $fires++;
+        });
+
+        $this->assertEquals(0, $fires, '注册回调不应立即触发');
+
+        $this->container->bind('cache', IocHelper_RedisCache::class);
+        $this->assertEquals(1, $fires, '重绑定时应触发');
+    }
+
+    public function testScalarClosureBindingThrowsContainerException(): void
+    {
+        $this->container->bind('timeout', fn () => 60);
+
+        $thrown = null;
+
+        try {
+            $this->container->make('timeout');
+        } catch (BindingResolutionException $e) {
+            $thrown = $e;
+        } catch (\TypeError $e) {
+            $this->fail('标量闭包绑定不应抛原生 TypeError');
+        }
+
+        $this->assertNotNull($thrown);
+        $this->assertStringContainsString('timeout', $thrown->getMessage());
+    }
 }
 
 // ===== 测试辅助类（放在测试类之后，不会被 TestRunner 误识别为测试类） =====
@@ -458,4 +627,47 @@ class IocHelper_Controller
     {
         return $service->name . ':' . $id;
     }
+}
+
+class IocHelper_PositionalTarget
+{
+    public function combine(string $head, string $middle = 'default', string $tail = 'default'): string
+    {
+        return $head . ':' . $middle . ':' . $tail;
+    }
+
+    public function greet(IocHelper_Logger $logger, string $message = 'n/a'): string
+    {
+        return $logger->level . ':' . $message;
+    }
+
+    public function listing(string ...$items): string
+    {
+        return implode(',', $items);
+    }
+}
+
+class IocHelper_OptionalBrokenDep
+{
+    public function __construct(public ?IocHelper_UnresolvableDeps $dep = null) {}
+}
+
+class IocHelper_UnresolvableDeps
+{
+    public function __construct(SomeMissingIocClass999 $missing) {}
+}
+
+class IocHelper_BrokenDeps
+{
+    public function __construct(SomeMissingIocClass999 $missing) {}
+}
+
+class IocHelper_CycleOptional
+{
+    public function __construct(public ?IocHelper_CycleRequired $b = null) {}
+}
+
+class IocHelper_CycleRequired
+{
+    public function __construct(public IocHelper_CycleOptional $a) {}
 }
