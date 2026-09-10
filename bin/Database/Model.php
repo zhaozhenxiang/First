@@ -338,11 +338,6 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
             return $this->$scopeMethod($query, ...$parameters);
         }
 
-        // 实例级 update 语义为 fill+save（按主键），绝不能转发成整表 UPDATE
-        if ($method === 'update') {
-            return $this->updateAttributes($parameters[0] ?? []);
-        }
-
         return static::query()->$method(...$parameters);
     }
 
@@ -676,17 +671,22 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
     /**
      * 更新模型（实例语义：fill + save，绝不作用于整表）
-     *
-     * 注意：遗留基类 Bin\Model\Model 存在 final static update()（原始 SQL 接口），
-     * 无法声明同名实例方法，实例语义通过 __call 分发。
      */
-    public function updateAttributes(array $attributes = []): bool
+    public function update(array $attributes = []): bool
     {
         if (!$this->exists) {
             return false;
         }
 
         return $this->fill($attributes)->save();
+    }
+
+    /**
+     * updateAttributes 是 update 的别名（兼容早期调用）
+     */
+    public function updateAttributes(array $attributes = []): bool
+    {
+        return $this->update($attributes);
     }
 
     /**

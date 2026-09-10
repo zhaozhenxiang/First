@@ -328,7 +328,11 @@ trait BuildsRelationships
             return $models;
         }
 
-        $relation = $models[0]->{$name}();
+        // 必须在无约束模式下构造关系：否则懒加载约束（user_id = 首个模型的键）
+        // 会残留，eager 的 whereIn 只能匹配到第一个父模型的关联
+        $relation = Relation::noConstraints(function () use ($models, $name) {
+            return $models[0]->{$name}();
+        });
 
         // 应用约束
         if ($constraints !== null) {

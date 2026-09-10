@@ -60,7 +60,7 @@ abstract class Model
         return self::action($sql, $data);
     }
 
-    final public static function update(string $sql, array $data): array
+    final public static function updateSql(string $sql, array $data): array
     {
         return self::action($sql, $data);
     }
