@@ -199,6 +199,13 @@ trait HasAttributes
     }
 
     /**
+     * Attribute 类访问器反射结果缓存
+     *
+     * @var array<string, array<string, bool>> class => method => 是否返回 Attribute
+     */
+    protected static array $attributeAccessorCache = [];
+
+    /**
      * 获取 Attribute 类风格的访问器
      */
     protected function getAttributeClassAccessor(string $key): ?Attribute
@@ -206,23 +213,33 @@ trait HasAttributes
         // snake_case 转为 camelCase：full_name → fullName
         $method = lcfirst(str_replace('_', '', ucwords($key, '_')));
 
-        if (!method_exists($this, $method)) {
-            return null;
-        }
+        $class = static::class;
 
-        try {
-            // 使用反射检查返回类型
-            $reflection = new \ReflectionMethod($this, $method);
+        // 反射结果按类缓存：属性访问是热路径，不能每次都做反射
+        if (!isset(static::$attributeAccessorCache[$class][$method])) {
+            if (!method_exists($this, $method)) {
+                static::$attributeAccessorCache[$class][$method] = false;
 
-            $returnType = $reflection->getReturnType();
-            if ($returnType === null || $returnType->getName() !== Attribute::class) {
                 return null;
             }
 
-            return $this->$method();
-        } catch (\ReflectionException) {
+            try {
+                // 使用反射检查返回类型
+                $reflection = new \ReflectionMethod($this, $method);
+
+                $returnType = $reflection->getReturnType();
+                static::$attributeAccessorCache[$class][$method] =
+                    $returnType !== null && $returnType->getName() === Attribute::class;
+            } catch (\ReflectionException) {
+                static::$attributeAccessorCache[$class][$method] = false;
+            }
+        }
+
+        if (static::$attributeAccessorCache[$class][$method] !== true) {
             return null;
         }
+
+        return $this->$method();
     }
 
     /**
@@ -491,7 +508,9 @@ trait HasAttributes
      */
     public function __isset(string $key): bool
     {
-        return $this->hasAttribute($key);
+        // 已加载的关系也算存在（不触发懒加载），与 Eloquent 一致
+        return $this->hasAttribute($key)
+            || (method_exists($this, 'relationLoaded') && $this->relationLoaded($key));
     }
 
     /**

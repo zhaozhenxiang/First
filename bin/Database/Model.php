@@ -103,7 +103,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     protected function initializeTraits(): void
     {
-        foreach (class_uses(static::class) as $trait) {
+        foreach (static::classUsesRecursive(static::class) as $trait) {
             $method = 'initialize' . static::getClassBasename($trait);
 
             if (method_exists($this, $method)) {
@@ -119,13 +119,45 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     {
         $class = static::class;
 
-        foreach (class_uses($class) as $trait) {
+        foreach (static::classUsesRecursive($class) as $trait) {
             $method = 'boot' . static::getClassBasename($trait);
 
             if (method_exists($class, $method)) {
                 static::$method();
             }
         }
+    }
+
+    /**
+     * class_uses 的递归版本：包含父类链使用的 trait 以及 trait 嵌套使用的 trait
+     *
+     * PHP 原生 class_uses() 只返回类自身直接 use 的 trait——父类（如中间基类）
+     * use SoftDeletes 时子类会漏掉 boot 钩子，导致全局作用域静默失效。
+     *
+     * @return array<string, string>
+     */
+    protected static function classUsesRecursive(string $class): array
+    {
+        $results = [];
+
+        $collect = function (string $target) use (&$collect, &$results): void {
+            foreach (class_uses($target) ?: [] as $trait) {
+                if (isset($results[$trait])) {
+                    continue;
+                }
+
+                $results[$trait] = $trait;
+                $collect($trait);
+            }
+        };
+
+        foreach (array_reverse(class_parents($class) ?: []) as $parent) {
+            $collect($parent);
+        }
+
+        $collect($class);
+
+        return $results;
     }
 
     /**
@@ -154,8 +186,22 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         // 获取类名（不含命名空间）
         $className = substr($class, strrpos($class, '\\') + 1);
 
-        // 转为蛇形命名并复数化
-        return strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . 's';
+        // 转为蛇形命名并复数化（覆盖常见不规则复数）
+        $snake = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className));
+
+        $irregular = [
+            'category' => 'categories',
+            'person' => 'people',
+            'child' => 'children',
+            'man' => 'men',
+            'woman' => 'women',
+        ];
+
+        if (isset($irregular[$snake])) {
+            return $irregular[$snake];
+        }
+
+        return $snake . 's';
     }
 
     /**
@@ -290,6 +336,11 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         if (method_exists($this, $scopeMethod)) {
             $query = static::query();
             return $this->$scopeMethod($query, ...$parameters);
+        }
+
+        // 实例级 update 语义为 fill+save（按主键），绝不能转发成整表 UPDATE
+        if ($method === 'update') {
+            return $this->updateAttributes($parameters[0] ?? []);
         }
 
         return static::query()->$method(...$parameters);
@@ -575,7 +626,9 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
         if ($this->getIncrementing()) {
             $id = $query->insertGetId($attributes);
-            $this->setAttribute($this->getKeyName(), $id);
+
+            // 按 keyType 转换，string 主键（UUID 等）不能强转 int
+            $this->setAttribute($this->getKeyName(), $this->getKeyType() === 'int' ? (int) $id : $id);
         } else {
             $query->insert($attributes);
         }
@@ -619,6 +672,67 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         }
 
         return $result;
+    }
+
+    /**
+     * 更新模型（实例语义：fill + save，绝不作用于整表）
+     *
+     * 注意：遗留基类 Bin\Model\Model 存在 final static update()（原始 SQL 接口），
+     * 无法声明同名实例方法，实例语义通过 __call 分发。
+     */
+    public function updateAttributes(array $attributes = []): bool
+    {
+        if (!$this->exists) {
+            return false;
+        }
+
+        return $this->fill($attributes)->save();
+    }
+
+    /**
+     * 自增列（实例语义：按主键约束执行，并同步内存属性）
+     */
+    public function increment(string $column, int $amount = 1, array $extra = []): bool
+    {
+        return $this->incrementOrDecrement($column, $amount, '+', $extra);
+    }
+
+    /**
+     * 自减列（实例语义：按主键约束执行，并同步内存属性）
+     */
+    public function decrement(string $column, int $amount = 1, array $extra = []): bool
+    {
+        return $this->incrementOrDecrement($column, $amount, '-', $extra);
+    }
+
+    /**
+     * 执行实例级增量/减量
+     */
+    protected function incrementOrDecrement(string $column, int $amount, string $operator, array $extra): bool
+    {
+        if (!$this->exists) {
+            return false;
+        }
+
+        // 按主键约束的写操作走无作用域查询，与 save() 的持久化语义一致
+        $query = $this->newUnscopedQuery()->where($this->getKeyName(), $this->getKey());
+
+        $affected = $operator === '+'
+            ? $query->increment($column, $amount, $extra)
+            : $query->decrement($column, $amount, $extra);
+
+        // 同步内存属性，并使受影响列回到干净状态
+        $newValues = array_merge(
+            [$column => ($this->attributes[$column] ?? 0) + ($operator === '+' ? $amount : -$amount)],
+            $extra
+        );
+
+        foreach ($newValues as $key => $value) {
+            $this->setAttribute($key, $value);
+            $this->original[$key] = $value;
+        }
+
+        return $affected > 0;
     }
 
     /**
@@ -697,7 +811,11 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function replicate(): self
     {
-        $model = new static($this->attributes);
+        // 直接复制原始属性，绕过 fill 的批量赋值保护——
+        // replicate 的语义是"完整克隆数据库行"，guarded 字段不应丢失
+        $model = new static();
+
+        $model->setRawAttributes($this->attributes);
 
         $model->exists = false;
         $model->wasRecentlyCreated = false;
@@ -734,6 +852,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         if ($fresh !== null) {
             $this->attributes = $fresh->attributes;
             $this->original = $fresh->original;
+            $this->changes = [];
         }
 
         return $this;

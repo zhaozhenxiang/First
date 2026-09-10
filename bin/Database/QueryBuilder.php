@@ -701,12 +701,17 @@ class QueryBuilder
 
     /**
      * 获取最后插入的 ID
+     *
+     * 数字主键转 int（自增场景），非数字值（UUID 等 string 主键）原样返回，
+     * 不能无条件强转 int——那会损坏 string 键。
      */
     public function insertGetId(array $values): int|string
     {
         $this->insert($values);
 
-        return (int) $this->connection->lastInsertId();
+        $id = $this->connection->lastInsertId();
+
+        return $id === false ? 0 : (is_numeric($id) ? (int) $id : $id);
     }
 
     /**

@@ -44,6 +44,10 @@ class BelongsTo extends Relation
 
             if (!is_null($foreignValue)) {
                 $this->query->where($this->parentKey, '=', $foreignValue);
+            } else {
+                // 外键为 null 时不存在关联模型；用恒假条件代替"无约束"，
+                // 否则 getResults() 会错误地返回目标表的第一行
+                $this->query->whereRaw('1 = 0');
             }
         }
     }

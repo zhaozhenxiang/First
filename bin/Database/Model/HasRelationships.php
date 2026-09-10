@@ -173,13 +173,23 @@ trait HasRelationships
 
         $instance = new $related();
 
-        $foreignKey = $foreignKey ?? $this->getForeignKey();
+        // 外键默认取关系名的 snake_case + _id（如 user() → user_id）。
+        // 不能用当前模型类名推导（那是 hasMany 侧的外键语义）
+        $foreignKey = $foreignKey ?? $this->relationForeignKey($relation);
 
         $ownerKey = $ownerKey ?? $instance->getKeyName();
 
         $query = $instance->newQuery();
 
         return new \Bin\Database\Relations\BelongsTo($query, $this, $foreignKey, $ownerKey, $related);
+    }
+
+    /**
+     * 根据关系名推导外键列（snake_case + _id）
+     */
+    protected function relationForeignKey(string $relation): string
+    {
+        return strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $relation)) . '_id';
     }
 
     /**
