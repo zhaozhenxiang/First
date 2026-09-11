@@ -619,6 +619,97 @@ $users = User::active()->get();
 $users = User::admin()->active()->get();
 ```
 
+## Laravel 13 P0 对齐 API（2026-09 阶段8）
+
+### 查询构建器
+
+```php
+// upsert：存在则更新，不存在则插入（模型启用时间戳时自动补齐）
+User::query()->upsert(
+    [['email' => 'a@x.com', 'name' => 'a'], ['email' => 'b@x.com', 'name' => 'b']],
+    uniqueBy: ['email'],
+    update: ['name'],
+);
+
+// 忽略冲突插入 / 存在则更新
+User::query()->insertOrIgnore([['email' => 'a@x.com', 'name' => 'a']]);
+User::query()->updateOrInsert(['email' => 'a@x.com'], ['name' => 'a2']);
+
+// 流式迭代（返回 \Generator；无 LazyCollection，如需链式操作请用 get/collect）
+foreach (User::query()->orderBy('id')->cursor() as $user) { /* 单条 SQL，逐行水合 */ }
+foreach (User::query()->lazy(500) as $user) { /* 按页分块流式 */ }
+foreach (User::query()->lazyById(500) as $user) { /* 按主键前进，边遍历边更新筛选列时安全 */ }
+
+// 子查询 JOIN 与 CROSS JOIN（注意：update()/delete() 不编译 JOIN，子查询 JOIN 仅用于 SELECT）
+User::query()
+    ->joinSub(fn ($q) => $q->from('posts')->select('user_id')->selectRaw('SUM(views) AS v')->groupBy('user_id'),
+        'post_stats', 'users.id', '=', 'post_stats.user_id')
+    ->get();
+User::query()->crossJoin('roles')->get();
+
+// 按主键过滤
+User::query()->whereKey([1, 2, 3])->get();
+User::query()->whereKeyNot([1])->get();
+```
+
+- `upsert` 按驱动分方言：MySQL `ON DUPLICATE KEY UPDATE`（按表索引判重，`$uniqueBy` 仅作列集参考）；SQLite/PostgreSQL `ON CONFLICT($uniqueBy) DO UPDATE SET col = excluded.col`。
+
+### 模型层
+
+```php
+// 静默家族：不触发任何模型事件
+$user->saveQuietly();
+$user->deleteQuietly();          // 软删除模型上同样是软删
+$post->restoreQuietly();         // SoftDeletes
+$post->forceDeleteQuietly();     // SoftDeletes
+
+// 绕过批量赋值保护的创建
+User::forceCreate(['name' => 'a', 'secret_field' => 'x']);
+
+// 变更追踪（反映"上次保存"）
+$user->wasChanged();             // 上次保存是否写入过属性
+$user->wasChanged('name');
+$user->getChanges();             // 上次保存实际写入的列 => 新值
+$user->getPrevious('name');      // 上次保存前的原值
+
+// 同行比较与复制排除
+$user->is($otherUser);           // 表名 + 主键都相同
+$copy = $post->replicate(['views']);  // 复制时排除列（主键始终排除）
+
+// 模型事件映射到自定义事件类（命中映射时不再触发默认监听）
+class User extends Model
+{
+    protected array $dispatchesEvents = ['saved' => UserSaved::class];
+}
+```
+
+### 关系层
+
+```php
+// has 家族：'>= 1' 编译 EXISTS，计数比较编译 (SELECT COUNT(*) ...) op n
+User::has('posts')->get();
+User::has('posts', '>=', 3)->get();
+User::doesntHave('posts')->get();
+User::where('banned')->orHas('posts', '>=', 5)->get();
+
+// 嵌套（has 与 whereHas 家族都支持点号，回调作用于最深一层）
+User::has('posts.comments')->get();
+User::whereHas('posts.comments', fn ($q) => $q->where('body', 'like', '%hi%'))->get();
+
+// 关系 make()：实例化未保存的关联模型并接线外键
+$draft = $user->posts()->make(['title' => '草稿']);
+$note  = $post->notes()->make(['content' => 'hi']);   // 多态：morphId + morphType 已接线
+$role  = $user->roles()->make(['name' => 'editor']);  // 多对多：纯实例化
+
+// sync 系列
+$user->roles()->sync([2 => ['note' => '主编辑'], 3]);   // 映射形式：附加列随行写入/更新
+$user->roles()->syncWithoutDetaching([4]);              // 只增不删
+$user->roles()->syncWithPivotValues([5], ['note' => 'x']);
+$user->roles()->toggle([2, 4]);                         // 有关联则解除，无则建立
+```
+
+已知边界：`morphOne`/`morphMany` 关系尚无 `save()`/`create()` 写方法（属 P1 缺口）；`lazy()` 系列返回 `\Generator` 而非 LazyCollection。
+
 ## 完整示例
 
 ```php
@@ -693,3 +784,13 @@ $user->delete();
 - **trait 引导递归**：父类（如中间基类）`use SoftDeletes` 对子类同样生效。
 - **迁移**：`foreignId('user_id')->constrained('users')->cascadeOnDelete()` 流式链可用；`migrate fresh` 会同时清掉 migrations 台账表；`$table->nullable()` / `$table->default()` 蓝图级方法已移除（会静默影响所有列），请使用列级链式调用。
 - **Seeder**：文件 seeder 命名空间固定为 `Database\Seeders`，按文件名发现。
+
+### 阶段8（2026-09 P0 对齐批次）新增与修复
+
+- **save() 现在维护变更快照**：保存成功后 `getChanges()`/`wasChanged()`/`getPrevious()` 可用；`setRawAttributes()` 会清空 changes。此前 `changes` 恒为空数组。
+- **replicate() 支持排除列**：`replicate(['last_flown'])`；主键从"置 null"改为"直接剔除"（两者读取语义等价）。
+- **sync() 返回值语义扩展**：支持 `id => [附加列]` 映射形式，已在关联且带附加列时走 `updateExistingPivot` 并计入 `updated`；`detach` 数组键经过 `array_values` 归一。
+- **修复 hasMany/hasOne 关系上的 create()/createMany()**：此前 `$related` 属性从未赋值，调用必然抛 "Typed property must not be accessed before initialization"。
+- **修复 morphOne/morphMany 的 whereHas**：此前走通用回退、丢失多态类型条件，同 `morph_id` 异类型行会跨类型泄漏；现带 `morph_type = '...'` 条件。
+- **修复 morphOne/morphMany 的 withCount/withSum**：此前 `getAggregateSubQuery` 误调基类占位实现直接抛 `BadMethodCallException`。
+- **绑定顺序**：查询构建器新增 `join` 绑定桶（子查询 JOIN 的绑定参数），`getBindings()` 顺序为 join → where → having → order → union。仅影响使用了 `joinSub`/`leftJoinSub` 的查询。
