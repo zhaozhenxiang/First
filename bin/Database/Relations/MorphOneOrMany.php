@@ -71,16 +71,51 @@ abstract class MorphOneOrMany extends Relation
     }
 
     /**
-     * 关系聚合子查询：附加多态类型条件
+     * 关系聚合子查询：直接实现（不能调用 Relation 基类——那是抛异常的占位），
+     * 且必须带多态类型条件，否则会跨类型误计
      */
     public function getAggregateSubQuery(string $parentTable, string $column, string $function): string
     {
-        $base = parent::getAggregateSubQuery($parentTable, $column, $function);
-
-        $morphClass = str_replace("'", "''", $this->parent->getMorphClass());
+        $col = $function === 'count' ? '*' : $column;
         $relatedTable = $this->query->getTable();
+        $morphClass = str_replace("'", "''", $this->parent->getMorphClass());
 
-        return $base . " AND {$relatedTable}.{$this->morphType} = '{$morphClass}'";
+        return "SELECT {$function}({$col}) FROM {$relatedTable}"
+            . " WHERE {$relatedTable}.{$this->morphId} = {$parentTable}.{$this->localKey}"
+            . " AND {$relatedTable}.{$this->morphType} = '{$morphClass}'";
+    }
+
+    /**
+     * 为 whereHas 生成 EXISTS 子查询：带多态类型条件
+     *
+     * 此前走 hasInternal 的通用回退（只比对 morphId），同 id 不同类型的行会
+     * 跨类型泄漏进来。
+     */
+    public function getExistenceQuery(string $parentTable): array
+    {
+        $relatedTable = $this->query->getTable();
+        $morphClass = str_replace("'", "''", $this->parent->getMorphClass());
+
+        return [
+            "SELECT 1 FROM {$relatedTable}"
+                . " WHERE {$relatedTable}.{$this->morphId} = {$parentTable}.{$this->localKey}"
+                . " AND {$relatedTable}.{$this->morphType} = '{$morphClass}'",
+            [],
+        ];
+    }
+
+    /**
+     * 实例化未保存的相关模型（morphId 与 morphType 已接线）
+     */
+    public function make(array $attributes = []): Model
+    {
+        $modelClass = $this->query->getModelClass();
+        $model = new $modelClass($attributes);
+
+        $model->setAttribute($this->morphId, $this->parent->getAttribute($this->localKey));
+        $model->setAttribute($this->morphType, $this->parent->getMorphClass());
+
+        return $model;
     }
 
     public function getForeignKeyName(): string

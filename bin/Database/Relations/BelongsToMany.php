@@ -351,32 +351,129 @@ class BelongsToMany extends Relation
     }
 
     /**
-     * 同步关系
+     * 实例化未保存的相关模型（不接线 pivot——attach 时才建立关联）
      */
-    public function sync(array $ids): array
+    public function make(array $attributes = []): Model
     {
-        $current = $this->newPivotQuery()
-            ->pluck($this->relatedPivotKey);
+        return new $this->related($attributes);
+    }
 
-        $detach = array_diff($current, $ids);
-        $attach = array_diff($ids, $current);
+    /**
+     * 同步关系
+     *
+     * $ids 支持两种形式：
+     * - [1, 2, 3]：同步关联集合；
+     * - [1 => ['note' => 'x'], 2 => []]：同时写入/更新中间表附加列。
+     * $detach 为 false 时保留不在 $ids 中的现有关联（syncWithoutDetaching 语义）。
+     */
+    public function sync(array $ids, bool $detach = true): array
+    {
+        $records = $this->normalizeSyncRecords($ids);
 
-        if (!empty($detach)) {
-            $this->detach($detach);
+        $current = $this->newPivotQuery()->pluck($this->relatedPivotKey);
+
+        $detached = $detach ? array_values(array_diff($current, array_keys($records))) : [];
+
+        if (!empty($detached)) {
+            $this->detach($detached);
         }
 
         $attached = [];
+        $updated = [];
 
-        foreach ($attach as $id) {
-            $this->attach($id);
+        foreach ($records as $id => $pivotData) {
+            if (in_array($id, $current, true)) {
+                // 已关联且带附加列时更新中间表（无附加列则不动）
+                if (!empty($pivotData)) {
+                    $this->updateExistingPivot($id, $pivotData);
+                    $updated[] = $id;
+                }
+
+                continue;
+            }
+
+            $this->attach($id, $pivotData);
             $attached[] = $id;
         }
 
         return [
             'attached' => $attached,
-            'detached' => $detach,
+            'detached' => $detached,
+            'updated' => $updated,
+        ];
+    }
+
+    /**
+     * 同步但保留未列出的关联
+     */
+    public function syncWithoutDetaching(array $ids): array
+    {
+        return $this->sync($ids, detach: false);
+    }
+
+    /**
+     * 同步并为每个关联写入相同的中间表附加列
+     */
+    public function syncWithPivotValues(array $ids, array $values, bool $detach = true): array
+    {
+        $records = [];
+
+        foreach ($ids as $id) {
+            $records[$id] = $values;
+        }
+
+        return $this->sync($records, $detach);
+    }
+
+    /**
+     * 切换关联：已关联的解除，未关联的建立
+     */
+    public function toggle(array $ids): array
+    {
+        $records = $this->normalizeSyncRecords($ids);
+
+        $current = $this->newPivotQuery()->pluck($this->relatedPivotKey);
+
+        $detached = array_values(array_intersect($current, array_keys($records)));
+
+        $attached = [];
+
+        foreach ($records as $id => $pivotData) {
+            if (!in_array($id, $current, true)) {
+                $this->attach($id, $pivotData);
+                $attached[] = $id;
+            }
+        }
+
+        if (!empty($detached)) {
+            $this->detach($detached);
+        }
+
+        return [
+            'attached' => $attached,
+            'detached' => $detached,
             'updated' => [],
         ];
+    }
+
+    /**
+     * 归一化 sync/toggle 输入为 [id => pivotData] 映射
+     *
+     * @return array<int|string, array<string, mixed>>
+     */
+    protected function normalizeSyncRecords(array $ids): array
+    {
+        $records = [];
+
+        foreach ($ids as $key => $value) {
+            if (is_array($value)) {
+                $records[$key] = $value;
+            } else {
+                $records[$value] = [];
+            }
+        }
+
+        return $records;
     }
 
     /**

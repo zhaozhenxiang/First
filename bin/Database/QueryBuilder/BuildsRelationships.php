@@ -41,9 +41,17 @@ trait BuildsRelationships
 
     /**
      * 添加 whereHas 约束 - 检查关系是否存在
+     *
+     * 支持点号嵌套：whereHas('posts.comments', fn) 的回调作用于最深一层关系。
      */
     public function whereHas(string $relation, ?\Closure $callback = null, string $boolean = 'and'): self
     {
+        if (str_contains($relation, '.')) {
+            [$first, $nested] = explode('.', $relation, 2);
+
+            return $this->whereHas($first, fn (self $query) => $query->whereHas($nested, $callback), $boolean);
+        }
+
         return $this->hasInternal($relation, $callback, $boolean, false);
     }
 
@@ -52,6 +60,12 @@ trait BuildsRelationships
      */
     public function whereDoesntHave(string $relation, ?\Closure $callback = null): self
     {
+        if (str_contains($relation, '.')) {
+            [$first, $nested] = explode('.', $relation, 2);
+
+            return $this->whereHas($first, fn (self $query) => $query->whereDoesntHave($nested, $callback));
+        }
+
         return $this->hasInternal($relation, $callback, 'and', true);
     }
 
@@ -60,7 +74,7 @@ trait BuildsRelationships
      */
     public function orWhereHas(string $relation, ?\Closure $callback = null): self
     {
-        return $this->hasInternal($relation, $callback, 'or', false);
+        return $this->whereHas($relation, $callback, 'or');
     }
 
     /**
@@ -68,13 +82,67 @@ trait BuildsRelationships
      */
     public function orWhereDoesntHave(string $relation, ?\Closure $callback = null): self
     {
+        if (str_contains($relation, '.')) {
+            [$first, $nested] = explode('.', $relation, 2);
+
+            return $this->orWhereHas($first, fn (self $query) => $query->whereDoesntHave($nested, $callback));
+        }
+
         return $this->hasInternal($relation, $callback, 'or', true);
     }
 
     /**
-     * has 内部实现
+     * 关系存在性约束：has('posts') / has('posts', '>=', 3) / has('posts.comments')
+     *
+     * 嵌套点号形式递归转成 whereHas；'>= 1' 走 EXISTS 快路径，
+     * 其余计数比较编译为 (SELECT COUNT(*) ...) {operator} {count}。
      */
-    protected function hasInternal(string $relation, ?\Closure $callback, string $boolean, bool $negate): self
+    public function has(string $relation, string $operator = '>=', int $count = 1, string $boolean = 'and'): self
+    {
+        if (str_contains($relation, '.')) {
+            [$first, $nested] = explode('.', $relation, 2);
+
+            return $this->whereHas($first, fn (self $query) => $query->has($nested, $operator, $count), $boolean);
+        }
+
+        if ($operator === '>=' && $count === 1) {
+            return $this->hasInternal($relation, null, $boolean, false);
+        }
+
+        return $this->hasInternal($relation, null, $boolean, false, $operator, $count);
+    }
+
+    /**
+     * orHas 约束
+     */
+    public function orHas(string $relation, string $operator = '>=', int $count = 1): self
+    {
+        return $this->has($relation, $operator, $count, 'or');
+    }
+
+    /**
+     * 关系不存在约束（COUNT(*) < 1）
+     */
+    public function doesntHave(string $relation): self
+    {
+        return $this->has($relation, '<', 1, 'and');
+    }
+
+    /**
+     * orDoesntHave 约束
+     */
+    public function orDoesntHave(string $relation): self
+    {
+        return $this->has($relation, '<', 1, 'or');
+    }
+
+    /**
+     * has 内部实现
+     *
+     * $countOperator/$count 非空时编译计数比较形态 ((SELECT COUNT(*) ...) op n)，
+     * 否则编译（NOT）EXISTS 形态。
+     */
+    protected function hasInternal(string $relation, ?\Closure $callback, string $boolean, bool $negate, ?string $countOperator = null, ?int $count = null): self
     {
         if (empty($this->modelClass)) {
             throw new InvalidArgumentException('Relation methods require a model class on the QueryBuilder.');
@@ -132,10 +200,25 @@ trait BuildsRelationships
             }
         }
 
-        $operator = $negate ? 'NOT EXISTS' : 'EXISTS';
+        if ($countOperator !== null) {
+            if (!in_array($countOperator, ['=', '<', '>', '<=', '>=', '<>', '!='], true)) {
+                throw new InvalidArgumentException("Invalid count operator [{$countOperator}] for relation [{$relation}].");
+            }
+
+            // 各关系的存在性子查询均为 "SELECT 1 FROM ..." 前缀，直接置换为计数聚合；
+            // 防御性兜底：非该前缀的实现包裹为派生表计数
+            $countSql = str_starts_with($subSql, 'SELECT 1')
+                ? str_replace('SELECT 1', 'SELECT COUNT(*)', $subSql)
+                : "SELECT COUNT(*) FROM ({$subSql})";
+
+            $sql = "({$countSql}) {$countOperator} {$count}";
+        } else {
+            $operator = $negate ? 'NOT EXISTS' : 'EXISTS';
+
+            $sql = "{$operator} ({$subSql})";
+        }
 
         $type = 'Raw';
-        $sql = "{$operator} ({$subSql})";
         $this->wheres[] = compact('type', 'sql', 'boolean');
 
         foreach ($subBindings as $binding) {

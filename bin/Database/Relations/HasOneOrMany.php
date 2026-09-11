@@ -29,8 +29,22 @@ abstract class HasOneOrMany extends Relation
     {
         $this->localKey = $localKey;
         $this->foreignKey = $foreignKey;
+        // create()/make() 依赖相关模型类；此前从未赋值，访问未初始化的类型化属性必然报错
+        $this->related = $query->getModelClass();
 
         parent::__construct($query, $parent);
+    }
+
+    /**
+     * 实例化未保存的相关模型（外键已接线）
+     */
+    public function make(array $attributes = []): Model
+    {
+        $model = new $this->related($attributes);
+
+        $model->setAttribute($this->foreignKey, $this->parent->getKey());
+
+        return $model;
     }
 
     /**
