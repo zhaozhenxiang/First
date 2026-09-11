@@ -11,10 +11,29 @@ use Bin\Events\EventDispatcher;
 trait HasEvents
 {
     /**
+     * 模型事件到自定义事件类的映射（键为事件名，值为事件类名）
+     *
+     * 命中映射时只分发该事件对象（构造参数为当前模型），
+     * 不再触发默认的 model-specific / 全局监听——与 Eloquent 语义一致。
+     *
+     * @var array<string, class-string>
+     */
+    protected array $dispatchesEvents = [];
+
+    /**
      * 触发模型事件（公开接口）
      */
     public function fireModelEvent(string $event): mixed
     {
+        $eventClass = $this->dispatchesEvents[$event] ?? null;
+
+        if ($eventClass !== null) {
+            // 监听器返回 false 停止传播（dispatch 返回 null）时视为事件否决
+            $result = static::getEventDispatcher()->dispatch(new $eventClass($this));
+
+            return $result === null ? false : true;
+        }
+
         return ModelEventDispatcher::dispatchForModel(static::class, $event, $this);
     }
 

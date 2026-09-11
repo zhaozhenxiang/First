@@ -521,6 +521,14 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     }
 
     /**
+     * 创建新记录（绕过批量赋值保护）
+     */
+    public static function forceCreate(array $attributes): self
+    {
+        return static::unguarded(fn (): self => static::create($attributes));
+    }
+
+    /**
      * 批量创建
      */
     public static function insert(array $values): bool
@@ -600,14 +608,25 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         }
 
         if ($saved) {
+            // 先记录本次写入的变更与保存前的原值，再同步 original——
+            // 顺序不能反：getDirty 依赖尚未同步的 original
+            $this->changes = $this->getDirty();
+            $this->previous = $this->original;
             $this->original = $this->attributes;
-            $this->changes = [];
 
             // 触发 saved 事件
             $this->fireModelEvent('saved');
         }
 
         return $saved;
+    }
+
+    /**
+     * 保存模型但不触发任何模型事件
+     */
+    public function saveQuietly(): bool
+    {
+        return static::withoutEvents(fn (): bool => $this->save());
     }
 
     /**
@@ -770,6 +789,14 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     }
 
     /**
+     * 删除模型但不触发任何模型事件（软删除模型同样适用）
+     */
+    public function deleteQuietly(): bool
+    {
+        return static::withoutEvents(fn (): bool => $this->delete());
+    }
+
+    /**
      * 创建新的查询构建器
      */
     protected function newQuery(): QueryBuilder
@@ -816,22 +843,41 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
     /**
      * 复制模型
+     *
+     * $except 指定不随复制携带的列（主键始终排除）。
      */
-    public function replicate(): self
+    public function replicate(?array $except = null): self
     {
         // 直接复制原始属性，绕过 fill 的批量赋值保护——
         // replicate 的语义是"完整克隆数据库行"，guarded 字段不应丢失
+        $except = array_merge([$this->getKeyName()], (array) $except);
+
         $model = new static();
 
-        $model->setRawAttributes($this->attributes);
+        $model->setRawAttributes(array_diff_key($this->attributes, array_flip($except)));
 
         $model->exists = false;
         $model->wasRecentlyCreated = false;
 
-        // 移除主键
-        $model->setAttribute($this->getKeyName(), null);
-
         return $model;
+    }
+
+    /**
+     * 判断两个模型是否指向同一数据库行（表与主键都相同）
+     */
+    public function is(?Model $model): bool
+    {
+        return $model !== null
+            && $this->getTable() === $model->getTable()
+            && $this->getKey() === $model->getKey();
+    }
+
+    /**
+     * 判断两个模型是否不指向同一数据库行
+     */
+    public function isNot(?Model $model): bool
+    {
+        return !$this->is($model);
     }
 
     /**

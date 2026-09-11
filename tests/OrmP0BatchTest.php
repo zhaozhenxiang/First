@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use Bin\Database\Model;
+use Bin\Database\ModelEventDispatcher;
 use Bin\Database\QueryBuilder;
 use Bin\Testing\TestCase;
 
@@ -26,11 +27,13 @@ class OrmP0BatchTest extends TestCase
         $this->pdo = new \PDO('sqlite::memory:');
         $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
-        $this->pdo->exec('CREATE TABLE p0_users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, created_at TEXT, updated_at TEXT)');
+        $this->pdo->exec('CREATE TABLE p0_users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, note TEXT, created_at TEXT, updated_at TEXT)');
         $this->pdo->exec('CREATE TABLE p0_posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, views INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)');
+        $this->pdo->exec('CREATE TABLE p0_soft_posts (id INTEGER PRIMARY KEY, title TEXT, deleted_at TEXT, created_at TEXT, updated_at TEXT)');
 
         P0User::resetBooted();
         P0Post::resetBooted();
+        P0SoftPost::resetBooted();
         Model::setConnection($this->pdo);
     }
 
@@ -38,6 +41,8 @@ class OrmP0BatchTest extends TestCase
     {
         P0User::flushEventListeners();
         P0Post::flushEventListeners();
+        P0SoftPost::flushEventListeners();
+        ModelEventDispatcher::forget(P0UserSavedEvent::class);
         Model::setConnection(null);
     }
 
@@ -253,6 +258,144 @@ class OrmP0BatchTest extends TestCase
         $this->assertSame(0, P0User::query()->whereKey([])->count());
         $this->assertSame(3, P0User::query()->whereKeyNot([])->count());
     }
+
+    // ============================
+    // 阶段B：模型层
+    // ============================
+
+    public function testSaveQuietlySkipsModelEvents(): void
+    {
+        $fired = 0;
+        P0User::creating(fn (P0User $user) => $fired++);
+        P0User::saved(fn (P0User $user) => $fired++);
+
+        $user = new P0User(['name' => 'q', 'email' => 'q@x.com']);
+        $this->assertTrue($user->saveQuietly());
+
+        $this->assertSame(0, $fired);
+        $this->assertTrue($user->exists);
+        $this->assertSame(1, P0User::count());
+    }
+
+    public function testDeleteQuietlySkipsModelEvents(): void
+    {
+        $fired = 0;
+        P0User::deleted(fn (P0User $user) => $fired++);
+
+        $user = P0User::create(['name' => 'd', 'email' => 'd@x.com']);
+        $fired = 0; // create 事件不计入
+
+        $this->assertTrue($user->deleteQuietly());
+        $this->assertSame(0, $fired);
+        $this->assertSame(0, P0User::count());
+    }
+
+    public function testRestoreAndForceDeleteQuietlyOnSoftDeletes(): void
+    {
+        $fired = 0;
+        P0SoftPost::restoring(fn (P0SoftPost $post) => $fired++);
+        P0SoftPost::restored(fn (P0SoftPost $post) => $fired++);
+        P0SoftPost::deleted(fn (P0SoftPost $post) => $fired++);
+
+        $post = P0SoftPost::create(['title' => 't']);
+        $post->delete();
+        $fired = 0;
+
+        $this->assertTrue($post->restoreQuietly());
+        $this->assertSame(0, $fired);
+        $this->assertFalse($post->trashed());
+
+        $post->delete();
+        $fired = 0;
+
+        $this->assertTrue($post->forceDeleteQuietly());
+        $this->assertSame(0, $fired);
+        $this->assertSame(0, P0SoftPost::withTrashed()->count());
+    }
+
+    public function testForceCreateBypassesMassAssignmentProtection(): void
+    {
+        $user = P0User::forceCreate(['name' => 'f', 'email' => 'f@x.com', 'note' => 'kept']);
+        $this->assertSame('kept', $user->note);
+        $this->assertSame('kept', P0User::find($user->id)->note);
+
+        // 对照：create() 静默丢弃不可批量赋值属性
+        $plain = P0User::create(['name' => 'p', 'email' => 'p@x.com', 'note' => 'dropped']);
+        $this->assertNull($plain->note);
+    }
+
+    public function testDispatchesEventsMapsEventToCustomClass(): void
+    {
+        $captured = null;
+        ModelEventDispatcher::dispatcher()->listen(
+            P0UserSavedEvent::class,
+            function (P0UserSavedEvent $event) use (&$captured): void {
+                $captured = $event;
+            }
+        );
+
+        $defaultFired = 0;
+        P0UserWithEvents::saved(fn (P0UserWithEvents $user) => $defaultFired++);
+
+        $user = P0UserWithEvents::create(['name' => 'm', 'email' => 'm@x.com']);
+
+        $this->assertInstanceOf(P0UserSavedEvent::class, $captured);
+        $this->assertSame('m', $captured->model->name);
+        // 命中映射时默认监听不再触发
+        $this->assertSame(0, $defaultFired);
+    }
+
+    public function testWasChangedGetChangesAndGetPrevious(): void
+    {
+        $user = P0User::create(['name' => 'orig', 'email' => 'o@x.com']);
+
+        $this->assertTrue($user->wasChanged());
+        $this->assertSame('orig', $user->getChanges()['name'] ?? null);
+        $this->assertSame([], $user->getPrevious());
+
+        $user->name = 'new';
+        // wasChanged 反映上次保存：create 时写入过 name
+        $this->assertTrue($user->wasChanged('name'));
+
+        $user->save();
+
+        $this->assertTrue($user->wasChanged('name'));
+        $this->assertSame('new', $user->getChanges()['name']);
+        $this->assertSame('orig', $user->getPrevious('name'));
+        $this->assertFalse($user->wasChanged('email'));
+
+        // 只改 email 再保存后，name 不再属于"上次保存写入"
+        $user->email = 'o2@x.com';
+        $user->save();
+        $this->assertFalse($user->wasChanged('name'));
+        $this->assertTrue($user->wasChanged('email'));
+    }
+
+    public function testIsAndIsNotCompareSameRow(): void
+    {
+        $a = P0User::create(['name' => 'a', 'email' => 'a@x.com']);
+        $b = P0User::create(['name' => 'b', 'email' => 'b@x.com']);
+
+        $this->assertTrue($a->is(P0User::find($a->id)));
+        $this->assertFalse($a->is($b));
+        $this->assertTrue($a->isNot($b));
+        $this->assertFalse($a->is(null));
+        $this->assertTrue($a->isNot(null));
+    }
+
+    public function testReplicateSupportsExceptColumns(): void
+    {
+        $post = P0Post::create(['user_id' => 1, 'title' => 't', 'views' => 5]);
+
+        $copy = $post->replicate(['views']);
+
+        $this->assertNull($copy->id);
+        $this->assertNull($copy->views);
+        $this->assertSame('t', $copy->title);
+
+        $copy->save();
+        $this->assertSame(2, P0Post::count());
+    }
 }
 
 class P0User extends Model
@@ -265,6 +408,27 @@ class P0User extends Model
     {
         return $this->hasMany(P0Post::class);
     }
+}
+
+class P0UserWithEvents extends P0User
+{
+    protected array $dispatchesEvents = ['saved' => P0UserSavedEvent::class];
+}
+
+class P0UserSavedEvent
+{
+    public function __construct(public readonly P0User $model)
+    {
+    }
+}
+
+class P0SoftPost extends Model
+{
+    use \Bin\Database\SoftDeletes;
+
+    protected string $table = 'p0_soft_posts';
+
+    protected array $fillable = ['title'];
 }
 
 class P0Post extends Model

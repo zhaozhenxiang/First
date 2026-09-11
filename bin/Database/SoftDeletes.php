@@ -111,6 +111,22 @@ trait SoftDeletes
     }
 
     /**
+     * 恢复软删除模型但不触发任何模型事件
+     */
+    public function restoreQuietly(): bool
+    {
+        return static::withoutEvents(fn (): bool => $this->restore());
+    }
+
+    /**
+     * 强制删除模型但不触发任何模型事件
+     */
+    public function forceDeleteQuietly(): bool
+    {
+        return static::withoutEvents(fn (): bool => $this->forceDelete());
+    }
+
+    /**
      * 检查是否已软删除
      */
     public function isSoftDeleted(): bool

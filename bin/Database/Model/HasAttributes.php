@@ -75,6 +75,11 @@ trait HasAttributes
     protected array $changes = [];
 
     /**
+     * 上次保存前的原始属性
+     */
+    protected array $previous = [];
+
+    /**
      * 追加到数组/JSON 的计算属性
      */
     protected array $appends = [];
@@ -146,6 +151,7 @@ trait HasAttributes
     {
         $this->attributes = $attributes;
         $this->original = $attributes;
+        $this->changes = [];
 
         return $this;
     }
@@ -477,6 +483,38 @@ trait HasAttributes
         }
 
         return !array_key_exists($attribute, $this->getDirty());
+    }
+
+    /**
+     * 获取上次保存时实际写入的属性
+     */
+    public function getChanges(): array
+    {
+        return $this->changes;
+    }
+
+    /**
+     * 判断上次保存是否写入过指定属性（不传则判断是否有任何写入）
+     */
+    public function wasChanged(?string $attribute = null): bool
+    {
+        if ($attribute === null) {
+            return !empty($this->changes);
+        }
+
+        return array_key_exists($attribute, $this->changes);
+    }
+
+    /**
+     * 获取上次保存前的原始属性
+     */
+    public function getPrevious(?string $key = null): mixed
+    {
+        if ($key === null) {
+            return $this->previous;
+        }
+
+        return $this->previous[$key] ?? null;
     }
 
     /**
