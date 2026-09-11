@@ -58,6 +58,14 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     public const UPDATED_AT = 'updated_at';
 
     /**
+     * 是否使用时间戳
+     */
+    public function usesTimestamps(): bool
+    {
+        return $this->timestamps;
+    }
+
+    /**
      * 全局作用域（per-class 存储）
      */
     protected static array $globalScopes = [];

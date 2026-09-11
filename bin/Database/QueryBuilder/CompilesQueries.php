@@ -144,11 +144,18 @@ trait CompilesQueries
         $joins = [];
 
         foreach ($this->joins as $join) {
+            $type = strtoupper($join['type']);
+
+            // CROSS JOIN 无 ON 条件；其余 JOIN 均为列比较形态
+            if ($type === 'CROSS') {
+                $joins[] = "CROSS JOIN {$this->wrap($join['table'])}";
+                continue;
+            }
+
             $table = $this->wrap($join['table']);
             $first = $this->wrap($join['first']);
             $operator = $join['operator'];
             $second = $this->wrap($join['second']);
-            $type = strtoupper($join['type']);
 
             $joins[] = "{$type} JOIN {$table} ON {$first} {$operator} {$second}";
         }

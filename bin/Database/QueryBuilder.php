@@ -262,6 +262,52 @@ class QueryBuilder
     }
 
     /**
+     * CROSS JOIN（笛卡尔积，无 ON 条件，后续约束用 where 追加）
+     */
+    public function crossJoin(string $table): self
+    {
+        $this->joins[] = ['type' => 'cross', 'table' => $table];
+
+        return $this;
+    }
+
+    /**
+     * 子查询 JOIN：(SELECT ...) as `alias` ON first operator second
+     *
+     * 子查询的绑定进入 'join' 桶——SELECT 编译顺序中 JOIN 在 WHERE 之前，
+     * 绑定顺序必须与占位符出现顺序一致。注意 update()/delete() 不编译 JOIN，
+     * 因此 joinSub 只用于 SELECT 场景。
+     */
+    public function joinSub(self|\Closure $query, string $as, string $first, string $operator, string $second, string $type = 'inner'): self
+    {
+        if ($query instanceof \Closure) {
+            $query($query = $this->forNestedWhere());
+        }
+
+        $this->joins[] = [
+            'type' => $type,
+            'table' => '(' . $query->toSql() . ') as ' . $this->wrap($as),
+            'first' => $first,
+            'operator' => $operator,
+            'second' => $second,
+        ];
+
+        foreach ($query->getBindings() as $binding) {
+            $this->addBinding($binding, 'join');
+        }
+
+        return $this;
+    }
+
+    /**
+     * 左连接子查询
+     */
+    public function leftJoinSub(self|\Closure $query, string $as, string $first, string $operator, string $second): self
+    {
+        return $this->joinSub($query, $as, $first, $operator, $second, 'left');
+    }
+
+    /**
      * ORDER BY
      */
     public function orderBy(string $column, string $direction = 'asc'): self
@@ -485,6 +531,34 @@ class QueryBuilder
         }
 
         return 'id';
+    }
+
+    /**
+     * 按主键约束（单值或数组）
+     */
+    public function whereKey(mixed $ids): self
+    {
+        $ids = is_array($ids) ? array_values($ids) : [$ids];
+
+        if (empty($ids)) {
+            return $this->whereRaw('1 = 0');
+        }
+
+        return $this->whereIn($this->getModelKeyName(), $ids);
+    }
+
+    /**
+     * 按主键排除（单值或数组）
+     */
+    public function whereKeyNot(mixed $ids): self
+    {
+        $ids = is_array($ids) ? array_values($ids) : [$ids];
+
+        if (empty($ids)) {
+            return $this;
+        }
+
+        return $this->whereNotIn($this->getModelKeyName(), $ids);
     }
 
     /**
@@ -715,6 +789,204 @@ class QueryBuilder
     }
 
     /**
+     * 忽略冲突插入（行已存在时跳过而非报错）
+     *
+     * MySQL: INSERT IGNORE；SQLite: INSERT OR IGNORE；PostgreSQL: ON CONFLICT DO NOTHING。
+     * 返回实际插入的行数（受驱动 rowCount 语义影响，冲突行不计入）。
+     */
+    public function insertOrIgnore(array $values): int
+    {
+        if (empty($values)) {
+            return 0;
+        }
+
+        $verb = match ($this->getDriverName()) {
+            'mysql' => 'INSERT IGNORE INTO',
+            'sqlite' => 'INSERT OR IGNORE INTO',
+            'pgsql' => 'INSERT INTO',
+            default => 'INSERT INTO',
+        };
+
+        [$sql, $bindings] = $this->buildMultiRowInsert($values, $verb);
+
+        if ($this->getDriverName() === 'pgsql') {
+            $sql .= ' ON CONFLICT DO NOTHING';
+        }
+
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $rowCount = $stmt->rowCount();
+
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, $rowCount);
+
+            return $rowCount;
+        } catch (\Throwable $e) {
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, 0, false, $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * 原子 upsert：存在则更新，不存在则插入
+     *
+     * 驱动方言：MySQL 走 ON DUPLICATE KEY UPDATE（按表索引判重，$uniqueBy 仅作
+     * 列集参考）；SQLite/PostgreSQL 走 ON CONFLICT($uniqueBy) DO UPDATE。
+     * $update 缺省为更新全部插入列；模型启用时间戳时自动补齐 created_at/updated_at。
+     */
+    public function upsert(array $values, array $uniqueBy, ?array $update = null): int
+    {
+        if (empty($values)) {
+            return 0;
+        }
+
+        [$sql, $bindings] = $this->buildUpsertStatement($values, $uniqueBy, $update);
+
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+            $rowCount = $stmt->rowCount();
+
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, $rowCount);
+
+            return $rowCount;
+        } catch (\Throwable $e) {
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, 0, false, $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * 构建 upsert 语句（纯 SQL 构建，便于分方言单测），返回 [sql, bindings]
+     *
+     * @return array{0: string, 1: list<mixed>}
+     */
+    protected function buildUpsertStatement(array $values, array $uniqueBy, ?array $update): array
+    {
+        $this->mergeUpsertTimestamps($values);
+
+        [$sql, $bindings] = $this->buildMultiRowInsert($values, 'INSERT INTO');
+
+        $updateColumns = $update ?? array_keys(reset($values));
+        $wrappedUpdate = array_map(fn (string $column): string => $this->wrap($column), $updateColumns);
+
+        if ($this->getDriverName() === 'mysql') {
+            $assignments = implode(', ', array_map(
+                fn (string $column): string => "{$column} = VALUES({$column})",
+                $wrappedUpdate
+            ));
+
+            return [$sql . " ON DUPLICATE KEY UPDATE {$assignments}", $bindings];
+        }
+
+        $conflict = implode(', ', array_map(
+            fn (string $column): string => $this->wrap($column),
+            $uniqueBy
+        ));
+
+        $assignments = implode(', ', array_map(
+            fn (string $column): string => "{$column} = `excluded`.{$column}",
+            $wrappedUpdate
+        ));
+
+        return [$sql . " ON CONFLICT({$conflict}) DO UPDATE SET {$assignments}", $bindings];
+    }
+
+    /**
+     * 存在则更新，不存在则插入
+     *
+     * 返回是否执行了写入（存在且 $values 为空时视为成功，不发 UPDATE）。
+     */
+    public function updateOrInsert(array $attributes, array $values = []): bool
+    {
+        if (!$this->clone()->where($attributes)->exists()) {
+            return $this->clone()->insert(array_merge($attributes, $values));
+        }
+
+        if (empty($values)) {
+            return true;
+        }
+
+        return $this->clone()->where($attributes)->update($values) >= 0;
+    }
+
+    /**
+     * 构建多行 INSERT 语句（统一列集，缺列补 null），返回 [sql, bindings]
+     *
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function buildMultiRowInsert(array $values, string $verb): array
+    {
+        if (!is_array(reset($values))) {
+            $values = [$values];
+        }
+
+        // 取所有行的列并集，保证每行占位符数量一致
+        $keys = [];
+        foreach ($values as $row) {
+            foreach (array_keys($row) as $key) {
+                $keys[$key] = true;
+            }
+        }
+        $keys = array_keys($keys);
+
+        $columns = implode(', ', array_map(fn (string $key): string => $this->wrap($key), $keys));
+        $placeholders = '(' . rtrim(str_repeat('?,', count($keys)), ',') . ')';
+
+        $sql = "{$verb} {$this->wrap($this->from)} ({$columns}) VALUES "
+            . implode(', ', array_fill(0, count($values), $placeholders));
+
+        $bindings = [];
+        foreach ($values as $row) {
+            foreach ($keys as $key) {
+                $bindings[] = $row[$key] ?? null;
+            }
+        }
+
+        return [$sql, $bindings];
+    }
+
+    /**
+     * upsert 前为各行补齐模型时间戳列
+     *
+     * @param array<int, array<string, mixed>> $values
+     */
+    private function mergeUpsertTimestamps(array &$values): void
+    {
+        if (!is_array(reset($values))) {
+            $values = [$values];
+        }
+
+        if ($this->modelClass === '' || !is_subclass_of($this->modelClass, Model::class)) {
+            return;
+        }
+
+        /** @var Model $model */
+        $model = new $this->modelClass();
+
+        if (!$model->usesTimestamps()) {
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        foreach ($values as &$row) {
+            $row[$model::CREATED_AT] ??= $now;
+            $row[$model::UPDATED_AT] ??= $now;
+        }
+    }
+
+    /**
+     * 获取当前 PDO 驱动名（方言分支用）
+     */
+    private function getDriverName(): string
+    {
+        return (string) $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+    }
+
+    /**
      * 更新记录
      */
     public function update(array $values): int
@@ -921,11 +1193,12 @@ class QueryBuilder
     }
 
     /**
-     * 获取绑定参数（顺序与占位符在 SQL 中出现的顺序一致：where → having → order → union）
+     * 获取绑定参数（顺序与占位符在 SQL 中出现的顺序一致：join → where → having → order → union）
      */
     public function getBindings(): array
     {
         return array_merge(
+            $this->bindings['join'] ?? [],
             $this->bindings['where'] ?? [],
             $this->bindings['having'] ?? [],
             $this->bindings['order'] ?? [],

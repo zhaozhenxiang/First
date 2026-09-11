@@ -106,4 +106,80 @@ trait ChunksResults
             }
         }, $column);
     }
+
+    /**
+     * 游标迭代：单条 SQL，逐行 fetch 并惰性水合
+     *
+     * 内存中同一时刻只保留一行（PDO 内部缓冲仍持有全部原始结果，这是驱动层
+     * 行为）。不支持 eager load——需要关系请用 lazy()。
+     */
+    public function cursor(): \Generator
+    {
+        $this->applyScopes();
+
+        $sql = $this->toSql();
+        $bindings = $this->getBindings();
+
+        $startTime = microtime(true);
+        try {
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($bindings);
+
+            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                yield $this->modelClass && class_exists($this->modelClass)
+                    ? $this->hydrateModel($row)
+                    : $row;
+            }
+
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000);
+        } catch (\Throwable $e) {
+            $this->logQuery($sql, $bindings, (microtime(true) - $startTime) * 1000, 0, false, $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * 惰性迭代：按页分块查询，以生成器流式产出（无 LazyCollection，返回 \Generator）
+     */
+    public function lazy(int $chunkSize = 1000): \Generator
+    {
+        $page = 1;
+
+        do {
+            $results = $this->clone()->forPage($page, $chunkSize)->get();
+
+            if ($results->isEmpty()) {
+                return;
+            }
+
+            yield from $results;
+            $page++;
+        } while (true);
+    }
+
+    /**
+     * 惰性迭代（按 ID 前进，边遍历边更新筛选列时不会偏移遗漏）
+     */
+    public function lazyById(int $chunkSize = 1000, string $column = 'id'): \Generator
+    {
+        $lastId = 0;
+
+        do {
+            $results = $this->clone()
+                ->where($column, '>', $lastId)
+                ->resetOrders()
+                ->orderBy($column)
+                ->limit($chunkSize)
+                ->get();
+
+            if ($results->isEmpty()) {
+                return;
+            }
+
+            yield from $results;
+
+            $lastItem = $results->last();
+            $lastId = $lastItem instanceof Model ? $lastItem->getKey() : ($lastItem[$column] ?? 0);
+        } while (true);
+    }
 }
