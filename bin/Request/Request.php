@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Bin\Request;
 
 use Bin\Auth\AuthManager;
-use Bin\Database\Collection;
 use Bin\Http\UploadedFile;
 use Bin\Route\SignedUrl;
+use Bin\Support\Collection;
 use Bin\Validation\ValidationManager;
 use Closure;
 use UnitEnum;

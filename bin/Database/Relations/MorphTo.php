@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Bin\Database\Relations;
 
-use Bin\Database\Collection;
 use Bin\Database\Model;
 use Bin\Database\QueryBuilder;
 
