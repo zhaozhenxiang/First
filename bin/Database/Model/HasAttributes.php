@@ -20,6 +20,11 @@ trait HasAttributes
     protected string $primaryKey = 'id';
 
     /**
+     * 日期序列化格式（#[Table(dateFormat)] 可配置；当前仅记录，参与序列化待后续）
+     */
+    protected ?string $dateFormat = null;
+
+    /**
      * 主键类型
      */
     protected string $keyType = 'int';

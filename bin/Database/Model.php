@@ -14,7 +14,6 @@ use Bin\Database\ConnectionManager;
 use Bin\Model\Model as BaseModel;
 use PDO;
 use InvalidArgumentException;
-
 /**
  * Eloquent 风格的 ORM 模型基类
  */
@@ -81,6 +80,13 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     protected static array $morphMap = [];
 
     /**
+     * 按类缓存的 PHP 属性配置（class => config）
+     *
+     * @var array<class-string, array<string, mixed>>
+     */
+    protected static array $attributeConfig = [];
+
+    /**
      * 引导模型
      */
     public static function boot(): void
@@ -93,8 +99,122 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
         static::$bootedModels[$class] = true;
 
-        // 调用 trait 的 boot 方法
+        // 读取类级 PHP 属性配置（#[Table]/#[Fillable]/…），并调用 trait 的 boot 方法
+        static::applyAttributeConfig();
         static::bootTraits();
+    }
+
+    /**
+     * 应用类级 PHP 属性配置（属性式声明优先于属性声明）
+     */
+    protected static function applyAttributeConfig(): void
+    {
+        $class = static::class;
+
+        if (isset(static::$attributeConfig[$class])) {
+            return;
+        }
+
+        $reflection = new \ReflectionClass($class);
+        $config = [];
+
+        foreach ($reflection->getAttributes() as $attribute) {
+            $instance = $attribute->newInstance();
+
+            switch ($instance::class) {
+                case Attributes\Table::class:
+                    if ($instance->name !== null) {
+                        $config['table'] = $instance->name;
+                    }
+                    if ($instance->key !== null) {
+                        $config['primaryKey'] = $instance->key;
+                    }
+                    if ($instance->keyType !== null) {
+                        $config['keyType'] = $instance->keyType;
+                    }
+                    if ($instance->incrementing !== null) {
+                        $config['incrementing'] = $instance->incrementing;
+                    }
+                    if ($instance->timestamps !== null) {
+                        $config['timestamps'] = $instance->timestamps;
+                    }
+                    if ($instance->dateFormat !== null) {
+                        $config['dateFormat'] = $instance->dateFormat;
+                    }
+                    break;
+
+                case Attributes\Fillable::class:
+                    $config['fillable'] = $instance->fields;
+                    break;
+
+                case Attributes\Guarded::class:
+                    $config['guarded'] = $instance->fields;
+                    break;
+
+                case Attributes\Hidden::class:
+                    $config['hidden'] = $instance->fields;
+                    break;
+
+                case Attributes\Visible::class:
+                    $config['visible'] = $instance->fields;
+                    break;
+
+                case Attributes\Appends::class:
+                    $config['appends'] = $instance->fields;
+                    break;
+
+                case Attributes\Casts::class:
+                    $config['casts'] = $instance->fields;
+                    break;
+
+                case Attributes\Connection::class:
+                    $config['connection'] = $instance->name;
+                    break;
+
+                case Attributes\ScopedBy::class:
+                    $config['scopedBy'] = $instance->scopeClasses();
+                    break;
+
+                case Attributes\ObservedBy::class:
+                    $config['observedBy'] = $instance->observerClasses();
+                    break;
+            }
+        }
+
+        static::$attributeConfig[$class] = $config;
+
+        // 作用域/观察者需在 bootTraits 之前注册（trait boot 可继续追加）
+        foreach ($config['scopedBy'] ?? [] as $scopeClass) {
+            $scope = new $scopeClass();
+
+            if ($scope instanceof Scope) {
+                $reflection2 = new \ReflectionClass($scope);
+                $apply = $reflection2->getMethod('apply');
+                static::addGlobalScope($scopeClass, fn (QueryBuilder $query) => $apply->invoke($scope, $query, new static()));
+            }
+        }
+
+        foreach ($config['observedBy'] ?? [] as $observerClass) {
+            static::observe($observerClass);
+        }
+    }
+
+    /**
+     * 获取类级 PHP 属性配置（供实例属性合并用）
+     *
+     * @return array<string, mixed>
+     */
+    protected static function getAttributeConfig(): array
+    {
+        return static::$attributeConfig[static::class] ?? [];
+    }
+
+    /**
+     * 获取属性式声明的连接名（boot 时写入的实例级解析）
+     */
+    public function getConnectionAttribute(): ?string
+    {
+        return static::getAttributeConfig()['connection'] ?? null;
     }
 
     /**
@@ -181,7 +301,9 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function getTable(): string
     {
-        return $this->table ?? $this->guessTableName();
+        return $this->table
+            ?? static::getAttributeConfig()['table']
+            ?? $this->guessTableName();
     }
 
     /**
@@ -217,7 +339,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function getKeyName(): string
     {
-        return $this->primaryKey;
+        return static::getAttributeConfig()['primaryKey'] ?? $this->primaryKey;
     }
 
     /**
@@ -361,6 +483,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     {
         $class = static::class;
         unset(static::$bootedModels[$class]);
+        unset(static::$attributeConfig[$class]);
         static::$globalScopes[static::class] = [];
     }
 
@@ -602,9 +725,62 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function __construct(array $attributes = [])
     {
+        // PHP 属性配置在 boot 时解析，直接 new 的路径也要确保已引导
+        static::boot();
+
+        $this->applyConfigToInstance();
+
         $this->initialize();
 
         $this->fill($attributes);
+    }
+
+    /**
+     * 将类级 PHP 属性配置应用到实例（属性式声明优先，仅在对应属性仍为默认值时生效）
+     */
+    protected function applyConfigToInstance(): void
+    {
+        $config = static::getAttributeConfig();
+
+        if ($config === []) {
+            return;
+        }
+
+        if (isset($config['primaryKey'])) {
+            $this->primaryKey = $config['primaryKey'];
+        }
+
+        if (isset($config['keyType'])) {
+            $this->keyType = $config['keyType'];
+        }
+
+        if (isset($config['incrementing'])) {
+            $this->incrementing = $config['incrementing'];
+        }
+
+        if (isset($config['timestamps'])) {
+            $this->timestamps = $config['timestamps'];
+        }
+
+        if (isset($config['dateFormat'])) {
+            $this->dateFormat = $config['dateFormat'];
+        }
+
+        // 集合类配置：追加合并（属性式与属性声明共存，去重）
+        foreach (['fillable', 'guarded', 'hidden', 'visible', 'appends'] as $field) {
+            if (isset($config[$field])) {
+                $this->{$field} = array_values(array_unique(array_merge($this->{$field}, $config[$field])));
+            }
+        }
+
+        if (isset($config['casts'])) {
+            $this->casts = array_merge($this->casts, $config['casts']);
+        }
+
+        // 连接属性：实例未显式设置时生效
+        if (isset($config['connection']) && $this->connectionName === null) {
+            $this->connectionName = $config['connection'];
+        }
     }
 
     /**
