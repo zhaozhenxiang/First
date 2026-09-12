@@ -31,13 +31,15 @@ class OrmP0BatchTest extends TestCase
         $this->pdo->exec('CREATE TABLE p0_posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, views INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)');
         $this->pdo->exec('CREATE TABLE p0_soft_posts (id INTEGER PRIMARY KEY, title TEXT, deleted_at TEXT, created_at TEXT, updated_at TEXT)');
         $this->pdo->exec('CREATE TABLE p0_comments (id INTEGER PRIMARY KEY, post_id INTEGER, body TEXT)');
-        $this->pdo->exec('CREATE TABLE p0_notes (id INTEGER PRIMARY KEY, notable_type TEXT, notable_id INTEGER, content TEXT)');
+        $this->pdo->exec('CREATE TABLE p0_notes (id INTEGER PRIMARY KEY, notable_type TEXT, notable_id INTEGER, content TEXT, created_at TEXT, updated_at TEXT)');
         $this->pdo->exec('CREATE TABLE p0_roles (id INTEGER PRIMARY KEY, name TEXT)');
         $this->pdo->exec('CREATE TABLE p0_role_user (role_id INTEGER, user_id INTEGER, note TEXT)');
+        $this->pdo->exec('CREATE TABLE p0_json_items (id INTEGER PRIMARY KEY, tags TEXT, meta TEXT)');
 
         P0User::resetBooted();
         P0Post::resetBooted();
         P0SoftPost::resetBooted();
+        P0JsonItem::resetBooted();
         Model::setConnection($this->pdo);
     }
 
@@ -46,6 +48,7 @@ class OrmP0BatchTest extends TestCase
         P0User::flushEventListeners();
         P0Post::flushEventListeners();
         P0SoftPost::flushEventListeners();
+        P0JsonItem::flushEventListeners();
         ModelEventDispatcher::forget(P0UserSavedEvent::class);
         Model::setConnection(null);
     }
@@ -591,6 +594,61 @@ class OrmP0BatchTest extends TestCase
         $this->assertSame([3], $result['updated']);
         $this->assertSame('z3', $pivotNote(3));
     }
+
+    // ============================
+    // 阶段10C：morph 写方法与 JSON 子句
+    // ============================
+
+    public function testMorphRelationCreateAndSave(): void
+    {
+        $user = P0User::create(['name' => 'u', 'email' => 'u@x.com']);
+        $post = P0Post::create(['user_id' => $user->id, 'title' => 'p']);
+
+        // create：morphId/morphType 接线并落库
+        $note = $post->notes()->create(['content' => 'n1']);
+
+        $this->assertInstanceOf(P0Note::class, $note);
+        $this->assertNotNull($note->id);
+        $this->assertSame($post->id, $note->notable_id);
+        $this->assertSame(P0Post::class, $note->notable_type);
+        $this->assertSame(1, P0Note::count());
+
+        // saveMany：已有实例接线后保存
+        $extra = new P0Note(['content' => 'n2']);
+        $post->notes()->saveMany([new P0Note(['content' => 'n3']), $extra]);
+
+        $this->assertSame(3, P0Note::count());
+        $this->assertSame(P0Post::class, $extra->notable_type);
+
+        // createMany
+        $post->notes()->createMany([['content' => 'n4'], ['content' => 'n5']]);
+        $this->assertSame(5, P0Note::count());
+    }
+
+    public function testWhereJsonContainsFiltersScalarAndArrayValues(): void
+    {
+        $insert = $this->pdo->prepare('INSERT INTO p0_json_items (tags, meta) VALUES (?, ?)');
+        $insert->execute(['["php", "orm"]', '{"langs": ["en", "zh"]}']);
+        $insert->execute(['["go", "orm"]', '{"langs": ["en"]}']);
+        $insert->execute(['["rust"]', '{"langs": []}']);
+
+        // 标量包含
+        $this->assertSame([1, 2], P0JsonItem::query()->whereJsonContains('tags', 'orm')->orderBy('id')->pluck('id'));
+
+        // 数组值 = 全部包含（ALL 语义）
+        $this->assertSame([1], P0JsonItem::query()->whereJsonContains('tags', ['php', 'orm'])->pluck('id'));
+
+        // 不包含
+        $this->assertSame([3], P0JsonItem::query()->whereJsonDoesntContain('tags', 'orm')->pluck('id'));
+
+        // JSON 路径 col->key
+        $this->assertSame([1, 2], P0JsonItem::query()->whereJsonContains('meta->langs', 'en')->orderBy('id')->pluck('id'));
+        $this->assertSame([1], P0JsonItem::query()->whereJsonContains('meta->langs', 'zh')->pluck('id'));
+
+        // 空数组包含恒假 / 不包含恒真
+        $this->assertSame(0, P0JsonItem::query()->whereJsonContains('tags', [])->count());
+        $this->assertSame(3, P0JsonItem::query()->whereJsonDoesntContain('tags', [])->count());
+    }
 }
 
 class P0User extends Model
@@ -686,4 +744,11 @@ class P0Role extends Model
     protected string $table = 'p0_roles';
 
     protected array $fillable = ['name'];
+}
+
+class P0JsonItem extends Model
+{
+    protected string $table = 'p0_json_items';
+
+    public bool $timestamps = false;
 }

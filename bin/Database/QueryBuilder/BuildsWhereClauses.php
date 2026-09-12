@@ -314,6 +314,88 @@ trait BuildsWhereClauses
     }
 
     /**
+     * JSON 数组包含约束（MySQL: JSON_CONTAINS；SQLite/PG: json_each 展开比对）
+     *
+     * 语义与 Laravel 一致：值为数组时要求全部包含（ALL）。
+     * 列支持 'col->path' 形式的 JSON 路径。
+     */
+    public function whereJsonContains(string $column, mixed $value, string $boolean = 'and'): self
+    {
+        [$sql, $bindings] = $this->compileJsonContains($column, $value, not: false);
+
+        return $this->whereRaw($sql, $bindings, $boolean);
+    }
+
+    /**
+     * JSON 数组不包含约束
+     */
+    public function whereJsonDoesntContain(string $column, mixed $value, string $boolean = 'and'): self
+    {
+        [$sql, $bindings] = $this->compileJsonContains($column, $value, not: true);
+
+        return $this->whereRaw($sql, $bindings, $boolean);
+    }
+
+    /**
+     * 编译 JSON 包含子句，返回 [sql, bindings]
+     *
+     * @return array{0: string, 1: list<mixed>}
+     */
+    protected function compileJsonContains(string $column, mixed $value, bool $not): array
+    {
+        $prefix = $not ? 'NOT ' : '';
+        [$wrapped, $path] = $this->jsonColumnAndPath($column);
+
+        if ($this->getDriverName() === 'mysql') {
+            $target = $path !== null ? "JSON_EXTRACT({$wrapped}, '{$path}')" : $wrapped;
+
+            return [$prefix . "JSON_CONTAINS({$target}, ?)", [json_encode($value)]];
+        }
+
+        // SQLite/PostgreSQL 无 JSON_CONTAINS：按"全部包含"语义逐值 EXISTS json_each
+        $values = array_values((array) $value);
+
+        if ($values === []) {
+            return [$not ? '1 = 1' : '1 = 0', []];
+        }
+
+        $source = $path !== null ? "json_extract({$wrapped}, '{$path}')" : $wrapped;
+
+        $conditions = [];
+        $bindings = [];
+
+        foreach ($values as $item) {
+            $conditions[] = "EXISTS (SELECT 1 FROM json_each({$source}) AS je WHERE CAST(je.value AS TEXT) = ?)";
+            $bindings[] = (string) $item;
+        }
+
+        return [$prefix . '(' . implode(' AND ', $conditions) . ')', $bindings];
+    }
+
+    /**
+     * 解析 JSON 列与路径（'col->a->b' → ['`col`', '$."a"."b"']）
+     *
+     * @return array{0: string, 1: ?string}
+     */
+    protected function jsonColumnAndPath(string $column): array
+    {
+        if (!str_contains($column, '->')) {
+            return [$this->wrap($column), null];
+        }
+
+        [$name, $path] = explode('->', $column, 2);
+
+        $segments = array_map(
+            fn (string $segment): string => is_numeric($segment)
+                ? $segment
+                : '"' . str_replace('"', '', $segment) . '"',
+            explode('->', $path)
+        );
+
+        return [$this->wrap($name), '$.' . implode('.', $segments)];
+    }
+
+    /**
      * WHERE NOT 条件
      */
     public function whereNot(string|array $column, mixed $operator = null, mixed $value = null, string $boolean = 'and'): self

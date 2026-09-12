@@ -118,6 +118,57 @@ abstract class MorphOneOrMany extends Relation
         return $model;
     }
 
+    /**
+     * 保存相关模型（接线 morphId 与 morphType）
+     */
+    public function save(Model $model): bool
+    {
+        $model->setAttribute($this->morphId, $this->parent->getAttribute($this->localKey));
+        $model->setAttribute($this->morphType, $this->parent->getMorphClass());
+
+        return $model->save();
+    }
+
+    /**
+     * 保存多个相关模型
+     */
+    public function saveMany(array $models): array
+    {
+        foreach ($models as $model) {
+            $this->save($model);
+        }
+
+        return $models;
+    }
+
+    /**
+     * 创建相关模型
+     */
+    public function create(array $attributes): Model
+    {
+        $model = $this->make($attributes);
+
+        if (!$this->save($model)) {
+            throw new \RuntimeException('Failed to create [' . $this->query->getModelClass() . '] via morph relation.');
+        }
+
+        return $model;
+    }
+
+    /**
+     * 创建多个相关模型
+     */
+    public function createMany(array $records): array
+    {
+        $models = [];
+
+        foreach ($records as $record) {
+            $models[] = $this->create($record);
+        }
+
+        return $models;
+    }
+
     public function getForeignKeyName(): string
     {
         return $this->morphId;
