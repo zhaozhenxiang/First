@@ -47,10 +47,23 @@ class ColumnDefinition
 
     public ?string $collation = null;
 
+    /** @var bool 改表路径下标记为 MODIFY COLUMN（而非 ADD COLUMN） */
+    public bool $change = false;
+
     public function __construct(string $type, ?string $name = null)
     {
         $this->type = $type;
         $this->name = $name;
+    }
+
+    /**
+     * 标记该列为修改（Schema::table 路径下编译为 ALTER TABLE ... MODIFY COLUMN）
+     */
+    public function change(): self
+    {
+        $this->change = true;
+
+        return $this;
     }
 
     /**

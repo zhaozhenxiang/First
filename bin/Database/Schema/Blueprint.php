@@ -534,7 +534,10 @@ class Blueprint
     }
 
     /**
-     * 修改列
+     * 修改列（命令式）
+     *
+     * $attributes 支持与列修饰符同名的键（nullable/default/unsigned/length 等）。
+     * 流式写法：$table->string('name', 100)->change()。
      */
     public function modifyColumn(string $name, string $newType, array $attributes = []): void
     {
@@ -556,6 +559,47 @@ class Blueprint
             'from' => $from,
             'to' => $to,
         ];
+    }
+
+    /**
+     * 多态列对：{name}_type + {name}_id（unsignedBigInteger）+ 联合索引
+     */
+    public function morphs(string $name, ?string $indexName = null): void
+    {
+        $this->string("{$name}_type");
+        $this->unsignedBigInteger("{$name}_id");
+
+        $this->index(["{$name}_type", "{$name}_id"], $indexName);
+    }
+
+    /**
+     * 可空多态列对
+     */
+    public function nullableMorphs(string $name, ?string $indexName = null): void
+    {
+        $this->string("{$name}_type")->nullable();
+        $this->unsignedBigInteger("{$name}_id")->nullable();
+
+        $this->index(["{$name}_type", "{$name}_id"], $indexName);
+    }
+
+    /**
+     * UUID 多态列对
+     */
+    public function uuidMorphs(string $name, ?string $indexName = null): void
+    {
+        $this->string("{$name}_type");
+        $this->uuid("{$name}_id");
+
+        $this->index(["{$name}_type", "{$name}_id"], $indexName);
+    }
+
+    /**
+     * remember_token 列（string(100) nullable）
+     */
+    public function rememberToken(): ColumnDefinition
+    {
+        return $this->string('remember_token', 100)->nullable();
     }
 
     /**
@@ -592,25 +636,59 @@ class Blueprint
     }
 
     /**
-     * 删除唯一索引
+     * 删除唯一索引（接受索引名或列数组，列数组按命名规则推导索引名）
      */
-    public function dropUnique(string $index): void
+    public function dropUnique(string|array $index): void
     {
         $this->commands[] = [
             'type' => 'dropUnique',
-            'index' => $index,
+            'index' => [$this->resolveDropIndexName($index, 'unique')],
         ];
     }
 
     /**
-     * 删除索引
+     * 删除索引（接受索引名或列数组）
      */
-    public function dropIndex(string $index): void
+    public function dropIndex(string|array $index): void
     {
         $this->commands[] = [
             'type' => 'dropIndex',
-            'index' => $index,
+            'index' => [$this->resolveDropIndexName($index, 'index')],
         ];
+    }
+
+    /**
+     * 删除全文索引（接受索引名或列数组）
+     */
+    public function dropFullText(string|array $index): void
+    {
+        $this->commands[] = [
+            'type' => 'dropFullText',
+            'index' => [$this->resolveDropIndexName($index, 'fulltext')],
+        ];
+    }
+
+    /**
+     * 删除空间索引（接受索引名或列数组）
+     */
+    public function dropSpatialIndex(string|array $index): void
+    {
+        $this->commands[] = [
+            'type' => 'dropSpatialIndex',
+            'index' => [$this->resolveDropIndexName($index, 'spatialindex')],
+        ];
+    }
+
+    /**
+     * 解析 drop 系列的索引名：字符串视为索引名，数组视为列并按命名规则推导
+     */
+    protected function resolveDropIndexName(string|array $index, string $type): string
+    {
+        if (is_string($index)) {
+            return $index;
+        }
+
+        return strtolower($this->table . '_' . implode('_', $index) . '_' . $type);
     }
 
     /**

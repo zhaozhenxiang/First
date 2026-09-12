@@ -433,6 +433,8 @@ class SchemaBuilder
             'primary' => 'PRIMARY KEY (' . $wrapColumns((array) $command['columns']) . ')',
             'unique' => 'UNIQUE KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'unique')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
             'index' => 'KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'index')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'fulltext' => 'FULLTEXT KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'fulltext')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'spatialIndex' => 'SPATIAL KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($blueprint->getTable(), $command['columns'], 'spatialindex')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
             'foreign' => 'FOREIGN KEY (' . $wrapColumns((array) $command['columns']) . ') REFERENCES '
                 . $this->wrapId((string) $command['on']) . '(' . $this->wrapId((string) $command['references']) . ')'
                 . ($command['onDelete'] ? " ON DELETE {$command['onDelete']}" : '')
@@ -459,8 +461,13 @@ class SchemaBuilder
     {
         $table = $blueprint->getTable();
 
-        // 添加列
+        // 添加列（->change() 标记的列走 MODIFY COLUMN，其余 ADD COLUMN）
         foreach ($blueprint->getColumns() as $column) {
+            if ($column->change) {
+                $this->execute('ALTER TABLE ' . $this->wrapId($table) . ' MODIFY COLUMN ' . $this->getColumnSql($column));
+                continue;
+            }
+
             $sql = 'ALTER TABLE ' . $this->wrapId($table) . ' ADD COLUMN ' . $this->getColumnSql($column);
 
             if ($column->after) {
@@ -496,13 +503,17 @@ class SchemaBuilder
     {
         $wrapColumns = fn (array $columns) => implode(', ', array_map(fn ($c) => $this->wrapId($c), $columns));
 
-        // dropForeign 的数组形式：MySQL 要求每个外键一条语句
-        if ($command['type'] === 'dropForeign') {
-            foreach ((array) $command['index'] as $index) {
-                $this->execute('ALTER TABLE ' . $this->wrapId($table) . ' DROP FOREIGN KEY ' . $this->wrapId($index));
-            }
+        // 数组形式索引名：MySQL 要求每条 DROP 一条语句（dropForeign 先例）
+        foreach (['dropForeign', 'dropUnique', 'dropIndex', 'dropFullText', 'dropSpatialIndex'] as $dropType) {
+            if ($command['type'] === $dropType) {
+                $keyword = $dropType === 'dropForeign' ? 'FOREIGN KEY' : 'INDEX';
 
-            return;
+                foreach ((array) $command['index'] as $index) {
+                    $this->execute('ALTER TABLE ' . $this->wrapId($table) . " DROP {$keyword} " . $this->wrapId($index));
+                }
+
+                return;
+            }
         }
 
         $sql = match ($command['type']) {
@@ -515,6 +526,9 @@ class SchemaBuilder
             'primary' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD PRIMARY KEY (' . $wrapColumns((array) $command['columns']) . ')',
             'unique' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD UNIQUE KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'unique')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
             'index' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'index')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'fulltext' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD FULLTEXT KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'fulltext')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'spatialIndex' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD SPATIAL KEY ' . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'spatialindex')) . ' (' . $wrapColumns((array) $command['columns']) . ')',
+            'modifyColumn' => 'ALTER TABLE ' . $this->wrapId($table) . ' MODIFY COLUMN ' . $this->getModifiedColumnSql($command),
             'foreign' => 'ALTER TABLE ' . $this->wrapId($table) . ' ADD CONSTRAINT '
                 . $this->wrapId($command['name'] ?? $this->createIndexName($table, $command['columns'], 'foreign'))
                 . ' FOREIGN KEY (' . $wrapColumns((array) $command['columns']) . ') REFERENCES '
@@ -527,6 +541,22 @@ class SchemaBuilder
         if ($sql !== '') {
             $this->execute($sql);
         }
+    }
+
+    /**
+     * 命令式 modifyColumn 的列 SQL（把 attributes 映射回列定义修饰符）
+     */
+    protected function getModifiedColumnSql(array $command): string
+    {
+        $definition = new ColumnDefinition($command['newType'], $command['name']);
+
+        foreach ($command['attributes'] as $property => $value) {
+            if (property_exists($definition, $property)) {
+                $definition->$property = $value;
+            }
+        }
+
+        return $this->getColumnSql($definition);
     }
 
     /**
