@@ -12,18 +12,31 @@ use Bin\Database\ConnectionManager;
  */
 class Schema
 {
-    protected static ?SchemaBuilder $builder = null;
+    /** @var array<string, SchemaBuilder> 按连接名缓存的 Schema Builder */
+    protected static array $builders = [];
 
     /**
-     * 获取 Schema Builder
+     * 获取默认连接的 Schema Builder
      */
     public static function builder(): SchemaBuilder
     {
-        if (self::$builder === null) {
-            self::$builder = new SchemaBuilder(ConnectionManager::getConnection());
-        }
+        return self::$builders['default'] ??= new SchemaBuilder(ConnectionManager::getConnection());
+    }
 
-        return self::$builder;
+    /**
+     * 获取指定命名连接的 Schema Builder
+     */
+    public static function connection(?string $name): SchemaBuilder
+    {
+        return self::$builders[$name ?? 'default'] ??= new SchemaBuilder(ConnectionManager::getConnection($name));
+    }
+
+    /**
+     * 重置 builder 缓存（用于测试/连接切换后重建）
+     */
+    public static function resetBuilders(): void
+    {
+        self::$builders = [];
     }
 
     /**

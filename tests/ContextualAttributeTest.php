@@ -312,7 +312,23 @@ class ContextualAttributeTest extends TestCase
         }
     }
 
-    public function testNamedDbConnectionFailsClearly(): void
+    public function testNamedDbConnectionResolvesConfiguredConnection(): void
+    {
+        // config/database.php 内置 sqlite 命名连接（database => :memory:）
+        $resolved = $this->container->call(function (
+            #[DbAttribute('sqlite')]
+            PDO $connection
+        ): PDO {
+            return $connection;
+        });
+
+        $this->assertInstanceOf(PDO::class, $resolved);
+        $this->assertSame('sqlite', $resolved->getAttribute(PDO::ATTR_DRIVER_NAME));
+
+        ConnectionManager::purge('sqlite');
+    }
+
+    public function testUnknownDbConnectionFailsClearly(): void
     {
         try {
             $this->container->call(function (
@@ -321,9 +337,9 @@ class ContextualAttributeTest extends TestCase
             ): PDO {
                 return $connection;
             });
-            $this->fail('Expected BindingResolutionException');
-        } catch (BindingResolutionException $exception) {
-            $this->assertStringContainsString('Database connection [analytics]', $exception->getMessage());
+            $this->fail('Expected ContextualAttributeResolutionException');
+        } catch (\Bin\Container\Exceptions\ContextualAttributeResolutionException $exception) {
+            $this->assertStringContainsString('Database connection [analytics] is not configured', $exception->getMessage());
         }
     }
 }

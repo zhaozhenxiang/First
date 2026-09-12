@@ -257,11 +257,38 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         // 确保模型已引导
         static::boot();
 
+        return (new static())->newModelQuery();
+    }
+
+    /**
+     * 在指定命名连接上获取查询构建器
+     */
+    public static function on(?string $connection): QueryBuilder
+    {
+        static::boot();
+
         $model = new static();
+        $model->connectionName = $connection;
 
-        $query = new QueryBuilder(self::getConnection(), get_class($model));
+        return $model->newModelQuery();
+    }
 
-        $query->from($model->getTable());
+    /**
+     * 构建当前实例的查询构建器（应用全局作用域与默认 eager load）
+     *
+     * 连接解析：实例设置了 connectionName 时走命名连接，否则用默认连接
+     * 的静态缓存（测试注入语义不变）。
+     */
+    protected function newModelQuery(): QueryBuilder
+    {
+        $connection = $this->connectionName !== null
+            ? ConnectionManager::getConnection($this->connectionName)
+            : self::getConnection();
+
+        $query = new QueryBuilder($connection, static::class);
+        $query->setConnectionName($this->connectionName);
+
+        $query->from($this->getTable());
 
         // 应用当前模型类的全局作用域
         $classScopes = static::$globalScopes[static::class] ?? [];
@@ -270,11 +297,29 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
         }
 
         // 应用模型级默认 eager load
-        if (!empty($model->getWith())) {
-            $query->with($model->getWith());
+        if (!empty($this->getWith())) {
+            $query->with($this->getWith());
         }
 
         return $query;
+    }
+
+    /**
+     * 获取连接名（null 表示默认连接）
+     */
+    public function getConnectionName(): ?string
+    {
+        return $this->connectionName;
+    }
+
+    /**
+     * 设置连接名（后续查询走该命名连接）
+     */
+    public function setConnectionName(?string $name): self
+    {
+        $this->connectionName = $name;
+
+        return $this;
     }
 
     /**

@@ -25,6 +25,14 @@ class SchemaBuilder
     }
 
     /**
+     * 获取底层连接
+     */
+    public function getConnection(): PDO
+    {
+        return $this->connection;
+    }
+
+    /**
      * 创建表
      */
     public function create(string $table, callable $callback): void

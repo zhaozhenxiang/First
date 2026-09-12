@@ -86,10 +86,31 @@ class QueryBuilder
     /** @var \Closure|null 查询级 delete() 的替换行为（如软删除转 update） */
     protected ?\Closure $onDelete = null;
 
+    /** @var string|null 连接名（用于查询日志；null 表示默认连接） */
+    protected ?string $connectionName = null;
+
     public function __construct(PDO $connection, string $modelClass = '')
     {
         $this->connection = $connection;
         $this->modelClass = $modelClass;
+    }
+
+    /**
+     * 设置连接名（查询日志与调试报告按名归类）
+     */
+    public function setConnectionName(?string $name): self
+    {
+        $this->connectionName = $name;
+
+        return $this;
+    }
+
+    /**
+     * 获取连接名
+     */
+    public function getConnectionName(): ?string
+    {
+        return $this->connectionName;
     }
 
     /**
@@ -105,7 +126,7 @@ class QueryBuilder
             $sql,
             $bindings,
             $timeMs,
-            $this->from ?: 'default',
+            $this->connectionName ?? 'default',
             $rowCount,
             $success,
             $error

@@ -20,9 +20,9 @@ class Migrator
 
     protected string $path = '';
 
-    public function __construct(string $path = '')
+    public function __construct(string $path = '', ?string $connection = null)
     {
-        $this->connection = ConnectionManager::getConnection();
+        $this->connection = ConnectionManager::getConnection($connection);
         $this->path = $path ?: basePath('/database/migrations');
     }
 

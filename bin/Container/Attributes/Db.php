@@ -6,7 +6,6 @@ namespace Bin\Container\Attributes;
 
 use Attribute;
 use Bin\Container\Container;
-use Bin\Container\Exceptions\BindingResolutionException;
 use Bin\Contracts\ContextualAttribute;
 use Bin\Database\ConnectionManager;
 use ReflectionParameter;
@@ -20,17 +19,15 @@ final class Db implements ContextualAttribute
 
     public function resolve(Container $container, ReflectionParameter $parameter): mixed
     {
-        if ($this->connection !== null && $this->connection !== 'default') {
-            throw new BindingResolutionException(
-                $parameter->getName(),
-                "Database connection [{$this->connection}] is not available; First currently exposes the active default connection"
-            );
+        // 容器显式绑定的默认连接优先（保持既有注入语义）
+        if ($this->connection === null || $this->connection === 'default') {
+            if ($container->bound('db.connection')) {
+                return $container->make('db.connection');
+            }
+
+            return ConnectionManager::getConnection();
         }
 
-        if ($container->bound('db.connection')) {
-            return $container->make('db.connection');
-        }
-
-        return ConnectionManager::getConnection();
+        return ConnectionManager::getConnection($this->connection);
     }
 }
