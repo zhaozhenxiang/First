@@ -677,6 +677,16 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     }
 
     /**
+     * 获取模型工厂代理（流式 DSL：count/state/sequence/for/has）
+     */
+    public static function factory(): PendingFactory
+    {
+        static::boot();
+
+        return new PendingFactory(static::class);
+    }
+
+    /**
      * 创建新记录
      */
     public static function create(array $attributes): self

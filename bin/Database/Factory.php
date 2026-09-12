@@ -120,6 +120,74 @@ class Factory
     }
 
     /**
+     * 解析模型定义：define() 闭包优先，缺省回退 Database\Factories\{类名}Factory::definition()
+     *
+     * @return array<string, mixed>
+     */
+    public static function resolveDefinition(string $model): array
+    {
+        if (isset(static::$definitions[$model])) {
+            $definition = (static::$definitions[$model])();
+
+            if (!is_array($definition)) {
+                throw new \InvalidArgumentException("Factory definition for [{$model}] must return an array");
+            }
+
+            return $definition;
+        }
+
+        $short = ($pos = strrpos($model, '\\')) === false ? $model : substr($model, $pos + 1);
+        $factoryClass = 'Database\\Factories\\' . $short . 'Factory';
+
+        if (class_exists($factoryClass)) {
+            $factory = new $factoryClass();
+
+            if (method_exists($factory, 'definition')) {
+                $definition = $factory->definition();
+
+                if (!is_array($definition)) {
+                    throw new \InvalidArgumentException("Factory definition for [{$model}] must return an array");
+                }
+
+                return $definition;
+            }
+        }
+
+        throw new \InvalidArgumentException(
+            "No factory defined for [{$model}]. Register one via Factory::define() or create {$factoryClass}."
+        );
+    }
+
+    /**
+     * 解析命名状态：define 注册表 > 工厂类 states() 方法
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function resolveNamedState(string $model, string $state, array $definition): ?array
+    {
+        if (isset(static::$states[$model][$state])) {
+            $attributes = (static::$states[$model][$state])($definition);
+
+            return is_array($attributes) ? $attributes : null;
+        }
+
+        $short = ($pos = strrpos($model, '\\')) === false ? $model : substr($model, $pos + 1);
+        $factoryClass = 'Database\\Factories\\' . $short . 'Factory';
+
+        if (class_exists($factoryClass) && method_exists($factoryClass, 'states')) {
+            $states = (new $factoryClass())->states();
+
+            if (isset($states[$state]) && $states[$state] instanceof \Closure) {
+                $attributes = $states[$state]($definition);
+
+                return is_array($attributes) ? $attributes : null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * 获取所有定义
      */
     public static function getDefinitions(): array

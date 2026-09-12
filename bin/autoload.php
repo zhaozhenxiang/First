@@ -13,6 +13,7 @@ spl_autoload_register(function (string $class) {
         'Bin\\' => BASE_PATH . '/bin/',
         'App\\' => APP_PATH . '/',
         'Tests\\' => BASE_PATH . '/tests/',
+        'Database\\Factories\\' => BASE_PATH . '/database/factories/',
     ];
 
     // 查找匹配的前缀
