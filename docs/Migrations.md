@@ -324,6 +324,45 @@ Schema::table('users', function ($table) {
     $table->dropIndex('users_state_index');
     $table->dropFullText('posts_body_fulltext');
     $table->dropSpatialIndex('places_location_spatialindex');
+
+    // drop 系列也接受列数组，按 {表}_{列}_{类型} 规则推导索引名
+    $table->dropIndex(['state', 'city']);        // users_state_city_index
+    $table->dropUnique('email');                 // users_email_unique
+});
+```
+
+> 2026-09 阶段10 前：`dropFullText`/`dropSpatialIndex` 曾在本文档记载但未实现；`fullText()`/`spatialIndex()` 编译分支缺失（静默空操作）——均已修复。
+
+## 修改列
+
+```php
+// 流式：修改已存在的列（编译为 ALTER TABLE ... MODIFY COLUMN）
+Schema::table('users', function ($table) {
+    $table->string('name', 100)->nullable()->change();
+    $table->integer('age')->unsigned()->default(0)->change();
+});
+
+// 命令式：等价写法
+Schema::table('users', function ($table) {
+    $table->modifyColumn('name', 'string', ['length' => 100, 'nullable' => true]);
+});
+```
+
+注意：MySQL 的 MODIFY COLUMN 需要完整列定义，未指定的默认值会被移除（MySQL 方言语义，与 Laravel 一致）。
+
+## 多态列
+
+```php
+Schema::create('comments', function ($table) {
+    $table->id();
+    // commentable_type + commentable_id（unsignedBigInteger）+ 联合索引
+    $table->morphs('commentable');
+    // 可空版本
+    $table->nullableMorphs('taggable');
+    // UUID 外键版本（commentable_id 为 CHAR(36)）
+    $table->uuidMorphs('notable');
+    // remember_token VARCHAR(100) NULL
+    $table->rememberToken();
 });
 ```
 

@@ -4,7 +4,7 @@
 > 基线：Laravel 13.x（2026-03-17 发布，PHP ≥8.3）
 > 范围：ORM/数据库层——模型、关系、查询构建器、Schema/迁移、Seeder/工厂、分页、集合。
 > 旧版中的非 ORM 章节（路由/验证/Blade/队列等）因严重过时且超出本次范围已移除，待后续按同口径重审。
-> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae），`bin/Database/` + `bin/Support/` 约 60 文件。
+> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae）+ 阶段10 小件快批（f5c53e8/1b2b277/6cfd434），`bin/Database/` + `bin/Support/` 约 65 文件。
 
 ---
 
@@ -59,7 +59,7 @@
 | 批量赋值保护（$fillable/$guarded/forceFill/unguard/unguarded/totallyGuarded） | ✅ | `HasAttributes.php:110-140,279-364` |
 | 本地作用域（`scopeXxx` + `__call`/`__callStatic` 转发，支持动态参数） | ✅ | `Model.php:317-342` |
 | 全局作用域 | ⚠️ | 仅"字符串标识 + 闭包"形态 `Model.php:275`；无 `Scope` 接口类作用域，无 `withoutGlobalScopesExcept`，无 Laravel 13 的 `#[ScopedBy]` |
-| 模型事件 | ⚠️ | 11 种（`Model/HasEvents.php`）+ `$dispatchesEvents` 自定义事件类映射（阶段8）；仍缺 `trashed`/`forceDeleting`/`forceDeleted`/`replicating` 事件与 queueable 监听 |
+| 模型事件 | ✅ | 15 种全事件（含 trashed/forceDeleting/forceDeleted/replicating，阶段10）+ `$dispatchesEvents` 映射（阶段8）；仅缺 queueable 监听 |
 | 观察者 `observe()` | ✅ | `Model/HasEvents.php:120-131`、`Observer.php` |
 | 软删除全套（delete→UPDATE/forceDelete/restore/trashed/withTrashed/onlyTrashed/查询级 delete 转软删） | ✅ | `bin/Database/SoftDeletes.php` |
 | hidden/visible/appends 序列化过滤 | ✅ | `Model/HasSerialization.php` |
@@ -74,8 +74,8 @@
 | saveOrFail / updateOrFail / deleteOrFail | ❌ | |
 | forceCreate | ✅ | 阶段8：unguard 包装 create |
 | is() / isNot() 模型比较 | ✅ | 阶段8：表名 + 主键比较 |
-| HasUuids（UUIDv7）/ HasUlids 主键 trait | ❌ | `Model/` 下仅 6 个 trait，无对应实现 |
-| Prunable / MassPrunable + `model:prune` 命令 | ❌ | |
+| HasUuids（UUIDv7）/ HasUlids 主键 trait | ✅ | 阶段10：零依赖自实现，creating 钩子自动填充 |
+| Prunable / MassPrunable + `model:prune` 命令 | ✅ | 阶段10：自动发现 app/Model，--model/--except/--pretend |
 | 严格模式（preventLazyLoading / preventSilentlyDiscardingAttributes 等） | ✅ | `Model/HasStrictMode.php` |
 | per-model 连接 | ✅ | 阶段9：`$connectionName` 接线 + `Model::on()`；读写分离仍缺（P2） |
 | `withoutTimestamps()` | ❌ | |
@@ -132,7 +132,7 @@
 | 事务三件套 + `Schema::transaction(callable)` | ✅ | `Schema/Schema.php:158-174` |
 | 子查询 select / addSelect / orderBy / fromSub | ❌ | |
 | whereKey / whereKeyNot | ✅ | 阶段8：按模型主键过滤 |
-| whereJsonContains 等 JSON 子句 | ❌ | |
+| whereJsonContains / whereJsonDoesntContain | ✅ | 阶段10：MySQL JSON_CONTAINS；SQLite/PG json_each 实现 ALL 语义，支持 col->path |
 | 向量子句 whereVectorSimilarTo（Laravel 13 新增） | ❌ | |
 | 多命名连接 | ✅ | 阶段9：ConnectionManager 按名缓存 + 分驱动 DSN（mysql/sqlite/pgsql）+ `Model::on()` + `Schema::connection()` + `#[Db('name')]` |
 | 读写分离 | ❌ | 需按语句类型分流的 Connection 抽象层（QueryBuilder 直接收 PDO），列 P2 |
@@ -148,12 +148,12 @@
 | 功能 | 状态 | 证据 / 说明 |
 |------|------|------|
 | 列类型全家（各档 int/string/text 系/decimal/float/bool/enum/set/日期时间系/json/uuid/ip/mac/geometry 系/softDeletes） | ✅ | `Schema/Blueprint.php` |
-| morphs / nullableMorphs / uuidMorphs / rememberToken | ❌ | |
+| morphs / nullableMorphs / uuidMorphs / rememberToken | ✅ | 阶段10 |
 | 修饰符（nullable/default/unsigned/autoIncrement/primary/unique/useCurrent(OnUpdate)/comment/first/after/charset/collation…） | ✅ | `Schema/ColumnDefinition.php` |
 | 索引 primary/unique/index/fullText/spatialIndex + dropPrimary/dropUnique/dropIndex/dropForeign | ✅ | |
-| dropFullText / dropSpatialIndex | ❌ | |
+| dropFullText / dropSpatialIndex | ✅ | 阶段10；dropIndex/dropUnique 同时支持列数组推导索引名 |
 | foreignId()->constrained() 流式外键链（references/on/cascadeOn*/restrictOn*/nullOn*） | ✅ | `ForeignIdDefinition.php:40-133`（本轮修复项） |
-| 流式列修改 `->change()` | ⚠️ | 仅命令式 `modifyColumn(name, newType, attrs)` `Blueprint.php:539` |
+| 流式列修改 `->change()` | ✅ | 阶段10；命令式 modifyColumn 同步修复（此前命令被静默丢弃） |
 | 表操作 rename/dropColumn/renameColumn/drop/dropIfExists | ✅ | |
 | introspection（hasTable/hasColumn/getColumns/getTables/getIndexes/hasIndex/getForeignKeys） | ⚠️ | 依赖 MySQL information_schema/`SHOW INDEX`，SQLite 下部分失效 |
 | 迁移运行器（run/rollback/reset/refresh/fresh/status、batch 台账、匿名类支持、事务包裹） | ✅ | `Migrations/Migrator.php` + `MigrateCommand.php`；`fresh` 连台账表一起删（本轮修复项） |
@@ -252,6 +252,20 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 
 回归测试：`tests/CollectionLayeringTest.php` 6 例 + `tests/NamedConnectionTest.php` 7 例 + `ContextualAttributeTest` 命名解析更新；全量 2235 例通过。
 
+### 阶段10（2026-09-12，小件快批实施记录）
+
+P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺陷：
+
+| 条目 | 说明 |
+|------|------|
+| Schema 三缺陷修复：fullText()/spatialIndex() 静默空操作、modifyColumn() 命令被静默丢弃、dropFullText/dropSpatialIndex 文档有码无 | 提交 f5c53e8（10A） |
+| 流式 ->change()（MODIFY COLUMN）、morphs/nullableMorphs/uuidMorphs/rememberToken、drop 系列列数组推导索引名 | f5c53e8（10A） |
+| HasUuids（零依赖 UUIDv7）/ HasUlids（Crockford base32）、Prunable/MassPrunable + model:prune 命令 | 1b2b277（10B） |
+| 事件补齐 trashed/forceDeleting/forceDeleted/replicating（forceDelete 事件语义对齐 Eloquent：不再触发 deleting/deleted——行为变更） | 1b2b277（10B） |
+| morphOne/morphMany 写方法 save/saveMany/create/createMany、whereJsonContains/whereJsonDoesntContain（MySQL JSON_CONTAINS + SQLite/PG json_each ALL 语义，支持 col->path） | 6cfd434（10C） |
+
+回归测试：`tests/SchemaP1BatchTest.php` 11 例 + `tests/OrmTraitsAndEventsTest.php` 10 例 + OrmP0BatchTest 扩至 29 例；全量 2258 例通过。
+
 **文档漂移提醒**：`docs/ORM.md:452` 提到的 `sortByDesc` 在 `Collection.php` 中并不存在（实际是 `sortBy($key, $descending)`），补齐或修文档二选一。
 
 ---
@@ -266,17 +280,17 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 |---|------|--------|------|
 | 1 | PHP 属性配置（`#[Table]/#[Fillable]/#[Scope]/#[ScopedBy]/#[ObservedBy]` 等子集） | 中 | Laravel 13 标志性特性；反射已按类缓存，与属性声明共存、非破坏性 |
 | 2 | ~~多命名连接 + 读写分离~~ | ✅ | 阶段9 完成多命名连接；读写分离移至 P2 |
-| 3 | 流式 `->change()` 列修改 | 中 | 现有 modifyColumn 命令式改链式 |
-| 4 | morphs/nullableMorphs/uuidMorphs/rememberToken/dropFullText/dropSpatialIndex | 极小 | Blueprint 别名/命令 |
-| 5 | HasUuids（UUIDv7）/ HasUlids | 小 | 新 trait + boot 钩子 |
-| 6 | Prunable / MassPrunable + model:prune 命令 | 小-中 | trait + Console 命令 |
+| 3 | ~~流式 `->change()` 列修改~~ | ✅ | 阶段10 完成（含 modifyColumn 死代码修复） |
+| 4 | ~~morphs 列族 / rememberToken / dropFullText / dropSpatialIndex~~ | ✅ | 阶段10 完成 |
+| 5 | ~~HasUuids（UUIDv7）/ HasUlids~~ | ✅ | 阶段10 完成 |
+| 6 | ~~Prunable / MassPrunable + model:prune 命令~~ | ✅ | 阶段10 完成 |
 | 7 | ~~Eloquent/Base Collection 分层 + 模型集合 find()/load()~~ | ✅ | 阶段9 完成 |
 | 8 | 子查询 select / addSelect / orderBy / fromSub | 中 | grammar 子查询编译 |
-| 9 | whereJsonContains 等 JSON 子句 | 小-中 | MySQL `JSON_EXTRACT` 方言先行 |
-| 10 | 软删事件 trashed/forceDeleting/forceDeleted + replicating | 小 | HasEvents 事件表扩列 |
+| 9 | ~~whereJsonContains 家族~~ | ✅ | 阶段10 完成 |
+| 10 | ~~软删事件 + replicating~~ | ✅ | 阶段10 完成（forceDelete 事件语义对齐 Eloquent，行为变更） |
 | 11 | 工厂类 DSL（`User::factory()->has()/for()/sequence()`） | 中-大 | Factory.php 重构为 per-model 工厂类 |
 | 12 | cursorPaginate 泛化（任意排序列/方向/双向游标） | 中 | PaginatesResults.php:104-149 |
-| 13 | morphOne/morphMany 的 save()/create() 写方法（阶段8调研时新发现：两类关系完全没有写入口） | 小 | MorphOneOrMany 增加 save/saveMany/create/createMany（阶段8C 已提供 make() 基础） |
+| 13 | ~~morphOne/morphMany 的 save()/create() 写方法~~ | ✅ | 阶段10 完成 |
 
 ### P2 — 生态/长线
 
@@ -300,7 +314,8 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 | Eloquent 行为对齐 | `tests/EloquentParityTest.php` | 758 行，45+ 用例（strict 模式/序列化/生命周期/replicate 等） |
 | 阶段8 P0 批次回归 | `tests/OrmP0BatchTest.php` | 27 例：upsert 家族/流式迭代/joinSub/whereKey/静默家族/dispatchesEvents/wasChanged/is/replicate/has 家族/关系 make/sync 系列/3 个连带缺陷 |
 | 阶段9 结构性重构回归 | `tests/CollectionLayeringTest.php` / `tests/NamedConnectionTest.php` | 6 + 7 例：双层拆分继承兼容/模型集合方法/按名缓存/分驱动 DSN/Model::on 隔离/QueryLog 连接名 |
+| 阶段10 小件快批回归 | `tests/SchemaP1BatchTest.php` / `tests/OrmTraitsAndEventsTest.php` | 11 + 10 例：fullText/spatialIndex/change 编译、morphs 列族、UUID/ULID、model:prune、软删复制事件、morph 写方法、JSON 子句 |
 | 本轮新增回归 | QueryCompilerRegressionTest / GlobalScopeIntegrityTest / RelationDefaultsTest / TraitInheritanceTest / EagerLoadingConsistencyTest / OrmRegressionTest / MigrationSmokeTest | 七阶段修复的回归防线 |
 | 历史存量 | QueryBuilderTest / ModelTest / RelationTest / SoftDeletesTest / PaginatorTest 等 | 旧版记录约 ~200/~100/~45/22 个用例，覆盖面以本轮文档核对为准 |
 
-> 全量测试基线：2235 例通过（2026-09-12，阶段9 完成后）。P0 已清零、P1 剩余 PHP 属性配置 / `->change()` / 工厂 DSL / cursorPaginate 泛化等 9 项；下一轮建议优先 PHP 属性配置（Laravel 13 标志性）或小件快批（morphs 列族 + HasUuids + 软删事件 + morphOne/morphMany 写方法）。
+> 全量测试基线：2258 例通过（2026-09-12，阶段10 完成后）。P1 仅剩 4 项：#1 PHP 属性配置（Laravel 13 标志性，建议阶段11）、#8 子查询 select/from/orderBy、#11 工厂类 DSL、#12 cursorPaginate 泛化；其后为 P2 长线（多驱动 grammar / 读写分离 / 向量检索 / LazyCollection）。

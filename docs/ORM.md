@@ -708,7 +708,7 @@ $user->roles()->syncWithPivotValues([5], ['note' => 'x']);
 $user->roles()->toggle([2, 4]);                         // 有关联则解除，无则建立
 ```
 
-已知边界：`morphOne`/`morphMany` 关系尚无 `save()`/`create()` 写方法（属 P1 缺口）；`lazy()` 系列返回 `\Generator` 而非 LazyCollection。
+已知边界：`lazy()` 系列返回 `\Generator` 而非 LazyCollection（morphOne/morphMany 的 `save()`/`create()` 写方法已于阶段10补齐）。
 
 ## 阶段9：集合分层与多命名连接（2026-09）
 
@@ -766,6 +766,67 @@ ConnectionManager::purge('analytics');        // 丢弃（下次重连）
 - 关系查询跟随**相关模型自身**的连接（与 Eloquent 一致）：`on('sqlite')` 的模型，其关系仍走相关模型默认连接，除非相关模型自身声明了 `$connectionName`。
 - 查询日志的 `connection` 字段现为真实连接名（此前误标为表名）。
 - 读写分离尚未支持（需按语句类型分流的 Connection 抽象层）。
+
+## 阶段10：Schema 列族修复、模型 trait 与 JSON 子句（2026-09）
+
+### Schema（详见 docs/Migrations.md）
+
+```php
+// 流式列修改（此前 modifyColumn 命令被静默丢弃，fullText/spatialIndex 编译缺失——均已修复）
+Schema::table('users', fn (Blueprint $t) => $t->string('name', 100)->nullable()->change());
+
+// 多态列对与 rememberToken
+$t->morphs('commentable');        // commentable_type + commentable_id(unsignedBigInteger) + 联合索引
+$t->nullableMorphs('commentable');
+$t->uuidMorphs('commentable');
+$t->rememberToken();
+
+// 索引：fullText/spatialIndex 现已真正编译；drop 系列接受索引名或列数组
+$t->fullText(['title', 'content']);
+$t->spatialIndex('location');
+$t->dropIndex(['state', 'city']);  // 按列数组推导索引名 users_state_city_index
+$t->dropFullText(['title']);
+```
+
+### 模型 trait
+
+```php
+// UUID/ULID 主键（零依赖自实现；UUIDv7 与 ULID 均为时间戳前缀、字典序可排序）
+class Session extends Model
+{
+    use HasUuids;   // 默认 UUIDv7；覆写 newUniqueId()/uniqueIds() 自定义
+    protected string $table = 'sessions';
+    protected array $fillable = ['id', 'payload'];  // 显式传 id 需在 fillable 或用 forceCreate
+}
+
+// 定期修剪
+class OldPost extends Model
+{
+    use Prunable;               // 或 MassPrunable（批量 DELETE，不触发事件）
+
+    public function prunable(): QueryBuilder
+    {
+        return static::where('created_at', '<', date('Y-m-d', strtotime('-1 year')));
+    }
+
+    protected function pruning(): void { /* 删除前清理关联资源 */ }
+}
+// 执行：php command model:prune [--pretend] [--model=...] [--except=...]
+```
+
+### 事件补齐与 JSON 子句
+
+```php
+// 新增事件：trashed（软删后）、forceDeleting/forceDeleted、replicating
+// trashed 与实例方法同名，无法静态注册——经 Observer 或 ModelEventDispatcher 监听
+
+// JSON 数组包含（MySQL JSON_CONTAINS；SQLite/PG json_each 展开实现 ALL 语义）
+User::query()->whereJsonContains('tags', 'admin')->get();
+User::query()->whereJsonContains('options->roles', ['a', 'b'])->get();  // col->path 路径
+User::query()->whereJsonDoesntContain('tags', 'banned')->get();
+```
+
+已知边界：SQLite/PG 的 JSON 包含为"数组包含全部给定值"语义、对象包含不支持（MySQL 原生支持）；`model:prune` 无调度器绑定，需手动或程序化调用。
 
 ## 完整示例
 
@@ -859,3 +920,12 @@ $user->delete();
 - **Model 多连接**：`$connectionName` 生效（此前为死属性）；新增 `Model::on()`/`getConnectionName()`/`setConnectionName()`；`Schema::connection()`、`Migrator(connection:)`、`#[Db('name')]` 命名解析可用。
 - **查询日志连接字段修正**：`QueryLog->connection` 由表名改为真实连接名（默认连接为 `'default'`），依赖该字段的日志分析需注意。
 - **附带修复**：`DatabaseQueue` 构造传入的连接名此前被静默忽略，现生效。
+
+### 阶段10（2026-09 小件快批）变更
+
+- **⚠ forceDelete 事件语义变化（对齐 Eloquent）**：软删除模型 `forceDelete()` 现触发 `forceDeleting`/`forceDeleted`，**不再触发** `deleting`/`deleted`；依赖旧事件的代码请迁移。软删路径 `delete()` 在 `deleted` 之后追加触发 `trashed`。
+- **新增事件**：`trashed`/`forceDeleting`/`forceDeleted`/`replicating`（Observer::EVENTS 含前三者；`trashed` 与实例方法同名无法静态注册）。
+- **Schema 修复**：`fullText()`/`spatialIndex()` 此前是静默空操作（无编译分支）、`modifyColumn()` 命令被静默丢弃——均已修复；新增流式 `->change()`。真实迁移 `2024_01_01_000002_create_posts_table.php` 的 fullText 自此生效（需重新迁移）。
+- **dropIndex/dropUnique/dropFullText/dropSpatialIndex** 接受列数组并按命名规则推导索引名。
+- **morphOne/morphMany 具备写方法**（save/saveMany/create/createMany），此前完全没有写入口。
+- **HasUuids/HasUlids**：`getIncrementing()` 强制 false、`getKeyType()` 强制 string。
