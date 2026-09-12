@@ -105,6 +105,10 @@ trait PaginatesResults
 
         [$orderColumn, $ascendingOrder] = $this->resolveCursorOrder($query);
 
+        // 排序列统一按解析结果重置（含首页）：否则 orderByRaw 等不可解析排序会
+        // 让首页顺序与游标推进顺序不一致，造成页间跳行/重叠
+        $query->resetOrders()->orderBy($orderColumn, $ascendingOrder ? 'asc' : 'desc');
+
         $direction = 'next';
 
         if ($cursor !== null) {

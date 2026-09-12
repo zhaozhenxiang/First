@@ -971,6 +971,14 @@ class QueryBuilder
      */
     protected function buildUpsertStatement(array $values, array $uniqueBy, ?array $update): array
     {
+        if (empty($uniqueBy)) {
+            throw new InvalidArgumentException('Upsert requires at least one unique column.');
+        }
+
+        if ($update !== null && empty($update)) {
+            throw new InvalidArgumentException('Upsert update columns must be null (all columns) or a non-empty list.');
+        }
+
         $this->mergeUpsertTimestamps($values);
 
         [$sql, $bindings] = $this->buildMultiRowInsert($values, 'INSERT INTO');

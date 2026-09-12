@@ -15,10 +15,24 @@ use Bin\Database\Model;
 trait ChunksResults
 {
     /**
+     * 分块大小下限校验
+     *
+     * 负数 LIMIT 在 SQLite/MySQL 语义中等于无限制，chunk/lazy 会死循环或全量拉取。
+     */
+    protected function assertChunkSize(int $chunkSize): void
+    {
+        if ($chunkSize < 1) {
+            throw new \InvalidArgumentException('Chunk size must be at least 1, got [' . $chunkSize . '].');
+        }
+    }
+
+    /**
      * 分块处理查询结果
      */
     public function chunk(int $count, callable $callback): bool
     {
+        $this->assertChunkSize($count);
+
         $page = 1;
 
         do {
@@ -45,6 +59,8 @@ trait ChunksResults
      */
     public function chunkById(int $count, callable $callback, string $column = 'id'): bool
     {
+        $this->assertChunkSize($count);
+
         $lastId = 0;
 
         do {
@@ -143,6 +159,8 @@ trait ChunksResults
      */
     public function lazy(int $chunkSize = 1000): \Generator
     {
+        $this->assertChunkSize($chunkSize);
+
         $page = 1;
 
         do {
@@ -162,6 +180,8 @@ trait ChunksResults
      */
     public function lazyById(int $chunkSize = 1000, string $column = 'id'): \Generator
     {
+        $this->assertChunkSize($chunkSize);
+
         $lastId = 0;
 
         do {

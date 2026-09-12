@@ -352,10 +352,13 @@ trait BuildsWhereClauses
             return [$prefix . "JSON_CONTAINS({$target}, ?)", [json_encode($value)]];
         }
 
-        // SQLite/PostgreSQL 无 JSON_CONTAINS：按"全部包含"语义逐值 EXISTS json_each
-        $values = array_values((array) $value);
+        // SQLite/PostgreSQL 无 JSON_CONTAINS：按 Laravel 语义展开比对。
+        // 列表候选（['a','b']）= 全部包含（ALL）；关联数组候选 = 单个对象文档整体比对；
+        // 标量候选 = 数组元素文本比对。
+        $isCandidateList = is_array($value) && ($value === [] || array_is_list($value));
+        $items = $isCandidateList ? array_values($value) : [$value];
 
-        if ($values === []) {
+        if ($items === []) {
             return [$not ? '1 = 1' : '1 = 0', []];
         }
 
@@ -364,9 +367,10 @@ trait BuildsWhereClauses
         $conditions = [];
         $bindings = [];
 
-        foreach ($values as $item) {
+        foreach ($items as $item) {
             $conditions[] = "EXISTS (SELECT 1 FROM json_each({$source}) AS je WHERE CAST(je.value AS TEXT) = ?)";
-            $bindings[] = (string) $item;
+            // 标量按文本比对；非标量（嵌套数组/对象）比对 JSON 文本，避免 (string) array
+            $bindings[] = is_scalar($item) || $item === null ? (string) $item : json_encode($item);
         }
 
         return [$prefix . '(' . implode(' AND ', $conditions) . ')', $bindings];

@@ -75,6 +75,11 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     protected static array $bootedModels = [];
 
     /**
+     * 正在引导中的模型类（boot 期间禁止嵌套实例化）
+     */
+    protected static string $bootingClass = '';
+
+    /**
      * 多态映射（per-class 存储）
      */
     protected static array $morphMap = [];
@@ -99,9 +104,15 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
 
         static::$bootedModels[$class] = true;
 
-        // 读取类级 PHP 属性配置（#[Table]/#[Fillable]/…），并调用 trait 的 boot 方法
-        static::applyAttributeConfig();
-        static::bootTraits();
+        static::$bootingClass = $class;
+
+        try {
+            // 读取类级 PHP 属性配置（#[Table]/#[Fillable]/…），并调用 trait 的 boot 方法
+            static::applyAttributeConfig();
+            static::bootTraits();
+        } finally {
+            static::$bootingClass = '';
+        }
     }
 
     /**
@@ -689,7 +700,7 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
     /**
      * 创建新记录
      */
-    public static function create(array $attributes): self
+    public static function create(array $attributes = []): self
     {
         $model = new static($attributes);
 
@@ -735,6 +746,11 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function __construct(array $attributes = [])
     {
+        // boot/bootTrait 内嵌套实例化同一模型类视为编程错误（对齐 Laravel 13 语义）
+        if (static::$bootingClass === static::class) {
+            throw new \LogicException('Cannot instantiate [' . static::class . '] while it is still booting.');
+        }
+
         // PHP 属性配置在 boot 时解析，直接 new 的路径也要确保已引导
         static::boot();
 

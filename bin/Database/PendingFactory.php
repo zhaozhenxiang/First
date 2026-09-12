@@ -313,7 +313,9 @@ class PendingFactory
             }
         }
 
-        return $table;
+        throw new \InvalidArgumentException(
+            "Cannot guess a relationship for [" . $childClass . "] on [" . $parent::class . "]; tried [{$snakePlural}, {$table}]. Pass the relationship name explicitly."
+        );
     }
 
     public function getModelClass(): string

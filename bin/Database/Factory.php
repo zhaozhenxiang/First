@@ -56,15 +56,7 @@ class Factory
      */
     public static function make(string $model, array $attributes = [], array $states = []): Model
     {
-        if (!isset(static::$definitions[$model])) {
-            throw new \InvalidArgumentException("No factory defined for [{$model}]");
-        }
-
-        $definition = (static::$definitions[$model])();
-
-        if (!is_array($definition)) {
-            throw new \InvalidArgumentException("Factory definition for [{$model}] must return an array");
-        }
+        $definition = static::resolveDefinition($model);
 
         // Apply states
         foreach ($states as $state) {
