@@ -240,6 +240,75 @@ class QueryBuilder
     }
 
     /**
+     * 追加查询列
+     */
+    public function addSelect(array|string $column): self
+    {
+        $columns = is_array($column) ? $column : [$column];
+
+        // 从 * 出发追加时先展开为显式列
+        if ($this->columns === ['*']) {
+            $this->columns = [];
+        }
+
+        $this->columns = array_merge($this->columns, $columns);
+
+        return $this;
+    }
+
+    /**
+     * 子查询作为查询列：(SELECT ...) AS `alias`
+     *
+     * SELECT 占位符先于 JOIN/WHERE 出现，绑定进入 select 桶（绑定序列最前）。
+     */
+    public function selectSub(self|\Closure $query, string $as): self
+    {
+        if ($query instanceof \Closure) {
+            $query($query = $this->forNestedWhere());
+            $query = $this->normalizeSubSelectColumns($query);
+        }
+
+        $this->addSelect('(' . $query->toSql() . ') as ' . $this->wrap($as));
+
+        foreach ($query->getBindings() as $binding) {
+            $this->addBinding($binding, 'select');
+        }
+
+        return $this;
+    }
+
+    /**
+     * 子查询列归一化：闭包中 selectRaw 会在默认 * 后追加（SELECT *, SUM(...)），
+     * 子查询场景下去掉首位的 *，只保留显式列
+     */
+    protected function normalizeSubSelectColumns(self $query): self
+    {
+        if (count($query->columns) > 1 && ($query->columns[0] ?? null) === '*') {
+            $query->columns = array_slice($query->columns, 1);
+        }
+
+        return $query;
+    }
+
+    /**
+     * 子查询作为表：(SELECT ...) AS `alias`
+     */
+    public function fromSub(self|\Closure $query, string $as): self
+    {
+        if ($query instanceof \Closure) {
+            $query($query = $this->forNestedWhere());
+        }
+
+        $this->from = '(' . $query->toSql() . ') as ' . $this->wrap($as);
+
+        foreach ($query->getBindings() as $binding) {
+            $this->addBinding($binding, 'from');
+        }
+
+        return $this;
+    }
+
+    /**
      * 添加 DISTINCT
      */
     public function distinct(): self
@@ -254,6 +323,7 @@ class QueryBuilder
     public function selectRaw(string $expression): self
     {
         $this->columns[] = $expression;
+
         return $this;
     }
 
@@ -331,8 +401,23 @@ class QueryBuilder
     /**
      * ORDER BY
      */
-    public function orderBy(string $column, string $direction = 'asc'): self
+    public function orderBy(string|self|\Closure $column, string $direction = 'asc'): self
     {
+        if ($column instanceof self || $column instanceof \Closure) {
+            if ($column instanceof \Closure) {
+                $column($column = $this->forNestedWhere());
+                $column = $this->normalizeSubSelectColumns($column);
+            }
+
+            $this->orders[] = ['type' => 'Sub', 'query' => $column, 'direction' => strtolower($direction) === 'desc' ? 'desc' : 'asc'];
+
+            foreach ($column->getBindings() as $binding) {
+                $this->addBinding($binding, 'order');
+            }
+
+            return $this;
+        }
+
         $direction = strtolower($direction);
 
         if (!in_array($direction, ['asc', 'desc'], true)) {
@@ -1214,11 +1299,13 @@ class QueryBuilder
     }
 
     /**
-     * 获取绑定参数（顺序与占位符在 SQL 中出现的顺序一致：join → where → having → order → union）
+     * 获取绑定参数（顺序与占位符在 SQL 中出现的顺序一致：select → from → join → where → having → order → union）
      */
     public function getBindings(): array
     {
         return array_merge(
+            $this->bindings['select'] ?? [],
+            $this->bindings['from'] ?? [],
             $this->bindings['join'] ?? [],
             $this->bindings['where'] ?? [],
             $this->bindings['having'] ?? [],

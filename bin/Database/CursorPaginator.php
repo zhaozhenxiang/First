@@ -37,6 +37,11 @@ class CursorPaginator implements ArrayAccess, Countable, IteratorAggregate, Json
     protected ?string $nextCursor;
 
     /**
+     * 上一页游标（双向导航时由构造选项传入）
+     */
+    protected ?string $previousCursor = null;
+
+    /**
      * URL 路径
      */
     protected string $path = '/';
@@ -77,6 +82,10 @@ class CursorPaginator implements ArrayAccess, Countable, IteratorAggregate, Json
 
         if (isset($options['cursorName'])) {
             $this->cursorName = $options['cursorName'];
+        }
+
+        if (isset($options['previousCursor'])) {
+            $this->previousCursor = $options['previousCursor'];
         }
 
         if (isset($options['query'])) {
@@ -121,6 +130,14 @@ class CursorPaginator implements ArrayAccess, Countable, IteratorAggregate, Json
     }
 
     /**
+     * 获取上一页游标
+     */
+    public function previousCursor(): ?string
+    {
+        return $this->previousCursor;
+    }
+
+    /**
      * 是否有更多页
      */
     public function hasMorePages(): bool
@@ -133,8 +150,11 @@ class CursorPaginator implements ArrayAccess, Countable, IteratorAggregate, Json
      */
     public function previousPageUrl(): ?string
     {
-        // 游标分页不支持向后导航
-        return null;
+        if ($this->previousCursor === null) {
+            return null;
+        }
+
+        return $this->buildUrl($this->previousCursor);
     }
 
     /**
@@ -294,7 +314,7 @@ HTML;
             'per_page' => $this->perPage,
             'next_cursor' => $this->nextCursor,
             'next_page_url' => $this->nextPageUrl(),
-            'prev_cursor' => $this->cursor,
+            'prev_cursor' => $this->previousCursor,
             'prev_page_url' => $this->previousPageUrl(),
         ];
     }

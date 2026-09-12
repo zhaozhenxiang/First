@@ -268,6 +268,8 @@ trait CompilesQueries
         foreach ($this->orders as $order) {
             if (isset($order['type']) && $order['type'] === 'Raw') {
                 $orders[] = $order['sql'];
+            } elseif (isset($order['type']) && $order['type'] === 'Sub') {
+                $orders[] = '(' . $order['query']->toSql() . ') ' . ($order['direction'] ?? 'asc');
             } else {
                 $orders[] = $this->wrap($order['column']) . ' ' . $order['direction'];
             }

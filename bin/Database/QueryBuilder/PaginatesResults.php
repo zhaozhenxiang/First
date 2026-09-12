@@ -95,25 +95,33 @@ trait PaginatesResults
     /**
      * 光标分页
      *
-     * @param int $perPage 每页数量
-     * @param array $columns 查询列
-     * @param string $cursorName 游标参数名
-     * @param string|null $cursor 游标值
-     * @return CursorPaginator
+     * 支持任意排序列与方向（取查询的第一个 orderBy，缺省按 id 升序），
+     * 游标携带排序列值与方向标记，next/prev 双向导航。
      */
     public function cursorPaginate(int $perPage = 15, array $columns = ['*'], string $cursorName = 'cursor', ?string $cursor = null): CursorPaginator
     {
-        // 克隆查询构建器，避免修改原实例
         $query = $this->clone();
         $query->columns = $columns;
 
-        // 如果有游标，添加 WHERE 条件
+        [$orderColumn, $ascendingOrder] = $this->resolveCursorOrder($query);
+
+        $direction = 'next';
+
         if ($cursor !== null) {
             $decoded = json_decode(base64_decode($cursor), true);
-            if (!is_array($decoded) || !isset($decoded['id'])) {
+
+            if (!is_array($decoded) || !array_key_exists($orderColumn, $decoded)) {
                 throw new InvalidArgumentException('Invalid cursor token: unable to decode.');
             }
-            $query->where('id', '>', $decoded['id']);
+
+            $direction = $decoded['__direction'] ?? 'next';
+            $cursorValue = $decoded[$orderColumn];
+
+            // prev 方向反转比较与排序，取回后反转结果恢复正序
+            $ascending = $direction === 'prev' ? !$ascendingOrder : $ascendingOrder;
+
+            $query->where($orderColumn, $ascending ? '>' : '<', $cursorValue);
+            $query->resetOrders()->orderBy($orderColumn, $ascending ? 'asc' : 'desc');
         }
 
         // 多取一条判断是否有下一页
@@ -125,15 +133,32 @@ trait PaginatesResults
             $results = $results->pop();
         }
 
-        // 生成下一个游标
-        $nextCursor = null;
-        if ($hasMore && !$results->isEmpty()) {
-            $lastItem = $results->last();
-            $id = $lastItem instanceof Model ? $lastItem->id : ($lastItem['id'] ?? null);
-            if ($id !== null) {
-                $nextCursor = base64_encode(json_encode(['id' => $id]));
-            }
+        if ($direction === 'prev') {
+            $results = $results->reverse();
         }
+
+        $makeCursor = function ($item, string $dir) use ($orderColumn): ?string {
+            $value = $item instanceof Model ? $item->getAttribute($orderColumn) : ($item[$orderColumn] ?? null);
+
+            if ($value === null) {
+                return null;
+            }
+
+            return base64_encode(json_encode([$orderColumn => $value, '__direction' => $dir]));
+        };
+
+        $firstItem = $results->isEmpty() ? null : $results->first();
+        $lastItem = $results->isEmpty() ? null : $results->last();
+
+        // next 游标：当前页最后一行（向后推进；prev 请求回正序后仍可继续向后）
+        $nextCursor = ($hasMore || $direction === 'prev') && $lastItem !== null
+            ? $makeCursor($lastItem, 'next')
+            : null;
+
+        // prev 游标：当前页第一行（向前推进；首页无更早数据）
+        $previousCursor = $cursor !== null && $firstItem !== null
+            ? $makeCursor($firstItem, 'prev')
+            : null;
 
         return new CursorPaginator(
             $results->toArray(),
@@ -144,8 +169,25 @@ trait PaginatesResults
                 'path' => $this->resolvePath(),
                 'cursorName' => $cursorName,
                 'query' => $this->resolveQuery(),
+                'previousCursor' => $previousCursor,
             ]
         );
+    }
+
+    /**
+     * 解析游标分页的排序列与方向（第一个 orderBy，缺省 id asc）
+     *
+     * @return array{0: string, 1: bool} [列名, 是否升序]
+     */
+    protected function resolveCursorOrder(self $query): array
+    {
+        foreach ($query->orders as $order) {
+            if (!isset($order['type'])) {
+                return [$order['column'], strtolower($order['direction'] ?? 'asc') === 'asc'];
+            }
+        }
+
+        return ['id', true];
     }
 
     /**

@@ -342,7 +342,12 @@ class PaginationTest extends TestCase
         $this->assertEquals($items, $array['data']);
         $this->assertEquals(10, $array['per_page']);
         $this->assertEquals('cur2', $array['next_cursor']);
-        $this->assertEquals('cur1', $array['prev_cursor']);
+        // 阶段12 起 prev_cursor 为真实的上一页游标（原为当前游标的错误语义）
+        $this->assertNull($array['prev_cursor']);
+
+        $withPrev = new CursorPaginator($items, 10, 'cur1', 'cur2', ['path' => '/items', 'previousCursor' => 'cur0']);
+        $this->assertEquals('cur0', $withPrev->toArray()['prev_cursor']);
+        $this->assertEquals('/items?cursor=cur0', $withPrev->previousPageUrl());
     }
 
     // =========================================================================
