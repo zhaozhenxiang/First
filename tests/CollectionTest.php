@@ -215,6 +215,20 @@ class CollectionTest extends TestCase
         $this->assertEquals('Bob', $sorted[1]['name']);
     }
 
+    public function testSortByDesc(): void
+    {
+        $users = [
+            ['name' => 'Alice', 'age' => 25],
+            ['name' => 'Charlie', 'age' => 30],
+            ['name' => 'Bob', 'age' => 28],
+        ];
+        $collection = Collection::make($users);
+        $sorted = $collection->sortByDesc('age');
+        $this->assertEquals('Charlie', $sorted[0]['name']);
+        $this->assertEquals('Bob', $sorted[1]['name']);
+        $this->assertEquals('Alice', $sorted[2]['name']);
+    }
+
     public function testWhere(): void
     {
         $users = [

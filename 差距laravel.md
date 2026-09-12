@@ -1,6 +1,6 @@
 # First 框架 ORM/数据库层 vs Laravel 13 差距分析
 
-> 生成日期：2026-09-11（2026-09-12 更新：P0 批次与阶段9 结构性重构已实施，见文末实施记录；取代 2026-04-08 的全框架版，旧版可从 git 历史找回）
+> 生成日期：2026-09-11（2026-09-12 更新：P0 批次与阶段9 结构性重构已实施，见文末实施记录；2026-09-13 复核：对照官方 13.x 升级指南逐条核对 ORM 侧行为变更并补齐 2 项，见第八节；取代 2026-04-08 的全框架版，旧版可从 git 历史找回）
 > 基线：Laravel 13.x（2026-03-17 发布，PHP ≥8.3）
 > 范围：ORM/数据库层——模型、关系、查询构建器、Schema/迁移、Seeder/工厂、分页、集合。
 > 旧版中的非 ORM 章节（路由/验证/Blade/队列等）因严重过时且超出本次范围已移除，待后续按同口径重审。
@@ -42,6 +42,16 @@
 
 **Laravel 13 延续自 12.x 及更早的 Eloquent 基线**（下文对比中反复出现）：`upsert`/`updateOrInsert`/`insertOrIgnore`、`cursor()`/`lazy()`/`lazyById()` 流式迭代、`HasUuids`（UUIDv7）/`HasUlids`、`Prunable`/`MassPrunable` + `model:prune`、`saveQuietly`/`deleteQuietly` 等静默家族、`$dispatchesEvents` 事件类映射、`is()`/`isNot()` 模型比较、`withAttributes` 待定属性、高阶 `orWhere` 作用域、子查询 select/orderBy、JSON 子句（`whereJsonContains` 等）。
 
+**官方升级指南中的 ORM 侧行为变更**（2026-09-13 逐条核对，状态见第八节）：
+
+| 变更 | 影响级 |
+|------|------|
+| `upsert` 校验 `uniqueBy` 非空，空则抛 `InvalidArgumentException`（不再生成无效 SQL） | 中 |
+| MySQL `DELETE ... JOIN` 现在完整编译 `ORDER BY`/`LIMIT`（此前静默忽略） | 低 |
+| 模型 boot 期间禁止嵌套实例化（抛 `LogicException`） | 很低 |
+| 自定义 Pivot 类场景下多态枢轴表名推导改为复数化 | 低 |
+| 集合序列化/反序列化恢复模型的预载关系（队列场景） | 低 |
+
 ---
 
 ## 一、模型层
@@ -81,6 +91,7 @@
 | `withoutTimestamps()` | ❌ | |
 | `model:show` 命令 | ❌ | `bin/Console/Commands/` 无此命令 |
 | trait 引导递归（父类 use 子类生效） | ✅ | `Model.php:104-161` 自写 classUsesRecursive |
+| boot 期间嵌套实例化防护（Laravel 13 新增：抛 LogicException） | ✅ | 2026-09-13 复核补齐：`$bootingClass` 标记 + 构造函数守卫，boot/bootTrait 内 `new static()` 抛异常，boot 结束恢复 |
 
 ---
 
@@ -123,7 +134,8 @@
 | inRandomOrder | ⚠️ | 用 `RAND()`，仅 MySQL |
 | 聚合 count/sum/avg/min/max、exists/doesntExist | ✅ | `QueryBuilder.php:591-661` |
 | insert / insertGetId / update / delete / increment / decrement | ✅ | update/delete 均应用全局作用域 |
-| upsert / updateOrInsert / insertOrIgnore | ✅ | 阶段8：按驱动分方言（MySQL `ON DUPLICATE KEY UPDATE` / SQLite|PG `ON CONFLICT`），模型时间戳自动补齐；`insertUsing` 仍缺 |
+| upsert / updateOrInsert / insertOrIgnore | ✅ | 阶段8：按驱动分方言（MySQL `ON DUPLICATE KEY UPDATE` / SQLite|PG `ON CONFLICT`），模型时间戳自动补齐；`uniqueBy` 非空校验已对齐 Laravel 13（空列集抛 InvalidArgumentException）；`insertUsing` 仍缺 |
+| DELETE ... JOIN 编译（Laravel 13 起含 ORDER BY/LIMIT） | ❌ | delete() 仅编译 `DELETE FROM ... WHERE`，JOIN/ORDER BY/LIMIT 不参与编译 |
 | chunk / chunkById / each / eachById | ✅ | `ChunksResults.php` |
 | cursor() / lazy() / lazyById() 流式迭代 | ✅ | 阶段8：返回 `\Generator`（无 LazyCollection，链式集合操作需先 get） |
 | pluck / value | ⚠️ | `QueryBuilder.php:545,563` 返回原生数组（Laravel 返回 Collection） |
@@ -198,6 +210,7 @@
 | Base/Eloquent 双层拆分 + 模型集合专用 `find()`/`load()` | ✅ | 阶段9：`Bin\Support\Collection`（通用层）+ `Bin\Database\Collection`（模型集合层，含 modelKeys/find/load/loadCount） |
 | LazyCollection | ❌ | |
 | 高阶代理（`$collection->each->save()`） | ❌ | |
+| sortByDesc（sortBy 降序快捷方式） | ✅ | 2026-09-13 复核补齐；`docs/ORM.md` 集合章节示例据此转正 |
 
 ---
 
@@ -208,6 +221,17 @@
 | PHP 属性配置（`#[Table]/#[Fillable]/#[Hidden]/#[Connection]/#[ScopedBy]/#[ObservedBy]` 等） | ✅ | 阶段11：10 个属性类 + Scope 接口，属性式与属性声明共存（`#[Scope]` 方法级属性与 queueable 监听仍缺） |
 | 向量检索（`whereVectorSimilarTo` + pgvector + embeddings 工作流） | ❌ | 无任何 Vector 相关代码 |
 | JSON:API 资源 | ❌ | 无 JSON:API 序列化层 |
+| Laravel AI SDK（Str::toEmbeddings 等） | ❌ | 属 AI 生态，独立于 DB 层 |
+
+### 升级指南 ORM 侧行为变更逐条核对（2026-09-13）
+
+| 变更 | 状态 | 说明 |
+|------|------|------|
+| upsert `uniqueBy` 非空校验（空则抛 InvalidArgumentException） | ✅ | 阶段8 实现时已内置该校验（`buildUpsertStatement`），先于本次核对 |
+| boot 期间禁止嵌套实例化（LogicException） | ✅ | 本次补齐：`Model::$bootingClass` + 构造函数守卫；`resetBooted()` 不受影响 |
+| MySQL `DELETE ... JOIN` 编译 ORDER BY/LIMIT | ❌ | delete() 不编译 JOIN/ORDER BY/LIMIT，列 P2 |
+| 多态枢轴表名推导复数化 | 不适用 | 本框架按关系名加 `s` 推导（`taggable`→`taggables`），无"自定义 Pivot 类反推表名"路径，天然符合复数化 |
+| 集合序列化恢复预载关系（队列场景） | 不适用 | 本框架无队列对象序列化层，模型未实现 `__serialize` 恢复链路 |
 
 ---
 
@@ -280,7 +304,7 @@ P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺�
 
 **剩余差距全部为 P2 长线**：多驱动 grammar（PostgreSQL）、读写分离、向量检索（whereVectorSimilarTo）、LazyCollection、queueable 模型事件监听、方法级 #[Scope] 属性、JSON:API 资源。
 
-**文档漂移提醒**：`docs/ORM.md:452` 提到的 `sortByDesc` 在 `Collection.php` 中并不存在（实际是 `sortBy($key, $descending)`），补齐或修文档二选一。
+**文档漂移跟进**：`docs/ORM.md` 集合章节的 `sortByDesc('age')` 示例原本无对应实现（实际只有 `sortBy($key, $descending)`），2026-09-13 已补齐 `sortByDesc()`，文档转正。
 
 ---
 
@@ -317,6 +341,7 @@ P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺�
 | 4 | queueable 模型事件监听 / 模型事件广播 | 中 | 依赖队列生态成熟度 |
 | 5 | JSON:API 资源 | 中 | 属资源序列化层，可独立于 DB 层立项 |
 | 6 | Scope 接口类全局作用域 / withoutGlobalScopesExcept / model:show | 小 | 零散收尾 |
+| 8 | DELETE ... JOIN 编译（对齐 Laravel 13：含 ORDER BY/LIMIT） | 小 | delete() 目前仅编译 FROM+WHERE；MySQL 方言优先 |
 | 7 | Carbon 引入与否 | — | 设计取舍：维持零依赖则维持现状，文档明确即可 |
 
 ---

@@ -45,12 +45,13 @@ class ModelAttributesTest extends TestCase
         AttrDefault::resetBooted();
         AttrScoped::resetBooted();
         AttrMixed::resetBooted();
+        BootNestedModel::resetBooted();
         Model::setConnection($this->pdo);
     }
 
     protected function tearDown(): void
     {
-        foreach ([AttrMember::class, AttrDefault::class, AttrScoped::class, AttrMixed::class] as $class) {
+        foreach ([AttrMember::class, AttrDefault::class, AttrScoped::class, AttrMixed::class, BootNestedModel::class] as $class) {
             $class::flushEventListeners();
             $class::resetBooted();
         }
@@ -164,6 +165,18 @@ class ModelAttributesTest extends TestCase
         $this->assertInstanceOf(AttrScoped::class, $post);
         $this->assertSame(1, AttrScoped::query()->count());
     }
+
+    public function testNestedInstantiationDuringBootThrows(): void
+    {
+        BootNestedModel::resetBooted();
+
+        // 首次实例化触发 boot，trait boot 钩子在 boot 期间尝试 new static
+        $model = new BootNestedModel();
+
+        $this->assertInstanceOf(\LogicException::class, BootNestedModel::$nestedResult);
+        // boot 完成后实例化恢复正常
+        $this->assertInstanceOf(BootNestedModel::class, $model);
+    }
 }
 
 class AttrObserver extends \Bin\Database\Observer
@@ -240,4 +253,25 @@ class AttrConnected extends Model
     protected string $table = 'attr_conn';
 
     protected array $fillable = ['name'];
+}
+
+trait BootNestedTrigger
+{
+    public static mixed $nestedResult = null;
+
+    protected static function bootBootNestedTrigger(): void
+    {
+        try {
+            static::$nestedResult = new static();
+        } catch (\Throwable $e) {
+            static::$nestedResult = $e;
+        }
+    }
+}
+
+class BootNestedModel extends Model
+{
+    use BootNestedTrigger;
+
+    protected string $table = 'attr_defaults';
 }

@@ -877,6 +877,19 @@ $user = User::factory()->has(Post::factory()->count(2))->create();  // 子模型
 
 已知边界：SQLite/PG 的 JSON 包含为"数组包含全部给定值"语义、对象包含不支持（MySQL 原生支持）；`model:prune` 无调度器绑定，需手动或程序化调用。
 
+## Laravel 13 升级指南复核（2026-09-13）
+
+对照官方 13.x 升级指南逐条核对 ORM 侧行为变更：
+
+| Laravel 13 变更 | 本框架状态 |
+|------|------|
+| upsert 校验 `uniqueBy` 非空（空则抛 InvalidArgumentException） | ✅ 阶段8 实现时已内置（`buildUpsertStatement` 开头校验） |
+| boot 期间禁止嵌套实例化模型（抛 LogicException） | ✅ 本次补齐：boot/bootTrait 钩子内 `new static()` 抛 LogicException，boot 结束后恢复 |
+| 集合排序 `sortByDesc()` | ✅ 本次补齐（`sortBy($key, true)` 快捷方式） |
+| MySQL `DELETE ... JOIN` 编译 ORDER BY/LIMIT | ❌ 未做：本框架 delete() 仅编译 `DELETE FROM ... WHERE`，JOIN/ORDER BY/LIMIT 不参与编译（列 P2） |
+| 多态枢轴表名推导复数化（自定义 Pivot 类场景） | 不适用：本框架按关系名加 `s` 推导（`taggable` → `taggables`），已符合复数化约定 |
+| 集合序列化恢复预载关系（队列场景） | 不适用：本框架无队列对象序列化层，模型未实现 `__serialize` 恢复链路 |
+
 ## 完整示例
 
 ```php

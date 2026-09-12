@@ -310,6 +310,14 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     }
 
     /**
+     * SortByDesc 按 key 降序排序
+     */
+    public function sortByDesc(string|callable $key): self
+    {
+        return $this->sortBy($key, true);
+    }
+
+    /**
      * Reverse 反转
      */
     public function reverse(): self
