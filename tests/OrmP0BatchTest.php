@@ -270,24 +270,43 @@ class OrmP0BatchTest extends TestCase
     public function testSaveQuietlySkipsModelEvents(): void
     {
         $fired = 0;
-        P0User::creating(fn (P0User $user) => $fired++);
-        P0User::saved(fn (P0User $user) => $fired++);
+        P0User::creating(function (P0User $user) use (&$fired): void {
+            $fired++;
+        });
+        P0User::saved(function (P0User $user) use (&$fired): void {
+            $fired++;
+        });
+
+        // 对照：普通保存触发事件（防止计数器按值捕获导致的假阳性）
+        $control = new P0User(['name' => 'c', 'email' => 'c@x.com']);
+        $control->save();
+        $this->assertSame(2, $fired);
+        $fired = 0;
 
         $user = new P0User(['name' => 'q', 'email' => 'q@x.com']);
         $this->assertTrue($user->saveQuietly());
 
         $this->assertSame(0, $fired);
         $this->assertTrue($user->exists);
-        $this->assertSame(1, P0User::count());
+        $this->assertSame(2, P0User::count());
     }
 
     public function testDeleteQuietlySkipsModelEvents(): void
     {
         $fired = 0;
-        P0User::deleted(fn (P0User $user) => $fired++);
+        P0User::deleted(function (P0User $user) use (&$fired): void {
+            $fired++;
+        });
+
+        // 对照：普通删除触发事件
+        $control = P0User::create(['name' => 'c', 'email' => 'c@x.com']);
+        $fired = 0;
+        $control->delete();
+        $this->assertSame(1, $fired);
+        $fired = 0;
 
         $user = P0User::create(['name' => 'd', 'email' => 'd@x.com']);
-        $fired = 0; // create 事件不计入
+        $fired = 0;
 
         $this->assertTrue($user->deleteQuietly());
         $this->assertSame(0, $fired);
@@ -297,20 +316,35 @@ class OrmP0BatchTest extends TestCase
     public function testRestoreAndForceDeleteQuietlyOnSoftDeletes(): void
     {
         $fired = 0;
-        P0SoftPost::restoring(fn (P0SoftPost $post) => $fired++);
-        P0SoftPost::restored(fn (P0SoftPost $post) => $fired++);
-        P0SoftPost::deleted(fn (P0SoftPost $post) => $fired++);
+        P0SoftPost::restoring(function (P0SoftPost $post) use (&$fired): void {
+            $fired++;
+        });
+        P0SoftPost::restored(function (P0SoftPost $post) use (&$fired): void {
+            $fired++;
+        });
+        P0SoftPost::deleted(function (P0SoftPost $post) use (&$fired): void {
+            $fired++;
+        });
 
         $post = P0SoftPost::create(['title' => 't']);
-        $post->delete();
         $fired = 0;
 
+        // 对照：普通软删/恢复触发事件
+        $post->delete();
+        $this->assertSame(1, $fired);
+        $post->restore();
+        $this->assertSame(3, $fired);
+        $fired = 0;
+
+        // 未软删时 restore（含静默版）返回 false
+        $this->assertFalse($post->restoreQuietly());
+        $this->assertSame(0, $fired);
+
+        $post->deleteQuietly();
+        $this->assertSame(0, $fired);
         $this->assertTrue($post->restoreQuietly());
         $this->assertSame(0, $fired);
         $this->assertFalse($post->trashed());
-
-        $post->delete();
-        $fired = 0;
 
         $this->assertTrue($post->forceDeleteQuietly());
         $this->assertSame(0, $fired);
@@ -338,8 +372,19 @@ class OrmP0BatchTest extends TestCase
             }
         );
 
+        // 对照：无映射子类的默认 saved 监听正常触发
+        $plainFired = 0;
+        P0UserPlain::saved(function (P0UserPlain $user) use (&$plainFired): void {
+            $plainFired++;
+        });
+        P0UserPlain::create(['name' => 'p', 'email' => 'p@x.com']);
+        $this->assertSame(1, $plainFired);
+
+        // 有映射子类：只发自定义事件，默认监听不触发
         $defaultFired = 0;
-        P0UserWithEvents::saved(fn (P0UserWithEvents $user) => $defaultFired++);
+        P0UserWithEvents::saved(function (P0UserWithEvents $user) use (&$defaultFired): void {
+            $defaultFired++;
+        });
 
         $user = P0UserWithEvents::create(['name' => 'm', 'email' => 'm@x.com']);
 
@@ -573,6 +618,10 @@ class P0User extends Model
 class P0UserWithEvents extends P0User
 {
     protected array $dispatchesEvents = ['saved' => P0UserSavedEvent::class];
+}
+
+class P0UserPlain extends P0User
+{
 }
 
 class P0UserSavedEvent

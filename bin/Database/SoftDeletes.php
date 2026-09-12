@@ -49,6 +49,8 @@ trait SoftDeletes
             $this->isSoftDeleted = true;
             // 触发 deleted 事件
             $this->fireModelEvent('deleted');
+            // 触发 trashed 事件（软删除完成）
+            $this->fireModelEvent('trashed');
         }
 
         return $result;
@@ -56,6 +58,9 @@ trait SoftDeletes
 
     /**
      * 强制删除模型（永久删除）
+     *
+     * 与 Eloquent 语义一致：触发 forceDeleting/forceDeleted 事件，
+     * 不触发 deleting/deleted（那是软删除路径的事件）。
      */
     public function forceDelete(): bool
     {
@@ -63,8 +68,8 @@ trait SoftDeletes
             return false;
         }
 
-        // 触发 deleting 事件
-        if ($this->fireModelEvent('deleting') === false) {
+        // 触发 forceDeleting 事件
+        if ($this->fireModelEvent('forceDeleting') === false) {
             return false;
         }
 
@@ -76,8 +81,8 @@ trait SoftDeletes
 
         if ($result) {
             $this->exists = false;
-            // 触发 deleted 事件
-            $this->fireModelEvent('deleted');
+            // 触发 forceDeleted 事件
+            $this->fireModelEvent('forceDeleted');
         }
 
         return $result;

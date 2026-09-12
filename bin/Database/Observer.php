@@ -19,6 +19,9 @@ namespace Bin\Database;
  * - deleted(Model $model): void
  * - restoring(Model $model): void
  * - restored(Model $model): void
+ * - trashed(Model $model): void（软删除后）
+ * - forceDeleting(Model $model): void
+ * - forceDeleted(Model $model): void
  */
 class Observer
 {
@@ -28,5 +31,6 @@ class Observer
     public const EVENTS = [
         'retrieved', 'creating', 'created', 'updating', 'updated',
         'saving', 'saved', 'deleting', 'deleted', 'restoring', 'restored',
+        'trashed', 'forceDeleting', 'forceDeleted',
     ];
 }

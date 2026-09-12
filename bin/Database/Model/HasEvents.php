@@ -126,13 +126,49 @@ trait HasEvents
     }
 
     /**
+     * 注册强制删除前事件监听器
+     */
+    public static function forceDeleting(callable $callback): void
+    {
+        ModelEventDispatcher::listen(static::class . '@forceDeleting', $callback);
+    }
+
+    /**
+     * 注册强制删除后事件监听器
+     */
+    public static function forceDeleted(callable $callback): void
+    {
+        ModelEventDispatcher::listen(static::class . '@forceDeleted', $callback);
+    }
+
+    /**
+     * 注册复制前事件监听器
+     */
+    public static function replicating(callable $callback): void
+    {
+        ModelEventDispatcher::listen(static::class . '@replicating', $callback);
+    }
+
+    /**
+     * 全部模型事件名（魔术注册与 flush 的统一依据）
+     *
+     * @return list<string>
+     */
+    public static function observableEvents(): array
+    {
+        return [
+            'creating', 'created', 'updating', 'updated', 'saving', 'saved',
+            'deleting', 'deleted', 'restoring', 'restored', 'retrieved',
+            'trashed', 'forceDeleting', 'forceDeleted', 'replicating',
+        ];
+    }
+
+    /**
      * 清除模型的所有事件监听器
      */
     public static function flushEventListeners(): void
     {
-        $events = ['creating', 'created', 'updating', 'updated', 'saving', 'saved', 'deleting', 'deleted', 'restoring', 'restored', 'retrieved'];
-
-        foreach ($events as $event) {
+        foreach (static::observableEvents() as $event) {
             ModelEventDispatcher::forget(static::class . '@' . $event);
         }
     }

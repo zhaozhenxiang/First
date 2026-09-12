@@ -893,6 +893,9 @@ abstract class Model extends BaseModel implements \ArrayAccess, \JsonSerializabl
      */
     public function replicate(?array $except = null): self
     {
+        // 复制前事件
+        $this->fireModelEvent('replicating');
+
         // 直接复制原始属性，绕过 fill 的批量赋值保护——
         // replicate 的语义是"完整克隆数据库行"，guarded 字段不应丢失
         $except = array_merge([$this->getKeyName()], (array) $except);
