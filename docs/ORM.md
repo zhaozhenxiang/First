@@ -710,6 +710,63 @@ $user->roles()->toggle([2, 4]);                         // 有关联则解除，
 
 已知边界：`morphOne`/`morphMany` 关系尚无 `save()`/`create()` 写方法（属 P1 缺口）；`lazy()` 系列返回 `\Generator` 而非 LazyCollection。
 
+## 阶段9：集合分层与多命名连接（2026-09）
+
+### Collection 双层结构
+
+```php
+use Bin\Support\Collection;          // 通用层：纯数组操作，不感知模型
+use Bin\Database\Collection;         // 模型集合层：继承通用层（ORM 查询/关系统一返回本类）
+
+// 模型集合专属方法
+$users = User::all();
+$users->modelKeys();                 // 全部主键
+$users->find(2);                     // 按主键在集合内找模型（可传列名找其他列）
+$users->find('alice', 'name');
+$users->load('posts.comments');      // 为集合内所有模型延迟加载关系
+$users->loadCount('posts');
+
+// 通用层可独立使用（Request::collect() 也返回通用层）
+Collection::make([3, 1, 2])->filter(fn ($v) => $v > 1)->sort();
+```
+
+子类的 `make()/map()/filter()` 等返回子类实例；行为语义与拆分前一致（`pluck/groupBy/keyBy/combine` 仍返回原生数组、`pop` 仍返回集合）。
+
+### 多命名连接
+
+```php
+// config/database.php
+'connections' => [
+    'mysql'  => ['driver' => 'mysql', 'host' => ..., 'dbname' => ...],
+    'sqlite' => ['driver' => 'sqlite', 'database' => ':memory:'],  // 文件路径或内存库
+    'report' => ['driver' => 'pgsql', 'host' => ..., 'database' => ...],
+],
+
+// 在指定连接上查询
+User::on('sqlite')->count();
+Schema::connection('sqlite')->create('users', ...);
+$migrator = new Migrator(connection: 'sqlite');
+
+// 实例级连接名
+$model->setConnectionName('report');
+
+// 容器属性注入命名连接
+function handler(#[Db('report')] PDO $pdo) { ... }
+
+// 连接管理
+ConnectionManager::getConnection('sqlite');   // 按名缓存，缺省名取 database.default
+ConnectionManager::setConnection($pdo, 'analytics');  // 注入命名槽位
+ConnectionManager::purge('analytics');        // 丢弃（下次重连）
+```
+
+要点：
+- 缺省名 = `config('database.default')`；测试注入 `Model::setConnection($pdo)` 写默认槽位，语义不变。
+- DSN 分驱动构建：mysql 沿用 `dbname/user/pass` 键并兼容 Laravel 风格 `database/username/password`；sqlite 用 `database` 路径；pgsql 用 `host/port/database`。
+- 未配置的连接名抛 `PDOException: Database connection [x] is not configured.`。
+- 关系查询跟随**相关模型自身**的连接（与 Eloquent 一致）：`on('sqlite')` 的模型，其关系仍走相关模型默认连接，除非相关模型自身声明了 `$connectionName`。
+- 查询日志的 `connection` 字段现为真实连接名（此前误标为表名）。
+- 读写分离尚未支持（需按语句类型分流的 Connection 抽象层）。
+
 ## 完整示例
 
 ```php
@@ -794,3 +851,11 @@ $user->delete();
 - **修复 morphOne/morphMany 的 whereHas**：此前走通用回退、丢失多态类型条件，同 `morph_id` 异类型行会跨类型泄漏；现带 `morph_type = '...'` 条件。
 - **修复 morphOne/morphMany 的 withCount/withSum**：此前 `getAggregateSubQuery` 误调基类占位实现直接抛 `BadMethodCallException`。
 - **绑定顺序**：查询构建器新增 `join` 绑定桶（子查询 JOIN 的绑定参数），`getBindings()` 顺序为 join → where → having → order → union。仅影响使用了 `joinSub`/`leftJoinSub` 的查询。
+
+### 阶段9（2026-09 结构性重构）变更
+
+- **Collection 拆为双层**：通用层 `Bin\Support\Collection` + 模型集合层 `Bin\Database\Collection`（继承）。ORM 返回类型不变；`Request::collect()` 改返回通用层。新增模型集合方法 `find()/load()/loadCount()`，`modelKeys()` 归入模型集合层。
+- **ConnectionManager 按名缓存**：`getConnection(?string $name = null)` / `setConnection(?PDO, ?string $name = null)` / `purge()`；`reset()` 清全部。默认连接名取 `config('database.default')`（不再固定单槽）。
+- **Model 多连接**：`$connectionName` 生效（此前为死属性）；新增 `Model::on()`/`getConnectionName()`/`setConnectionName()`；`Schema::connection()`、`Migrator(connection:)`、`#[Db('name')]` 命名解析可用。
+- **查询日志连接字段修正**：`QueryLog->connection` 由表名改为真实连接名（默认连接为 `'default'`），依赖该字段的日志分析需注意。
+- **附带修复**：`DatabaseQueue` 构造传入的连接名此前被静默忽略，现生效。

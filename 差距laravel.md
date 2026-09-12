@@ -1,10 +1,10 @@
 # First 框架 ORM/数据库层 vs Laravel 13 差距分析
 
-> 生成日期：2026-09-11（2026-09-12 更新：P0 批次已实施，见文末阶段8 记录；取代 2026-04-08 的全框架版，旧版可从 git 历史找回）
+> 生成日期：2026-09-11（2026-09-12 更新：P0 批次与阶段9 结构性重构已实施，见文末实施记录；取代 2026-04-08 的全框架版，旧版可从 git 历史找回）
 > 基线：Laravel 13.x（2026-03-17 发布，PHP ≥8.3）
 > 范围：ORM/数据库层——模型、关系、查询构建器、Schema/迁移、Seeder/工厂、分页、集合。
 > 旧版中的非 ORM 章节（路由/验证/Blade/队列等）因严重过时且超出本次范围已移除，待后续按同口径重审。
-> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐批次（7852138/3466560/dc85b80），`bin/Database/` 共 57 文件约 1.5 万行。
+> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae），`bin/Database/` + `bin/Support/` 约 60 文件。
 
 ---
 
@@ -14,15 +14,15 @@
     完成度（相对 Laravel 13 对应模块）
     100% ┤
      90% ┤  ████ 分页        (paginate/simplePaginate/cursorPaginate 三种全有)
-     85% ┤  ████ 模型层      (时间戳/casts/访问器/事件/软删/严格模式/复制/静默家族*)
+     85% ┤  ████ 模型层      (时间戳/casts/访问器/事件/软删/严格模式/静默家族/多连接*)
           ████ 关系层       (11 种关系/嵌套 eager 恒 2 条 SQL/has 家族含计数比较/morphMap)
           ████ Schema/迁移  (列类型全家/索引/流式外键链/迁移运行器)
           ████ 查询构建器   (WHERE 全系/JOIN 含子查询/upsert 家族/事务/调试器)
-     70% ┤       ████ 集合   (60+ 方法，未分 Base/Eloquent 两层)
+     75% ┤       ████ 集合   (Base/Eloquent 双层* + 模型集合方法；缺 LazyCollection/高阶代理)
      50% ┤            ████ Seeder/工厂 (静态注册表式，无工厂类 DSL)
       0% ┤                 ████ Laravel 13 专项 (PHP 属性/向量检索/JSON:API 全无)
 
-    * 标注 * 的为 2026-09 阶段8 批次补齐项
+    * 标注 * 的为 2026-09 阶段8/9 批次补齐项
 ```
 
 ---
@@ -77,7 +77,7 @@
 | HasUuids（UUIDv7）/ HasUlids 主键 trait | ❌ | `Model/` 下仅 6 个 trait，无对应实现 |
 | Prunable / MassPrunable + `model:prune` 命令 | ❌ | |
 | 严格模式（preventLazyLoading / preventSilentlyDiscardingAttributes 等） | ✅ | `Model/HasStrictMode.php` |
-| per-model 连接 | ❌ | `$connectionName` 是死属性 `Model.php:38`，全局单静态 PDO（修复计划列为 P2 待办） |
+| per-model 连接 | ✅ | 阶段9：`$connectionName` 接线 + `Model::on()`；读写分离仍缺（P2） |
 | `withoutTimestamps()` | ❌ | |
 | `model:show` 命令 | ❌ | `bin/Console/Commands/` 无此命令 |
 | trait 引导递归（父类 use 子类生效） | ✅ | `Model.php:104-161` 自写 classUsesRecursive |
@@ -134,7 +134,8 @@
 | whereKey / whereKeyNot | ✅ | 阶段8：按模型主键过滤 |
 | whereJsonContains 等 JSON 子句 | ❌ | |
 | 向量子句 whereVectorSimilarTo（Laravel 13 新增） | ❌ | |
-| 多命名连接 / 读写分离 | ❌ | `ConnectionManager` 单静态 PDO，config 仅 mysql 一个连接 |
+| 多命名连接 | ✅ | 阶段9：ConnectionManager 按名缓存 + 分驱动 DSN（mysql/sqlite/pgsql）+ `Model::on()` + `Schema::connection()` + `#[Db('name')]` |
+| 读写分离 | ❌ | 需按语句类型分流的 Connection 抽象层（QueryBuilder 直接收 PDO），列 P2 |
 | 多驱动 grammar（Postgres/SQLServer 方言） | ❌ | 单 grammar；SQLite 内存库可跑查询，但 `SHOW INDEX` 等 introspection 与 EXPLAIN 为 MySQL 专用 |
 | 查询日志/慢查询阈值/失败统计/报告 | ✅ | `Debug/DatabaseDebugger.php`（超出 Laravel 基础配备，亮点） |
 
@@ -194,7 +195,7 @@
 | 功能 | 状态 | 证据 / 说明 |
 |------|------|------|
 | 60+ 方法（make/put/only/except/modelKeys/pluck/groupBy/keyBy/sortBy/chunk/where 系/unique/flatten/merge/diff/…+ ArrayAccess/Countable/IteratorAggregate/JsonSerializable） | ✅ | `modelKeys` 在 `Collection.php:102` |
-| Base/Eloquent 双层拆分 + 模型集合专用 `find()`/`load()` | ❌ | 单一 Collection 类，map 后类型不变 |
+| Base/Eloquent 双层拆分 + 模型集合专用 `find()`/`load()` | ✅ | 阶段9：`Bin\Support\Collection`（通用层）+ `Bin\Database\Collection`（模型集合层，含 modelKeys/find/load/loadCount） |
 | LazyCollection | ❌ | |
 | 高阶代理（`$collection->each->save()`） | ❌ | |
 
@@ -241,6 +242,16 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 
 回归测试：`tests/OrmP0BatchTest.php` 27 例；全量 2221 例通过。
 
+### 阶段9（2026-09-12，结构性重构实施记录）
+
+| 条目 | 说明 |
+|------|------|
+| Collection 拆 Base/Eloquent 双层（继承式零破坏）+ 模型集合 `find()/load()/loadCount()` + `Request::collect()` 改用通用层 | 提交 6a19777（9A） |
+| 多命名连接：ConnectionManager 按名缓存 + mysql/sqlite/pgsql DSN 分支 + `Model::on()`/`$connectionName` 接线 + `Schema::connection()` + `Migrator(connection:)` + `#[Db('name')]` 命名解析 + 查询日志连接字段修正 + 附带修复 DatabaseQueue 传名被忽略 | 提交 0b8b3ae（9B） |
+| 读写分离 | 未做，移至 P2（需 Connection 抽象层按语句类型分流） |
+
+回归测试：`tests/CollectionLayeringTest.php` 6 例 + `tests/NamedConnectionTest.php` 7 例 + `ContextualAttributeTest` 命名解析更新；全量 2235 例通过。
+
 **文档漂移提醒**：`docs/ORM.md:452` 提到的 `sortByDesc` 在 `Collection.php` 中并不存在（实际是 `sortBy($key, $descending)`），补齐或修文档二选一。
 
 ---
@@ -254,12 +265,12 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 | # | 条目 | 工作量 | 说明 |
 |---|------|--------|------|
 | 1 | PHP 属性配置（`#[Table]/#[Fillable]/#[Scope]/#[ScopedBy]/#[ObservedBy]` 等子集） | 中 | Laravel 13 标志性特性；反射已按类缓存，与属性声明共存、非破坏性 |
-| 2 | 多命名连接 + 读写分离 | 中 | `$connectionName`（Model.php:38）接线，ConnectionManager 多实例化 |
+| 2 | ~~多命名连接 + 读写分离~~ | ✅ | 阶段9 完成多命名连接；读写分离移至 P2 |
 | 3 | 流式 `->change()` 列修改 | 中 | 现有 modifyColumn 命令式改链式 |
 | 4 | morphs/nullableMorphs/uuidMorphs/rememberToken/dropFullText/dropSpatialIndex | 极小 | Blueprint 别名/命令 |
 | 5 | HasUuids（UUIDv7）/ HasUlids | 小 | 新 trait + boot 钩子 |
 | 6 | Prunable / MassPrunable + model:prune 命令 | 小-中 | trait + Console 命令 |
-| 7 | Eloquent/Base Collection 分层 + 模型集合 find()/load() | 中 | 736 行拆两层 |
+| 7 | ~~Eloquent/Base Collection 分层 + 模型集合 find()/load()~~ | ✅ | 阶段9 完成 |
 | 8 | 子查询 select / addSelect / orderBy / fromSub | 中 | grammar 子查询编译 |
 | 9 | whereJsonContains 等 JSON 子句 | 小-中 | MySQL `JSON_EXTRACT` 方言先行 |
 | 10 | 软删事件 trashed/forceDeleting/forceDeleted + replicating | 小 | HasEvents 事件表扩列 |
@@ -271,7 +282,8 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 
 | # | 条目 | 工作量 | 说明 |
 |---|------|--------|------|
-| 1 | 多驱动 grammar（PostgreSQL 优先） | 大 | 单一 MySQL 方言是读写分离、向量检索、跨库测试的共同前置 |
+| 1 | 多驱动 grammar（PostgreSQL 优先） | 大 | 单一 MySQL 方言是向量检索、跨库测试的共同前置 |
+| 2 | 读写分离（read/write 连接组 + 按语句类型分流） | 大 | 需引入 Connection 抽象层（QueryBuilder 直接收 PDO 的架构不支持）；阶段9 已完成多命名连接前置 |
 | 2 | 向量检索（whereVectorSimilarTo） | 大 | 依赖 pgvector + P2-1 前置 |
 | 3 | LazyCollection | 中 | 配合 lazy() 使用 |
 | 4 | queueable 模型事件监听 / 模型事件广播 | 中 | 依赖队列生态成熟度 |
@@ -287,7 +299,8 @@ P0 全部 9 项已实施完毕（提交 7852138 / 3466560 / dc85b80），另连�
 |------|----------|------|
 | Eloquent 行为对齐 | `tests/EloquentParityTest.php` | 758 行，45+ 用例（strict 模式/序列化/生命周期/replicate 等） |
 | 阶段8 P0 批次回归 | `tests/OrmP0BatchTest.php` | 27 例：upsert 家族/流式迭代/joinSub/whereKey/静默家族/dispatchesEvents/wasChanged/is/replicate/has 家族/关系 make/sync 系列/3 个连带缺陷 |
+| 阶段9 结构性重构回归 | `tests/CollectionLayeringTest.php` / `tests/NamedConnectionTest.php` | 6 + 7 例：双层拆分继承兼容/模型集合方法/按名缓存/分驱动 DSN/Model::on 隔离/QueryLog 连接名 |
 | 本轮新增回归 | QueryCompilerRegressionTest / GlobalScopeIntegrityTest / RelationDefaultsTest / TraitInheritanceTest / EagerLoadingConsistencyTest / OrmRegressionTest / MigrationSmokeTest | 七阶段修复的回归防线 |
 | 历史存量 | QueryBuilderTest / ModelTest / RelationTest / SoftDeletesTest / PaginatorTest 等 | 旧版记录约 ~200/~100/~45/22 个用例，覆盖面以本轮文档核对为准 |
 
-> 全量测试基线：2221 例通过（2026-09-12，阶段8 完成后）。下一轮补齐建议从 P1 清单选取（P0 已清零），每项同步扩充 EloquentParityTest 或 OrmP0BatchTest。
+> 全量测试基线：2235 例通过（2026-09-12，阶段9 完成后）。P0 已清零、P1 剩余 PHP 属性配置 / `->change()` / 工厂 DSL / cursorPaginate 泛化等 9 项；下一轮建议优先 PHP 属性配置（Laravel 13 标志性）或小件快批（morphs 列族 + HasUuids + 软删事件 + morphOne/morphMany 写方法）。
