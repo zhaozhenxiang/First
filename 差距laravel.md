@@ -4,7 +4,7 @@
 > 基线：Laravel 13.x（2026-03-17 发布，PHP ≥8.3）
 > 范围：ORM/数据库层——模型、关系、查询构建器、Schema/迁移、Seeder/工厂、分页、集合。
 > 旧版中的非 ORM 章节（路由/验证/Blade/队列等）因严重过时且超出本次范围已移除，待后续按同口径重审。
-> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae）+ 阶段10 小件快批（f5c53e8/1b2b277/6cfd434），`bin/Database/` + `bin/Support/` 约 65 文件。
+> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae）+ 阶段10 小件快批（f5c53e8/1b2b277/6cfd434）+ 阶段11-13 对齐深化（842aeb2/886fe95/f6e9a1a），`bin/Database/` + `bin/Support/` 约 70 文件。
 
 ---
 
@@ -58,7 +58,7 @@
 | 访问器/修改器（传统 `getFooAttribute` + 新式 `Attribute` 类，反射按类缓存） | ✅ | `HasAttributes.php:156-275`；注意 `Attribute.php` 是访问器类，与 PHP 8 属性无关 |
 | 批量赋值保护（$fillable/$guarded/forceFill/unguard/unguarded/totallyGuarded） | ✅ | `HasAttributes.php:110-140,279-364` |
 | 本地作用域（`scopeXxx` + `__call`/`__callStatic` 转发，支持动态参数） | ✅ | `Model.php:317-342` |
-| 全局作用域 | ⚠️ | 仅"字符串标识 + 闭包"形态 `Model.php:275`；无 `Scope` 接口类作用域，无 `withoutGlobalScopesExcept`，无 Laravel 13 的 `#[ScopedBy]` |
+| 全局作用域 | ⚠️ | 字符串标识 + 闭包、`Scope` 接口类 + `#[ScopedBy]` 属性（阶段11）；缺 `withoutGlobalScopesExcept` |
 | 模型事件 | ✅ | 15 种全事件（含 trashed/forceDeleting/forceDeleted/replicating，阶段10）+ `$dispatchesEvents` 映射（阶段8）；仅缺 queueable 监听 |
 | 观察者 `observe()` | ✅ | `Model/HasEvents.php:120-131`、`Observer.php` |
 | 软删除全套（delete→UPDATE/forceDelete/restore/trashed/withTrashed/onlyTrashed/查询级 delete 转软删） | ✅ | `bin/Database/SoftDeletes.php` |
@@ -205,7 +205,7 @@
 
 | Laravel 13 特性 | 状态 | 说明 |
 |------|------|------|
-| PHP 属性配置（`#[Table]/#[Fillable]/#[Hidden]/#[Connection]/#[Scope]/#[ScopedBy]/#[ObservedBy]` 等） | ❌ | `bin/Database/` 内无任何 PHP 属性用法（已验证）；`Attribute.php` 是访问器/修改器类，不要混淆 |
+| PHP 属性配置（`#[Table]/#[Fillable]/#[Hidden]/#[Connection]/#[ScopedBy]/#[ObservedBy]` 等） | ✅ | 阶段11：10 个属性类 + Scope 接口，属性式与属性声明共存（`#[Scope]` 方法级属性与 queueable 监听仍缺） |
 | 向量检索（`whereVectorSimilarTo` + pgvector + embeddings 工作流） | ❌ | 无任何 Vector 相关代码 |
 | JSON:API 资源 | ❌ | 无 JSON:API 序列化层 |
 
@@ -266,6 +266,20 @@ P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺�
 
 回归测试：`tests/SchemaP1BatchTest.php` 11 例 + `tests/OrmTraitsAndEventsTest.php` 10 例 + OrmP0BatchTest 扩至 29 例；全量 2258 例通过。
 
+### 阶段11-13（2026-09-12，P1 收尾实施记录）
+
+**P1 全部 13 项完成。**
+
+| 条目 | 说明 |
+|------|------|
+| PHP 属性配置：Table/Fillable/Guarded/Hidden/Visible/Appends/Casts/Connection/ScopedBy/ObservedBy 十个类级属性 + Scope 接口；boot 时反射解析按类缓存；构造函数补 boot（直接 new 也引导） | 提交 842aeb2（阶段11） |
+| 子查询：selectSub/fromSub（select/from 绑定桶前置）、addSelect、orderBy(闭包/子查询)；子查询列归一化；cursorPaginate 泛化（任意排序列/方向 + next/prev 双向游标，游标 payload 格式变更） | 886fe95（阶段12） |
+| 工厂 DSL：Model::factory() PendingFactory 代理（count/state/sequence/for/has）+ Database\Factories\{X}Factory 约定类解析；边界修复 strrchr(false) | f6e9a1a（阶段13） |
+
+回归测试：`tests/ModelAttributesTest.php` 9 例 + `tests/SubQueryAndCursorTest.php` 8 例 + `tests/FactoryDslTest.php` 9 例；全量 2284 例通过。
+
+**剩余差距全部为 P2 长线**：多驱动 grammar（PostgreSQL）、读写分离、向量检索（whereVectorSimilarTo）、LazyCollection、queueable 模型事件监听、方法级 #[Scope] 属性、JSON:API 资源。
+
 **文档漂移提醒**：`docs/ORM.md:452` 提到的 `sortByDesc` 在 `Collection.php` 中并不存在（实际是 `sortBy($key, $descending)`），补齐或修文档二选一。
 
 ---
@@ -278,18 +292,18 @@ P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺�
 
 | # | 条目 | 工作量 | 说明 |
 |---|------|--------|------|
-| 1 | PHP 属性配置（`#[Table]/#[Fillable]/#[Scope]/#[ScopedBy]/#[ObservedBy]` 等子集） | 中 | Laravel 13 标志性特性；反射已按类缓存，与属性声明共存、非破坏性 |
+| 1 | ~~PHP 属性配置~~ | ✅ | 阶段11 完成（方法级 #[Scope] 属性未做） |
 | 2 | ~~多命名连接 + 读写分离~~ | ✅ | 阶段9 完成多命名连接；读写分离移至 P2 |
 | 3 | ~~流式 `->change()` 列修改~~ | ✅ | 阶段10 完成（含 modifyColumn 死代码修复） |
 | 4 | ~~morphs 列族 / rememberToken / dropFullText / dropSpatialIndex~~ | ✅ | 阶段10 完成 |
 | 5 | ~~HasUuids（UUIDv7）/ HasUlids~~ | ✅ | 阶段10 完成 |
 | 6 | ~~Prunable / MassPrunable + model:prune 命令~~ | ✅ | 阶段10 完成 |
 | 7 | ~~Eloquent/Base Collection 分层 + 模型集合 find()/load()~~ | ✅ | 阶段9 完成 |
-| 8 | 子查询 select / addSelect / orderBy / fromSub | 中 | grammar 子查询编译 |
+| 8 | ~~子查询 selectSub/addSelect/orderBy/fromSub~~ | ✅ | 阶段12 完成 |
 | 9 | ~~whereJsonContains 家族~~ | ✅ | 阶段10 完成 |
 | 10 | ~~软删事件 + replicating~~ | ✅ | 阶段10 完成（forceDelete 事件语义对齐 Eloquent，行为变更） |
-| 11 | 工厂类 DSL（`User::factory()->has()/for()/sequence()`） | 中-大 | Factory.php 重构为 per-model 工厂类 |
-| 12 | cursorPaginate 泛化（任意排序列/方向/双向游标） | 中 | PaginatesResults.php:104-149 |
+| 11 | ~~工厂类 DSL~~ | ✅ | 阶段13 完成（PendingFactory 代理 + 约定工厂类） |
+| 12 | ~~cursorPaginate 泛化~~ | ✅ | 阶段12 完成（游标格式变更见 ORM.md） |
 | 13 | ~~morphOne/morphMany 的 save()/create() 写方法~~ | ✅ | 阶段10 完成 |
 
 ### P2 — 生态/长线
@@ -315,7 +329,8 @@ P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺�
 | 阶段8 P0 批次回归 | `tests/OrmP0BatchTest.php` | 27 例：upsert 家族/流式迭代/joinSub/whereKey/静默家族/dispatchesEvents/wasChanged/is/replicate/has 家族/关系 make/sync 系列/3 个连带缺陷 |
 | 阶段9 结构性重构回归 | `tests/CollectionLayeringTest.php` / `tests/NamedConnectionTest.php` | 6 + 7 例：双层拆分继承兼容/模型集合方法/按名缓存/分驱动 DSN/Model::on 隔离/QueryLog 连接名 |
 | 阶段10 小件快批回归 | `tests/SchemaP1BatchTest.php` / `tests/OrmTraitsAndEventsTest.php` | 11 + 10 例：fullText/spatialIndex/change 编译、morphs 列族、UUID/ULID、model:prune、软删复制事件、morph 写方法、JSON 子句 |
+| 阶段11-13 回归 | `tests/ModelAttributesTest.php` / `tests/SubQueryAndCursorTest.php` / `tests/FactoryDslTest.php` | 9 + 8 + 9 例：属性配置/优先级/ScopedBy、子查询绑定顺序/双向游标/降序、工厂 DSL/for-has/sequence/约定解析 |
 | 本轮新增回归 | QueryCompilerRegressionTest / GlobalScopeIntegrityTest / RelationDefaultsTest / TraitInheritanceTest / EagerLoadingConsistencyTest / OrmRegressionTest / MigrationSmokeTest | 七阶段修复的回归防线 |
 | 历史存量 | QueryBuilderTest / ModelTest / RelationTest / SoftDeletesTest / PaginatorTest 等 | 旧版记录约 ~200/~100/~45/22 个用例，覆盖面以本轮文档核对为准 |
 
-> 全量测试基线：2258 例通过（2026-09-12，阶段10 完成后）。P1 仅剩 4 项：#1 PHP 属性配置（Laravel 13 标志性，建议阶段11）、#8 子查询 select/from/orderBy、#11 工厂类 DSL、#12 cursorPaginate 泛化；其后为 P2 长线（多驱动 grammar / 读写分离 / 向量检索 / LazyCollection）。
+> 全量测试基线：2284 例通过（2026-09-12，阶段13 完成后）。**P0/P1 全部清零**，剩余差距为 P2 长线（多驱动 grammar / 读写分离 / 向量检索 / LazyCollection / queueable 事件 / 方法级 #[Scope] / JSON:API 资源）。

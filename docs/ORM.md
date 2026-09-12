@@ -826,6 +826,55 @@ User::query()->whereJsonContains('options->roles', ['a', 'b'])->get();  // col->
 User::query()->whereJsonDoesntContain('tags', 'banned')->get();
 ```
 
+## 阶段11-13：PHP 属性配置、子查询与工厂 DSL（2026-09）
+
+### PHP 属性配置（对齐 Laravel 13 属性化方向）
+
+```php
+use Bin\Database\Attributes\*;
+
+#[Table('members', key: 'member_id', keyType: 'string', incrementing: false, timestamps: false)]
+#[Fillable(['name', 'payload'])]
+#[Guarded(['secret'])]
+#[Hidden(['secret'])]
+#[Casts(['payload' => 'array'])]
+#[ScopedBy([ActiveScope::class])]      // 全局作用域（Scope 接口实现）
+#[ObservedBy([MemberObserver::class])] // 观察者自动注册
+#[Connection('report')]                 // 默认命名连接
+class Member extends Model { ... }
+```
+
+- 属性式声明与传统属性声明**共存**：集合类配置（fillable/guarded/hidden/visible/appends/casts）追加合并，标量配置（primaryKey/keyType/incrementing/timestamps/connection）覆写默认值；属性式优先。
+- boot 时按类解析 ReflectionClass 属性并缓存；`php artisan make:model` 之外直接 `new` 也会引导。
+
+### 子查询
+
+```php
+User::query()->selectSub(fn ($q) => $q->from('posts')->selectRaw('COUNT(*)')->whereColumn('posts.user_id', 'users.id'), 'posts_count')->get();
+User::query()->orderBy(fn ($q) => $q->from('posts')->selectRaw('MAX(created_at)')->whereColumn(...), 'desc')->get();
+(new QueryBuilder($pdo))->fromSub(fn ($q) => $q->from('logs')->where('level', 'error'), 'errors')->select('errors.*')->get();
+```
+
+子查询闭包内 `selectRaw` 的聚合列自动归一化（不会残留 `*`）。
+
+### 工厂类 DSL
+
+```php
+// database/factories/PostFactory.php
+class PostFactory
+{
+    public function definition(): array { return ['title' => 'untitled', 'status' => 'draft']; }
+    public function states(): array { return ['published' => fn () => ['status' => 'published']]; }
+}
+
+// 使用
+$post = Post::factory()->create();                        // 定义解析：Factory::define 闭包 > 约定工厂类
+$posts = Post::factory()->count(3)->state('published')->create();
+$users = User::factory()->sequence(['name' => 'a'], ['name' => 'b'])->make();
+$post = Post::factory()->for($user, 'author')->create();  // BelongsTo 外键接线
+$user = User::factory()->has(Post::factory()->count(2))->create();  // 子模型随父创建
+```
+
 已知边界：SQLite/PG 的 JSON 包含为"数组包含全部给定值"语义、对象包含不支持（MySQL 原生支持）；`model:prune` 无调度器绑定，需手动或程序化调用。
 
 ## 完整示例
@@ -929,3 +978,10 @@ $user->delete();
 - **dropIndex/dropUnique/dropFullText/dropSpatialIndex** 接受列数组并按命名规则推导索引名。
 - **morphOne/morphMany 具备写方法**（save/saveMany/create/createMany），此前完全没有写入口。
 - **HasUuids/HasUlids**：`getIncrementing()` 强制 false、`getKeyType()` 强制 string。
+
+### 阶段11-13（2026-09）变更
+
+- **PHP 属性配置**：`#[Table]/#[Fillable]/...` 与属性声明共存且优先；`resetBooted()` 会清除属性配置缓存。
+- **selectRaw 语义补充**：子查询出口（selectSub/fromSub/orderBy 闭包）对 `* + 追加` 形态做归一化，主查询行为不变。
+- **cursorPaginate 游标格式变化**：游标 payload 从 `{id: x}` 变为 `{列: x, __direction: 'next'|'prev'}`，旧格式游标（跨版本持久化的 URL）会因缺少排序列被拒绝——无限滚动的长期游标链接在升级后需重新从首页开始。
+- **CursorPaginator::toArray 的 prev_cursor**：由"当前游标"（错误语义）修正为真实的上一页游标。
