@@ -142,7 +142,7 @@
 | distinct / selectRaw / union / unionAll | ✅ | |
 | 悲观锁 lockForUpdate/sharedLock、explain、dump/dd | ✅ | |
 | 事务三件套 + `Schema::transaction(callable)` | ✅ | `Schema/Schema.php:158-174` |
-| 子查询 select / addSelect / orderBy / fromSub | ❌ | |
+| 子查询 selectSub/addSelect/fromSub/orderBy(闭包) | ✅ | 阶段12（select/from 绑定桶前置，子查询列归一化） |
 | whereKey / whereKeyNot | ✅ | 阶段8：按模型主键过滤 |
 | whereJsonContains / whereJsonDoesntContain | ✅ | 阶段10：MySQL JSON_CONTAINS；SQLite/PG json_each 实现 ALL 语义，支持 col->path |
 | 向量子句 whereVectorSimilarTo（Laravel 13 新增） | ❌ | |
@@ -182,7 +182,7 @@
 | Seeder 基类（run/call/create/createMany/factory）+ SeederRepository | ✅ | 命名空间固定 `Database\Seeders` |
 | SeederFactory（state/afterMaking/afterCreating/make/create/createMany/withStates） | ✅ | |
 | 模型工厂（静态注册表式：define/state/create/make/times/flush） | ✅ | `Factory.php` |
-| 工厂类 DSL（`User::factory()->count()->has()->for()->sequence()`、`#[UseModel]`） | ❌ | |
+| 工厂类 DSL | ✅ | 阶段13：PendingFactory（count/state/sequence/for/has）+ 约定工厂类；`#[UseModel]` 属性未做 |
 | make:factory / make:seeder 命令 | ✅ | `bin/Console/Commands/` |
 
 ---
@@ -194,7 +194,7 @@
 | 功能 | 状态 | 证据 / 说明 |
 |------|------|------|
 | paginate（LengthAware，含 total）/ simplePaginate（多取 1 条判 hasMore） | ✅ | `PaginatesResults.php:30-93` |
-| cursorPaginate | ⚠️ | `PaginatesResults.php:104-149`：硬编码 `where('id','>')` `:116`，仅按 id 升序、游标只含 id、仅 next 游标无 previous；Laravel 支持任意排序列/方向/双向游标 |
+| cursorPaginate | ✅ | 阶段12：任意排序列/方向 + next/prev 双向游标；多列复合排序游标仍缺 |
 | Paginator 元信息（url/appends/fragment/firstItem/lastItem/render(window) HTML） | ✅ | `LengthAwarePaginator.php`、`CursorPaginator.php` |
 | 页码解析（setPageResolver 闭包注入，默认回落 `$_GET`） | ✅ | |
 
