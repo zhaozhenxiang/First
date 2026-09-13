@@ -4,7 +4,7 @@
 > 基线：Laravel 13.x（2026-03-17 发布，PHP ≥8.3）
 > 范围：ORM/数据库层——模型、关系、查询构建器、Schema/迁移、Seeder/工厂、分页、集合。
 > 旧版中的非 ORM 章节（路由/验证/Blade/队列等）因严重过时且超出本次范围已移除，待后续按同口径重审。
-> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae）+ 阶段10 小件快批（f5c53e8/1b2b277/6cfd434）+ 阶段11-13 对齐深化（842aeb2/886fe95/f6e9a1a），`bin/Database/` + `bin/Support/` 约 70 文件。
+> 代码基线：`fix/orm-p0-p1` 分支，七阶段修复（940286c）+ 阶段8 P0 对齐（7852138/3466560/dc85b80）+ 阶段9 结构性重构（6a19777/0b8b3ae）+ 阶段10 小件快批（f5c53e8/1b2b277/6cfd434）+ 阶段11-13 对齐深化（842aeb2/886fe95/f6e9a1a）+ 阶段14 边界对抗（bff8323）+ L13 升级指南复核（43c5afb），`bin/Database/` + `bin/Support/` 约 70 文件。
 
 ---
 
@@ -19,8 +19,8 @@
           ████ Schema/迁移  (列类型全家/索引/流式外键链/迁移运行器)
           ████ 查询构建器   (WHERE 全系/JOIN 含子查询/upsert 家族/事务/调试器)
      75% ┤       ████ 集合   (Base/Eloquent 双层* + 模型集合方法；缺 LazyCollection/高阶代理)
-     50% ┤            ████ Seeder/工厂 (静态注册表式，无工厂类 DSL)
-      0% ┤                 ████ Laravel 13 专项 (PHP 属性/向量检索/JSON:API 全无)
+     50% ┤            ████ Seeder/工厂 (静态注册表 + 工厂类 DSL✅，缺 Laravel 全量 DSL)
+      0% ┤                 ████ Laravel 13 专项 (PHP 属性✅；向量检索/JSON:API 无)
 
     * 标注 * 的为 2026-09 阶段8/9 批次补齐项
 ```
@@ -355,7 +355,9 @@ P1 剩余 11 项中清除 7 项，另修复 2 个调研中新发现的预存缺�
 | 阶段9 结构性重构回归 | `tests/CollectionLayeringTest.php` / `tests/NamedConnectionTest.php` | 6 + 7 例：双层拆分继承兼容/模型集合方法/按名缓存/分驱动 DSN/Model::on 隔离/QueryLog 连接名 |
 | 阶段10 小件快批回归 | `tests/SchemaP1BatchTest.php` / `tests/OrmTraitsAndEventsTest.php` | 11 + 10 例：fullText/spatialIndex/change 编译、morphs 列族、UUID/ULID、model:prune、软删复制事件、morph 写方法、JSON 子句 |
 | 阶段11-13 回归 | `tests/ModelAttributesTest.php` / `tests/SubQueryAndCursorTest.php` / `tests/FactoryDslTest.php` | 9 + 8 + 9 例：属性配置/优先级/ScopedBy、子查询绑定顺序/双向游标/降序、工厂 DSL/for-has/sequence/约定解析 |
+| 阶段14 边界对抗 | `tests/AdversarialEdgeTest.php` | 36 例：lazy 死循环边界、upsert 空参防护、JSON 包含候选语义、cursorPaginate 首页排序等（bff8323） |
+| L13 升级指南复核配套 | `tests/CollectionTest.php` +1 / `tests/ModelAttributesTest.php` +1 | sortByDesc、boot 期嵌套实例化 LogicException（43c5afb） |
 | 本轮新增回归 | QueryCompilerRegressionTest / GlobalScopeIntegrityTest / RelationDefaultsTest / TraitInheritanceTest / EagerLoadingConsistencyTest / OrmRegressionTest / MigrationSmokeTest | 七阶段修复的回归防线 |
 | 历史存量 | QueryBuilderTest / ModelTest / RelationTest / SoftDeletesTest / PaginatorTest 等 | 旧版记录约 ~200/~100/~45/22 个用例，覆盖面以本轮文档核对为准 |
 
-> 全量测试基线：2284 例通过（2026-09-12，阶段13 完成后）。**P0/P1 全部清零**，剩余差距为 P2 长线（多驱动 grammar / 读写分离 / 向量检索 / LazyCollection / queueable 事件 / 方法级 #[Scope] / JSON:API 资源）。
+> 全量测试基线：2322 例通过（2026-09-13；含阶段14 边界对抗批次 36 例与本次 Laravel 13 升级指南复核配套 2 例）。**P0/P1 全部清零**，剩余差距为 P2 长线（多驱动 grammar / 读写分离 / 向量检索 / LazyCollection / queueable 事件 / 方法级 #[Scope] / JSON:API 资源 / DELETE...JOIN 编译）。
